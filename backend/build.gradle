@@ -1,6 +1,6 @@
 plugins {
 	id 'java'
-	id 'org.springframework.boot' version '4.1.0'
+	id 'org.springframework.boot' version '3.2.5' // 또는 프로젝트 환경에 맞는 안정 버전
 	id 'io.spring.dependency-management' version '1.1.7'
 }
 
@@ -18,20 +18,46 @@ repositories {
 }
 
 dependencies {
-	implementation 'org.springframework.boot:spring-boot-h2console'
+	// --- Spring Boot Starters ---
+	implementation 'org.springframework.boot:spring-boot-starter-web'
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 	implementation 'org.springframework.boot:spring-boot-starter-validation'
-	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
-	compileOnly 'org.projectlombok:lombok'
-	developmentOnly 'org.springframework.boot:spring-boot-devtools'
+
+	// --- Database & Tools ---
 	runtimeOnly 'com.h2database:h2'
+	developmentOnly 'org.springframework.boot:spring-boot-devtools'
+
+	// --- Environment Variable (.env) ---
+	implementation 'me.paulschwarz:spring-dotenv:4.0.0'
+
+	// --- JSON & Document Parsing (POI) ---
+	implementation 'com.fasterxml.jackson.core:jackson-databind'
+	implementation 'org.apache.poi:poi-ooxml:5.2.5'
+
+	// 🛡️ [보안 취약점 조치] Apache Commons Compress 버전 강제 업데이트 (CVE-2024-25710, CVE-2024-26308 해결)
+	implementation('org.apache.commons:commons-compress:1.26.2') {
+		because 'Fixes DoS and Infinite Loop vulnerabilities in transitive dependency from POI'
+	}
+
+	// --- Lombok ---
+	compileOnly 'org.projectlombok:lombok'
 	annotationProcessor 'org.projectlombok:lombok'
-	testImplementation 'org.springframework.boot:spring-boot-starter-data-jpa-test'
-	testImplementation 'org.springframework.boot:spring-boot-starter-validation-test'
-	testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
+
+	// --- Testing ---
+	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 	testCompileOnly 'org.projectlombok:lombok'
-	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 	testAnnotationProcessor 'org.projectlombok:lombok'
+	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+// 🛡️ 이행적 종속성(Transitive Dependency) 버전 패치 보장 설정
+configurations.all {
+	resolutionStrategy.eachDependency { DependencyResolveDetails details ->
+		if (details.requested.group == 'org.apache.commons' && details.requested.name == 'commons-compress') {
+			details.useVersion '1.26.2'
+			details.because 'CVE-2024-25710 및 CVE-2024-26308 보안 취약점 조치'
+		}
+	}
 }
 
 tasks.named('test') {

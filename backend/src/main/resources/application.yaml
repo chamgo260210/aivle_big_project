@@ -1,6 +1,9 @@
 server:
-port: 8080
+  port: 8080
 
+openai:
+  api:
+    key: ${OPENAI_API_KEY:} # .env의 OPENAI_API_KEY 참조 (없으면 빈 값)
 
 spring:
   application:
