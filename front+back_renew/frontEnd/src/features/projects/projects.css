@@ -1,0 +1,91 @@
+.project-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+  gap: var(--space-4);
+}
+
+.project-card {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.project-card__status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-small);
+}
+
+.project-card h2,
+.project-card p {
+  margin: 0;
+}
+
+.project-card small {
+  color: var(--color-text-secondary);
+}
+
+.project-form {
+  display: grid;
+  gap: var(--space-5);
+  max-width: 42rem;
+  padding: var(--space-6);
+  border: var(--border-width) solid var(--color-border-default);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+}
+
+.project-form__actions {
+  display: flex;
+  gap: var(--space-3);
+}
+
+.project-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+.project-overview-grid .ui-card {
+  display: grid;
+  align-content: start;
+  gap: var(--space-4);
+}
+
+.project-facts {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.project-facts div {
+  display: grid;
+  grid-template-columns: 7rem minmax(0, 1fr);
+  gap: var(--space-3);
+}
+
+.project-facts dt {
+  color: var(--color-text-secondary);
+}
+
+.project-facts dd {
+  margin: 0;
+  font-weight: var(--font-weight-semibold);
+}
+
+@media (max-width: 767px) {
+  .project-form {
+    padding: var(--space-4);
+  }
+
+  .project-form__actions,
+  .project-overview-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .project-form__actions {
+    display: grid;
+  }
+}

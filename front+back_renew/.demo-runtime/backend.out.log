@@ -1,0 +1,58 @@
+> Task :compileJava
+> Task :processResources UP-TO-DATE
+> Task :classes
+> Task :resolveMainClassName
+
+> Task :bootRun
+
+  .   ____          _            __ _ _
+ /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
+( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
+ \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
+  '  |____| .__|_| |_|_| |_\__, | / / / /
+ =========|_|==============|___/=/_/_/_/
+
+ :: Spring Boot ::                (v4.1.0)
+
+2026-07-24T17:32:48.507+09:00  INFO 1100524 --- [backend] [  restartedMain] com.aivle.backend.BackendApplication     : Starting BackendApplication using Java 17.0.19 with PID 1100524 (C:\Users\seewo\Desktop\big_proj_01\new_1\aivle_big_project\backend\build\classes\java\main started by seewo in C:\Users\seewo\Desktop\big_proj_01\new_1\aivle_big_project\backend)
+2026-07-24T17:32:48.515+09:00  INFO 1100524 --- [backend] [  restartedMain] com.aivle.backend.BackendApplication     : No active profile set, falling back to 1 default profile: "local"
+2026-07-24T17:32:48.620+09:00  INFO 1100524 --- [backend] [  restartedMain] .e.DevToolsPropertyDefaultsPostProcessor : Devtools property defaults active! Set 'spring.devtools.add-properties' to 'false' to disable
+2026-07-24T17:32:48.620+09:00  INFO 1100524 --- [backend] [  restartedMain] .e.DevToolsPropertyDefaultsPostProcessor : For additional web related logging consider setting the 'logging.level.web' property to 'DEBUG'
+2026-07-24T17:32:50.694+09:00  INFO 1100524 --- [backend] [  restartedMain] .s.d.r.c.RepositoryConfigurationDelegate : Bootstrapping Spring Data JPA repositories in DEFAULT mode.
+2026-07-24T17:32:51.072+09:00  INFO 1100524 --- [backend] [  restartedMain] .s.d.r.c.RepositoryConfigurationDelegate : Finished Spring Data repository scanning in 352 ms. Found 30 JPA repository interfaces.
+2026-07-24T17:32:52.585+09:00  INFO 1100524 --- [backend] [  restartedMain] o.s.boot.tomcat.TomcatWebServer          : Tomcat initialized with port 8080 (http)
+2026-07-24T17:32:52.617+09:00  INFO 1100524 --- [backend] [  restartedMain] o.apache.catalina.core.StandardService   : Starting service [Tomcat]
+2026-07-24T17:32:52.617+09:00  INFO 1100524 --- [backend] [  restartedMain] o.apache.catalina.core.StandardEngine    : Starting Servlet engine: [Apache Tomcat/11.0.22]
+2026-07-24T17:32:52.725+09:00  INFO 1100524 --- [backend] [  restartedMain] b.w.c.s.WebApplicationContextInitializer : Root WebApplicationContext: initialization completed in 4101 ms
+2026-07-24T17:32:53.253+09:00  INFO 1100524 --- [backend] [  restartedMain] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Starting...
+2026-07-24T17:32:53.822+09:00  INFO 1100524 --- [backend] [  restartedMain] com.zaxxer.hikari.pool.HikariPool        : HikariPool-1 - Added connection conn0: url=jdbc:h2:file:./data/aivle user=SA
+2026-07-24T17:32:53.826+09:00  INFO 1100524 --- [backend] [  restartedMain] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Start completed.
+2026-07-24T17:32:53.845+09:00  INFO 1100524 --- [backend] [  restartedMain] org.flywaydb.core.FlywayExecutor         : Database: jdbc:h2:file:./data/aivle (H2 2.4)
+2026-07-24T17:32:53.932+09:00  WARN 1100524 --- [backend] [  restartedMain] o.f.c.internal.database.base.Database    : Using H2 2.4.240 which is newer than the version Flyway has been verified with. The latest verified version of H2 is 2.3.232.
+2026-07-24T17:32:54.021+09:00  INFO 1100524 --- [backend] [  restartedMain] o.f.core.internal.command.DbValidate     : Successfully validated 9 migrations (execution time 00:00.062s)
+2026-07-24T17:32:54.036+09:00  INFO 1100524 --- [backend] [  restartedMain] o.f.core.internal.command.DbMigrate      : Current version of schema "public": 9
+2026-07-24T17:32:54.044+09:00  INFO 1100524 --- [backend] [  restartedMain] o.f.core.internal.command.DbMigrate      : Schema "public" is up to date. No migration necessary.
+2026-07-24T17:32:54.323+09:00  INFO 1100524 --- [backend] [  restartedMain] org.hibernate.orm.jpa                    : HHH008540: Processing PersistenceUnitInfo [name: default]
+2026-07-24T17:32:54.472+09:00  INFO 1100524 --- [backend] [  restartedMain] org.hibernate.orm.core                   : HHH000001: Hibernate ORM core version 7.4.1.Final
+2026-07-24T17:32:55.636+09:00  INFO 1100524 --- [backend] [  restartedMain] o.s.o.j.p.SpringPersistenceUnitInfo      : No LoadTimeWeaver setup: ignoring JPA class transformer
+2026-07-24T17:32:55.854+09:00  INFO 1100524 --- [backend] [  restartedMain] org.hibernate.orm.connections.pooling    : HHH10001005: Database info:
+	Database JDBC URL [jdbc:h2:file:./data/aivle]
+	Database driver: H2 JDBC Driver
+	Database dialect: H2Dialect
+	Database version: 2.4.240
+	Default catalog/schema: aivle/public
+	Autocommit mode: undefined/unknown
+	Isolation level: READ_COMMITTED [default READ_COMMITTED]
+	JDBC fetch size: 100
+	Pool: DataSourceConnectionProvider
+	Minimum pool size: undefined/unknown
+	Maximum pool size: undefined/unknown
+2026-07-24T17:33:00.025+09:00  INFO 1100524 --- [backend] [  restartedMain] org.hibernate.orm.core                   : HHH000489: No JTA platform available (set 'hibernate.transaction.jta.platform' to enable JTA platform integration)
+2026-07-24T17:33:00.099+09:00  INFO 1100524 --- [backend] [  restartedMain] j.LocalContainerEntityManagerFactoryBean : Initialized JPA EntityManagerFactory for persistence unit 'default'
+2026-07-24T17:33:00.249+09:00  INFO 1100524 --- [backend] [  restartedMain] o.s.d.j.r.query.QueryEnhancerFactories   : Hibernate is in classpath; If applicable, HQL parser will be used.
+2026-07-24T17:33:05.345+09:00  INFO 1100524 --- [backend] [  restartedMain] o.s.b.h.a.H2ConsoleAutoConfiguration     : H2 console available at '/h2-console'. Database available at 'jdbc:h2:file:./data/aivle'
+2026-07-24T17:33:05.466+09:00  INFO 1100524 --- [backend] [  restartedMain] o.s.boot.tomcat.TomcatWebServer          : Tomcat started on port 8080 (http) with context path '/'
+2026-07-24T17:33:05.481+09:00  INFO 1100524 --- [backend] [  restartedMain] com.aivle.backend.BackendApplication     : Started BackendApplication in 17.678 seconds (process running for 18.351)
+2026-07-24T17:33:14.447+09:00  INFO 1100524 --- [backend] [nio-8080-exec-1] o.a.c.c.C.[Tomcat].[localhost].[/]       : Initializing Spring DispatcherServlet 'dispatcherServlet'
+2026-07-24T17:33:14.447+09:00  INFO 1100524 --- [backend] [nio-8080-exec-1] o.s.web.servlet.DispatcherServlet        : Initializing Servlet 'dispatcherServlet'
+2026-07-24T17:33:14.450+09:00  INFO 1100524 --- [backend] [nio-8080-exec-1] o.s.web.servlet.DispatcherServlet        : Completed initialization in 2 ms
