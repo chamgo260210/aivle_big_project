@@ -1,0 +1,29 @@
+.auth-page {
+  display: grid;
+  gap: var(--space-6);
+  width: min(100%, 30rem);
+  margin-inline: auto;
+}
+
+.auth-page .ui-page-header {
+  margin-block-end: 0;
+}
+
+.auth-form {
+  display: grid;
+  gap: var(--space-5);
+  padding: var(--space-6);
+  border: var(--border-width) solid var(--color-border-default);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+}
+
+.auth-page__footer {
+  text-align: center;
+}
+
+@media (max-width: 767px) {
+  .auth-form {
+    padding: var(--space-4);
+  }
+}
