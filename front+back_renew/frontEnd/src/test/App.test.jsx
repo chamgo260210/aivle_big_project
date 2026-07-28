@@ -52,7 +52,7 @@ describe('application routing', () => {
   it('renders the public route', () => {
     renderApp('/');
     expect(screen.getByRole('heading', {
-      name: '아이디어를 근거 있는 다음 단계로 연결하세요',
+      name: '사업계획서를, 검증 가능한 다음 단계로.',
     })).toBeInTheDocument();
   });
 
@@ -63,7 +63,7 @@ describe('application routing', () => {
 
   it('redirects an authenticated user away from public auth routes', async () => {
     renderApp('/auth/login', authenticated);
-    expect(await screen.findByRole('heading', { name: '프로젝트' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: '첫 사업 검증 프로젝트를 만들어 보세요' })).toBeInTheDocument();
   });
 
   it('keeps a protected route pending while auth is unknown', () => {
@@ -111,7 +111,7 @@ describe('application routing', () => {
 
   it('provides a mobile navigation trigger and drawer', () => {
     renderApp('/dashboard', authenticated);
-    fireEvent.click(document.querySelector('.app-header__menu'));
+    fireEvent.click(document.querySelector('.app-mobile-menu'));
     expect(screen.getByRole('dialog', { name: '메뉴' })).toBeInTheDocument();
   });
 
@@ -123,7 +123,7 @@ describe('application routing', () => {
 
   it('renders project context navigation', async () => {
     renderApp('/projects/77/overview', authenticated);
-    expect(await screen.findByRole('navigation', { name: '프로젝트 단계' })).toBeInTheDocument();
+    expect(await screen.findByRole('navigation', { name: '프로젝트 영역' })).toBeInTheDocument();
   });
 
   it('provides the main landmark', () => {
@@ -131,8 +131,9 @@ describe('application routing', () => {
     expect(screen.getByRole('main')).toHaveAttribute('id', 'main-content');
   });
 
-  it('uses a single level-one heading in a protected page', () => {
+  it('uses a single level-one heading in a protected page', async () => {
     renderApp('/dashboard', authenticated);
+    await screen.findByRole('heading', { name: '첫 사업 검증 프로젝트를 만들어 보세요' });
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
   });
 
@@ -142,8 +143,8 @@ describe('application routing', () => {
       subscribe: vi.fn(),
     };
     renderApp('/dashboard', authenticated, session);
-    fireEvent.click(screen.getByRole('button', { name: '사용자' }));
-    fireEvent.click(screen.getByRole('button', { name: '로그아웃' }));
+    fireEvent.click(screen.getByRole('button', { name: '계정 메뉴' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: '로그아웃' }));
     expect(await screen.findByRole('heading', { name: '로그인' })).toBeInTheDocument();
     expect(session.logout).toHaveBeenCalledOnce();
   });

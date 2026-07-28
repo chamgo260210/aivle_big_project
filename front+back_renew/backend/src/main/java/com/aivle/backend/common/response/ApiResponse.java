@@ -13,10 +13,20 @@ public record ApiResponse<T>(boolean success, T data, ApiError error, Meta meta)
 
     public static ApiResponse<Void> failure(String code, String message, List<FieldError> fieldErrors,
                                             boolean retryable, String requestId) {
-        return new ApiResponse<>(false, null, new ApiError(code, message, fieldErrors, retryable), Meta.create(requestId));
+        return failure(code, message, fieldErrors, retryable, requestId, null);
     }
 
-    public record ApiError(String code, String message, List<FieldError> fieldErrors, boolean retryable) {}
+    public static ApiResponse<Void> failure(String code, String message, List<FieldError> fieldErrors,
+                                            boolean retryable, String requestId, LoginAttempt loginAttempt) {
+        return new ApiResponse<>(false, null, new ApiError(
+            code, message, fieldErrors, retryable,
+            loginAttempt == null ? null : loginAttempt.retryAfterSeconds(), loginAttempt
+        ), Meta.create(requestId));
+    }
+
+    public record ApiError(String code, String message, List<FieldError> fieldErrors, boolean retryable,
+                           Long retryAfterSeconds, LoginAttempt loginAttempt) {}
+    public record LoginAttempt(String warningLevel, int remainingAttempts, Long retryAfterSeconds) {}
     public record FieldError(String field, String message) {}
     public record Meta(String requestId, Instant timestamp) {
         private static Meta create(String requestId) {

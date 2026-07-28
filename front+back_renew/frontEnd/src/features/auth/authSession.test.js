@@ -39,14 +39,14 @@ describe('auth session', () => {
     expect(tokenProvider.getAccessToken()).toBe('access');
   });
 
-  it('signs up and authenticates from the actual auth response', async () => {
+  it('signs up without storing tokens or authenticating the new account', async () => {
     const { authApi, tokenProvider, session } = createFixture();
     authApi.signup.mockResolvedValue({
       user: { id: 2, email: 'new@example.com' },
-      tokens: { accessToken: 'new-access', refreshToken: 'new-refresh' },
+      signupCompleted: true,
     });
     await session.signup({ email: 'new@example.com', password: 'password', displayName: 'New' });
-    expect(tokenProvider.getRefreshToken()).toBe('new-refresh');
+    expect(tokenProvider.getRefreshToken()).toBeNull();
   });
 
   it('bootstraps by rotating refresh then loading users me', async () => {

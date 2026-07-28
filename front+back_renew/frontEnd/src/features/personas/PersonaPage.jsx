@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useProjectContext } from '../projects/ProjectContext.jsx';
+import { projectRoutes } from '../projects/routing/projectRoutes.js';
 import {
   Alert, Button, Card, Dialog, ErrorState, LoadingState, PageHeader, Progress, StatusBadge,
 } from '../../shared/ui/index.js';
@@ -18,8 +19,9 @@ function Catalog({ personas }) {
           <h2 id="persona-catalog-title">기준 페르소나 카탈로그</h2></div>
         <span>{personas.length}개 군집</span>
       </div>
-      <div className="persona-catalog">
-        {personas.map((persona) => (
+      <p className="persona-catalog__intro">프로젝트 패널 구성에 참고할 추천 세그먼트만 먼저 보여드립니다.</p>
+      <div className="persona-catalog persona-catalog--compact">
+        {personas.slice(0, 4).map((persona) => (
           <Card key={persona.personaCode} className="persona-catalog-card">
             <p className="persona-code">{persona.personaCode}</p>
             <h3>{persona.displayName}</h3><p>{persona.description}</p>
@@ -146,7 +148,7 @@ export default function PersonaPage() {
       {state.status === 'not-ready' && (
         <Card><StatusBadge status="NEEDS_INPUT" /><h2>완료된 사업 타당성 분석이 필요합니다</h2>
           <p>확정 계획에 연결된 최신 타당성 분석과 검증 과제를 먼저 준비해 주세요.</p>
-          <Link className="primary-link" to="../feasibility">사업 타당성 분석으로 이동</Link></Card>
+          <Link className="primary-link" to={projectRoutes.feasibility(projectId)}>사업 타당성 분석으로 이동</Link></Card>
       )}
       {state.status === 'failed' && <ErrorState title="페르소나 추천을 완료하지 못했습니다"
         description={state.job?.message ?? '작업 상태를 확인한 뒤 다시 시도해 주세요.'} onRetry={state.retry} />}

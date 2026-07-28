@@ -1,4 +1,4 @@
-export function safeReturnTo(value, fallback = '/projects') {
+export function safeReturnTo(value, fallback = '/app') {
   if (
     typeof value !== 'string' ||
     !value.startsWith('/') ||

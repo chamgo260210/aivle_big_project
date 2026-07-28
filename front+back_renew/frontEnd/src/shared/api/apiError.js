@@ -6,6 +6,8 @@ export class ApiError extends Error {
     fieldErrors = [],
     retryable = false,
     requestId = null,
+    retryAfterSeconds = null,
+    loginAttempt = null,
     cause,
   } = {}) {
     super(message, cause ? { cause } : undefined);
@@ -15,6 +17,8 @@ export class ApiError extends Error {
     this.fieldErrors = fieldErrors;
     this.retryable = retryable;
     this.requestId = requestId;
+    this.retryAfterSeconds = retryAfterSeconds;
+    this.loginAttempt = loginAttempt;
   }
 }
 
@@ -40,7 +44,10 @@ export function normalizeApiError(error, fallback = {}) {
 
 const USER_MESSAGE_BY_CODE = {
   VALIDATION_FAILED: '입력한 내용을 다시 확인해 주세요.',
-  INVALID_CREDENTIALS: '이메일 또는 비밀번호가 올바르지 않습니다.',
+  INVALID_CREDENTIALS: '아이디 또는 비밀번호를 확인해 주세요.',
+  USERNAME_ALREADY_EXISTS: '이미 사용 중인 아이디입니다.',
+  USERNAME_NOT_ALLOWED: '사용할 수 없는 아이디입니다. 다른 아이디를 입력해 주세요.',
+  LOGIN_RATE_LIMITED: '로그인 시도가 여러 번 실패했습니다. 잠시 후 다시 시도해 주세요.',
   EMAIL_ALREADY_EXISTS: '이미 사용 중인 이메일입니다.',
   USER_EMAIL_DUPLICATED: '이미 사용 중인 이메일입니다.',
   PASSWORD_POLICY_VIOLATION: '비밀번호 정책을 확인해 주세요.',

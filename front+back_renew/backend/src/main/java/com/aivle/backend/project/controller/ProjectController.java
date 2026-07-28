@@ -44,4 +44,10 @@ public class ProjectController {
         return ApiResponse.success(projectService.update(currentUserProvider.currentUserId(), projectId, body),
                 request.getHeader("X-Request-Id"));
     }
+
+    @DeleteMapping("/{projectId}")
+    public ResponseEntity<Void> delete(@PathVariable Long projectId, HttpServletRequest request) {
+        projectService.delete(currentUserProvider.currentUserId(), projectId, request.getHeader("X-Request-Id"));
+        return ResponseEntity.noContent().build();
+    }
 }

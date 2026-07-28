@@ -32,5 +32,12 @@ export function createAuthApi(client) {
       const response = await client.get('/users/me');
       return response.data;
     },
+    async updateProfile(input) {
+      const response = await client.patch('/users/me', input);
+      return response.data;
+    },
+    async changePassword(input) {
+      await client.post('/users/me/password', input);
+    },
   };
 }

@@ -94,10 +94,10 @@ class PostgreSqlConstraintTests extends PostgreSqlIntegrationTestSupport {
     private void insertUserAndProject() {
         jdbcTemplate.update("""
             insert into users (
-                id, email, password_hash, name, role, status, failed_login_count,
+                id, username, email, password_hash, name, role, status, failed_login_count,
                 created_at, updated_at, version
             ) values (
-                1, 'constraint@example.com', 'hash', '제약 테스트', 'USER', 'ACTIVE', 0,
+                1, 'constraintuser', 'constraint@example.com', 'hash', '제약 테스트', 'USER', 'ACTIVE', 0,
                 current_timestamp, current_timestamp, 0
             )
             """);

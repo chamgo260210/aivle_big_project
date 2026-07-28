@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes, useParams } from 'react-router-dom';
 
 import AppShell from '../layouts/AppShell.jsx';
 import ProjectLayout from '../layouts/ProjectLayout.jsx';
@@ -9,30 +9,30 @@ import PublicOnlyRoute from '../../features/auth/PublicOnlyRoute.jsx';
 import {
   ProjectCreatePage,
   ProjectListPage,
-  ProjectOverviewPage,
 } from '../../features/projects/ProjectPages.jsx';
-import {
-  DocumentUploadPage,
-  StructuredPlanPage,
-} from '../../features/documents/DocumentPages.jsx';
-import {
-  AuthPlaceholderPage,
-  DashboardPage,
-  HomePage,
-  NotFoundPage,
-  ProjectPlaceholderPage,
-  SimplePlaceholderPage,
-} from '../../pages/FoundationPages.jsx';
+import ProjectGetStartedPage from '../../features/projects/ProjectGetStartedPage.jsx';
+import { ProjectOverviewPage } from '../../features/projects/ProjectAreaPages.jsx';
+import WorkspaceHomePage from '../../features/projects/WorkspaceHomePage.jsx';
+import { AccountSettingsLayout, AccountSettingsRedirect, ProfileSettingsPage, SecuritySettingsPage } from '../../features/settings/AccountSettingsPages.jsx';
+import ProjectSettingsSheet from '../../features/projects/ProjectSettingsSheet.jsx';
+import { DocumentUploadPage, StructuredPlanPage } from '../../features/documents/DocumentPages.jsx';
+import { AuthPlaceholderPage, NotFoundPage } from '../../pages/FoundationPages.jsx';
 import LegalReviewPage from '../../features/legal-review/LegalReviewPage.jsx';
 import FeasibilityPage from '../../features/feasibility/FeasibilityPage.jsx';
 import PersonaPage from '../../features/personas/PersonaPage.jsx';
 import ReportPage from '../../features/report/ReportPage.jsx';
+import LandingPage from '../../features/landing/LandingPage.jsx';
+
+function LegacyProjectRedirect({ suffix = '' }) {
+  const { projectId } = useParams();
+  return <Navigate to={`/app/projects/${projectId}${suffix}`} replace />;
+}
 
 export default function AppRouter() {
   return (
     <Routes>
       <Route element={<PublicLayout />}>
-        <Route index element={<HomePage />} />
+        <Route index element={<LandingPage />} />
         <Route element={<PublicOnlyRoute />}>
           <Route path="auth/login" element={<LoginPage />} />
           <Route path="auth/signup" element={<SignupPage />} />
@@ -44,34 +44,55 @@ export default function AppRouter() {
 
       <Route element={<ProtectedRoute />}>
         <Route element={<AppShell />}>
-          <Route path="dashboard" element={<DashboardPage />} />
-          <Route path="projects" element={<ProjectListPage />} />
-          <Route path="projects/new" element={<ProjectCreatePage />} />
-          <Route path="reports" element={<SimplePlaceholderPage title="보고서" description="전체 프로젝트 보고서를 확인합니다." />} />
-          <Route path="settings" element={<SimplePlaceholderPage title="설정" description="사용자 프로필과 환경을 관리합니다." />} />
-          <Route path="projects/:projectId" element={<ProjectLayout />}>
-            <Route index element={<Navigate to="overview" replace />} />
-            <Route path="overview" element={<ProjectOverviewPage />} />
-            <Route path="documents" element={<DocumentUploadPage />} />
-            <Route path="structure" element={<StructuredPlanPage />} />
-            <Route path="structured-plan" element={<Navigate to="../structure" replace />} />
-            <Route path="structured-plan/missing-fields" element={<ProjectPlaceholderPage page="missing-fields" />} />
-            <Route path="legal-review" element={<LegalReviewPage />} />
-            <Route path="feasibility" element={<FeasibilityPage />} />
-            <Route path="analyses/market" element={<Navigate to="../../feasibility" relative="path" replace />} />
-            <Route path="analyses/business-model" element={<Navigate to="../../feasibility" relative="path" replace />} />
-            <Route path="analyses/technology-operation" element={<Navigate to="../../feasibility" relative="path" replace />} />
-            <Route path="analyses/financial" element={<ProjectPlaceholderPage page="financial" />} />
-            <Route path="personas" element={<PersonaPage />} />
-            <Route path="report" element={<ReportPage />} />
-            <Route path="panel-survey" element={<ProjectPlaceholderPage page="panel-survey" />} />
-            <Route path="panel-discussion" element={<ProjectPlaceholderPage page="panel-discussion" />} />
-            <Route path="market-validation" element={<ProjectPlaceholderPage page="market-validation" />} />
-            <Route path="reports" element={<Navigate to="../report" replace />} />
-            <Route path="reports/:reportId" element={<Navigate to="../../report" relative="path" replace />} />
-            <Route path="marketing" element={<ProjectPlaceholderPage page="marketing" />} />
-            <Route path="settings" element={<ProjectPlaceholderPage page="settings" />} />
+          <Route path="app" element={<WorkspaceHomePage />} />
+          <Route path="app/projects" element={<ProjectListPage />} />
+          <Route path="app/projects/new" element={<ProjectCreatePage />} />
+          <Route path="app/settings" element={<AccountSettingsLayout />}>
+            <Route index element={<AccountSettingsRedirect />} />
+            <Route path="profile" element={<ProfileSettingsPage />} />
+            <Route path="security" element={<SecuritySettingsPage />} />
           </Route>
+          <Route path="app/projects/:projectId" element={<ProjectLayout />}>
+            <Route index element={<ProjectOverviewPage />} />
+            <Route path="get-started" element={<ProjectGetStartedPage />} />
+            <Route path="plan" element={<DocumentUploadPage />} />
+            <Route path="plan/brief" element={<Navigate to="../settings" replace />} />
+            <Route path="plan/documents" element={<DocumentUploadPage />} />
+            <Route path="plan/structure" element={<StructuredPlanPage />} />
+            <Route path="review" element={<Navigate to="legal" replace />} />
+            <Route path="review/legal" element={<LegalReviewPage />} />
+            <Route path="review/market" element={<FeasibilityPage />} />
+            <Route path="validate" element={<Navigate to="personas" replace />} />
+            <Route path="validate/personas" element={<PersonaPage />} />
+            <Route path="report" element={<ReportPage />} />
+            <Route path="settings" element={<ProjectSettingsSheet />} />
+            <Route path="settings/general" element={<Navigate to="../settings" replace />} />
+            <Route path="settings/danger" element={<Navigate to="../settings" replace />} />
+          </Route>
+
+          <Route path="dashboard" element={<Navigate to="/app" replace />} />
+          <Route path="projects" element={<Navigate to="/app/projects" replace />} />
+          <Route path="projects/new" element={<Navigate to="/app/projects/new" replace />} />
+          <Route path="reports" element={<Navigate to="/app/projects" replace />} />
+          <Route path="settings" element={<Navigate to="/app/settings/profile" replace />} />
+          <Route path="projects/:projectId" element={<LegacyProjectRedirect />} />
+          <Route path="projects/:projectId/overview" element={<LegacyProjectRedirect />} />
+          <Route path="projects/:projectId/input" element={<LegacyProjectRedirect suffix="/settings" />} />
+          <Route path="projects/:projectId/documents" element={<LegacyProjectRedirect suffix="/plan/documents" />} />
+          <Route path="projects/:projectId/structure" element={<LegacyProjectRedirect suffix="/plan/structure" />} />
+          <Route path="projects/:projectId/structured-plan" element={<LegacyProjectRedirect suffix="/plan/structure" />} />
+          <Route path="projects/:projectId/structured-plan/missing-fields" element={<LegacyProjectRedirect suffix="/plan/structure" />} />
+          <Route path="projects/:projectId/legal-review" element={<LegacyProjectRedirect suffix="/review/legal" />} />
+          <Route path="projects/:projectId/feasibility" element={<LegacyProjectRedirect suffix="/review/market" />} />
+          <Route path="projects/:projectId/analyses/:analysis" element={<LegacyProjectRedirect suffix="/review/market" />} />
+          <Route path="projects/:projectId/personas" element={<LegacyProjectRedirect suffix="/validate/personas" />} />
+          <Route path="projects/:projectId/panel-survey" element={<LegacyProjectRedirect suffix="/validate" />} />
+          <Route path="projects/:projectId/panel-discussion" element={<LegacyProjectRedirect suffix="/validate" />} />
+          <Route path="projects/:projectId/market-validation" element={<LegacyProjectRedirect suffix="/validate" />} />
+          <Route path="projects/:projectId/report" element={<LegacyProjectRedirect suffix="/report" />} />
+          <Route path="projects/:projectId/reports/*" element={<LegacyProjectRedirect suffix="/report" />} />
+          <Route path="projects/:projectId/marketing" element={<LegacyProjectRedirect suffix="/report" />} />
+          <Route path="projects/:projectId/settings" element={<LegacyProjectRedirect suffix="/settings" />} />
         </Route>
       </Route>
 

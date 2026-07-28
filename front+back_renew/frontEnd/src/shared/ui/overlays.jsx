@@ -2,6 +2,7 @@ import { useEffect, useId, useRef } from 'react';
 import { createPortal } from 'react-dom';
 
 import { IconButton } from './controls.jsx';
+import { AppIcon } from './icons.jsx';
 import './ui.css';
 
 const FOCUSABLE =
@@ -68,7 +69,7 @@ export function Dialog({
       >
         <header className="ui-dialog__header">
           <h2 id={titleId}>{title}</h2>
-          <IconButton label="닫기" onClick={onClose}>×</IconButton>
+          <IconButton label="닫기" onClick={onClose}><AppIcon name="close" /></IconButton>
         </header>
         <div className="ui-dialog__content">{children}</div>
       </section>
@@ -79,6 +80,15 @@ export function Dialog({
 
 export function Drawer(props) {
   return <Dialog variant="drawer" {...props} />;
+}
+
+export function SideSheet({ title, onClose, open, children, footer, label = 'Side sheet' }) {
+  return (
+    <Dialog open={open} onClose={onClose} title={title} variant="sheet">
+      <div className="ui-side-sheet" aria-label={label}>{children}</div>
+      {footer && <footer className="ui-side-sheet__footer">{footer}</footer>}
+    </Dialog>
+  );
 }
 
 export function Tabs({ items, value, onChange, label }) {
@@ -130,4 +140,3 @@ export function ToastRegion({ messages = [] }) {
     </div>
   );
 }
-

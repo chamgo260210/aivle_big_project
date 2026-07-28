@@ -4,7 +4,11 @@ import com.aivle.backend.audit.AuditEventType;
 import com.aivle.backend.audit.DomainAuditService;
 import com.aivle.backend.auth.dto.AuthResponse;
 import com.aivle.backend.auth.dto.TokenPairResponse;
+import com.aivle.backend.auth.dto.SignupResponse;
 import com.aivle.backend.auth.dto.UserResponse;
+import com.aivle.backend.auth.dto.UpdateProfileRequest;
+import com.aivle.backend.auth.dto.ChangePasswordRequest;
+import com.aivle.backend.auth.dto.UsernamePolicy;
 import com.aivle.backend.common.exception.BusinessException;
 import com.aivle.backend.common.exception.ErrorCode;
 import com.aivle.backend.user.entity.User;
@@ -27,14 +31,21 @@ import java.time.ZoneOffset;
 import java.util.HexFormat;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
 public class AuthService {
     private static final String DUMMY_PASSWORD_HASH =
         "$2a$10$7EqJtq98hPqEX7fNZaFWoO5Z14qfIVxqMFXvYI7P0n0nK5YzT.y1C";
-    private static final int PASSWORD_MIN_CHARACTERS = 8;
-    private static final int BCRYPT_MAX_BYTES = 72;
+    private static final int PASSWORD_MIN_CHARACTERS = 15;
+    private static final int PASSWORD_MAX_CHARACTERS = 64;
+    private static final Set<String> COMMON_PASSWORDS = Set.of(
+        "password", "password123", "passwordpassword", "qwerty", "qwerty123",
+        "123456789", "1234567890", "ventureverify", "ventureverify123",
+        "venture-verify", "letmein", "welcome123", "testtesttesttest", "adminadmin"
+    );
+    private static final Set<String> SEQUENTIAL_PATTERNS = Set.of("qwerty", "asdf", "zxcv", "123456", "012345", "987654");
 
     private final UserRepository userRepository;
     private final RefreshTokenRepository refreshTokenRepository;
@@ -43,31 +54,32 @@ public class AuthService {
     private final JwtProperties jwtProperties;
     private final DomainAuditService auditService;
     private final Clock jobClock;
+    private final LoginAttemptRateLimiter loginAttemptRateLimiter;
 
     @Transactional
-    public AuthResponse signup(
-        String email,
+    public SignupResponse signup(
+        String username,
         String rawPassword,
         String displayName,
+        String email, String organizationName, String departmentName, String jobTitle,
         String requestId
     ) {
+        String normalizedUsername = normalizeUsername(username);
+        validateUsername(normalizedUsername); validatePassword(rawPassword, normalizedUsername, displayName);
         String normalizedEmail = normalizeEmail(email);
-        validatePassword(rawPassword);
-        if (userRepository.existsByEmailIgnoreCase(normalizedEmail)) {
-            throw new BusinessException(ErrorCode.EMAIL_ALREADY_EXISTS);
-        }
+        if (userRepository.existsByUsername(normalizedUsername)) throw new BusinessException(ErrorCode.USERNAME_ALREADY_EXISTS);
+        if (normalizedEmail != null && userRepository.existsByEmailIgnoreCase(normalizedEmail)) throw new BusinessException(ErrorCode.EMAIL_ALREADY_EXISTS);
 
         User user = User.register(
-            normalizedEmail,
+            normalizedUsername, normalizedEmail,
             passwordEncoder.encode(rawPassword),
-            normalizeDisplayName(displayName)
+            normalizeDisplayName(displayName), organizationName, departmentName, jobTitle
         );
         try {
             userRepository.saveAndFlush(user);
         } catch (DataIntegrityViolationException exception) {
-            throw new BusinessException(ErrorCode.EMAIL_ALREADY_EXISTS);
+            throw new BusinessException(ErrorCode.USERNAME_ALREADY_EXISTS);
         }
-        JwtTokenService.IssuedTokenPair pair = issueAndStore(user);
         auditService.record(
             user.getId(),
             null,
@@ -77,19 +89,29 @@ public class AuthService {
             requestId,
             Map.of("status", user.getStatus().name())
         );
-        return response(user, pair);
+        return SignupResponse.from(UserResponse.from(user));
     }
 
-    @Transactional(noRollbackFor = BusinessException.class)
+    @Transactional(noRollbackFor = {
+        BusinessException.class,
+        LoginCredentialsFailedException.class,
+        LoginRateLimitExceededException.class
+    })
     public AuthResponse login(
-        String email,
+        String username,
         String rawPassword,
+        String ipAddress,
         String requestId
     ) {
-        String normalizedEmail = normalizeEmail(email);
-        User user = userRepository.findByEmailIgnoreCase(normalizedEmail)
+        String normalizedUsername = normalizeUsername(username);
+        LoginAttemptRateLimiter.LoginAttemptStatus attemptStatus =
+            loginAttemptRateLimiter.getStatus(normalizedUsername, ipAddress);
+        if (attemptStatus.limited()) {
+            throw new LoginRateLimitExceededException(attemptStatus);
+        }
+        User user = userRepository.findByUsername(normalizedUsername)
             .orElse(null);
-        boolean passwordShapeValid = isPasswordShapeValid(rawPassword);
+        boolean passwordShapeValid = isLoginPasswordShapeValid(rawPassword);
         String storedHash = user == null
             ? DUMMY_PASSWORD_HASH
             : user.getPasswordHash();
@@ -108,7 +130,10 @@ public class AuthService {
                 requestId,
                 Map.of("safeErrorCode", ErrorCode.INVALID_CREDENTIALS.name())
             );
-            throw new BusinessException(ErrorCode.INVALID_CREDENTIALS);
+            LoginAttemptRateLimiter.LoginAttemptStatus failureStatus =
+                loginAttemptRateLimiter.recordFailure(normalizedUsername, ipAddress);
+            if (failureStatus.limited()) throw new LoginRateLimitExceededException(failureStatus);
+            throw new LoginCredentialsFailedException(failureStatus);
         }
         if (!user.canLogin()) {
             auditService.record(
@@ -122,6 +147,9 @@ public class AuthService {
             );
             throw new BusinessException(ErrorCode.INVALID_CREDENTIALS);
         }
+
+        if (passwordEncoder.upgradeEncoding(user.getPasswordHash())) user.updatePasswordHash(passwordEncoder.encode(rawPassword));
+        loginAttemptRateLimiter.recordSuccess(normalizedUsername, ipAddress);
 
         user.recordSuccessfulLogin(LocalDateTime.now(jobClock));
         JwtTokenService.IssuedTokenPair pair = issueAndStore(user);
@@ -203,6 +231,44 @@ public class AuthService {
         return UserResponse.from(user);
     }
 
+    @Transactional
+    public UserResponse updateProfile(Long currentUserId, UpdateProfileRequest request, String requestId) {
+        User user = activeUser(currentUserId);
+        String normalizedEmail = normalizeEmail(request.email());
+        if (normalizedEmail != null && userRepository.existsByEmailIgnoreCase(normalizedEmail)
+            && !normalizedEmail.equalsIgnoreCase(user.getEmail())) {
+            throw new BusinessException(ErrorCode.EMAIL_ALREADY_EXISTS);
+        }
+        user.updateProfile(
+            normalizeDisplayName(request.displayName()),
+            normalizedEmail,
+            normalizeOptional(request.organizationName()),
+            normalizeOptional(request.departmentName()),
+            normalizeOptional(request.jobTitle())
+        );
+        auditService.record(user.getId(), null, AuditEventType.USER_PROFILE_UPDATED, "USER", user.getId(), requestId, Map.of());
+        return UserResponse.from(user);
+    }
+
+    @Transactional
+    public void changePassword(Long currentUserId, ChangePasswordRequest request, String requestId) {
+        User user = activeUser(currentUserId);
+        if (!passwordEncoder.matches(request.currentPassword(), user.getPasswordHash())) {
+            throw new BusinessException(ErrorCode.INVALID_CREDENTIALS);
+        }
+        validatePassword(request.newPassword(), user.getUsername(), user.getName());
+        user.updatePasswordHash(passwordEncoder.encode(request.newPassword()));
+        LocalDateTime now = LocalDateTime.now(jobClock);
+        refreshTokenRepository.findAllByUserIdAndDeletedAtIsNull(user.getId()).forEach(token -> token.revoke(now));
+        auditService.record(user.getId(), null, AuditEventType.PASSWORD_CHANGED, "USER", user.getId(), requestId, Map.of());
+    }
+
+    private User activeUser(Long userId) {
+        return userRepository.findById(userId)
+            .filter(User::canLogin)
+            .orElseThrow(() -> new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED));
+    }
+
     private JwtTokenService.IssuedTokenPair issueAndStore(User user) {
         JwtTokenService.IssuedTokenPair pair =
             jwtTokenService.issue(user.getId());
@@ -244,26 +310,76 @@ public class AuthService {
     }
 
     private String normalizeEmail(String email) {
-        return email.trim().toLowerCase(Locale.ROOT);
+        return email == null || email.trim().isEmpty() ? null : email.trim().toLowerCase(Locale.ROOT);
     }
+
+    private String normalizeOptional(String value) {
+        return value == null || value.trim().isEmpty() ? null : value.trim();
+    }
+
+    private String normalizeUsername(String username) { return username.trim().toLowerCase(Locale.ROOT); }
+    private void validateUsername(String username) { if (UsernamePolicy.RESERVED.contains(username)) throw new BusinessException(ErrorCode.USERNAME_NOT_ALLOWED); }
 
     private String normalizeDisplayName(String displayName) {
         return Normalizer.normalize(displayName.trim(), Normalizer.Form.NFC);
     }
 
-    private void validatePassword(String password) {
-        if (!isPasswordShapeValid(password)) {
+    private void validatePassword(String password, String username, String displayName) {
+        String folded = password.toLowerCase(Locale.ROOT);
+        String comparablePassword = comparable(password);
+        String comparableUsername = comparable(username);
+        String comparableName = comparable(normalizeDisplayName(displayName));
+        boolean containsUsername = comparableUsername.length() >= 4 && comparablePassword.contains(comparableUsername);
+        boolean containsDisplayName = comparableName.codePointCount(0, comparableName.length()) >= 4 && comparablePassword.contains(comparableName);
+        if (!isPasswordShapeValid(password)
+            || COMMON_PASSWORDS.contains(folded)
+            || COMMON_PASSWORDS.contains(comparablePassword)
+            || containsUsername
+            || containsDisplayName
+            || hasExcessiveRepeatedCharacter(comparablePassword)
+            || hasRepeatedSubstringPattern(comparablePassword)
+            || hasSequentialPattern(comparablePassword)) {
             throw new BusinessException(ErrorCode.PASSWORD_POLICY_VIOLATION);
         }
     }
 
+    // Comparison normalization is only for policy checks. The original password is hashed unchanged.
+    private String comparable(String value) {
+        return Normalizer.normalize(value, Normalizer.Form.NFKC)
+            .toLowerCase(Locale.ROOT)
+            .replaceAll("[\\s._-]", "");
+    }
+
+    private boolean hasExcessiveRepeatedCharacter(String password) {
+        if (password.isEmpty()) return false;
+        int run = 1;
+        for (int index = 1; index < password.length(); index++) {
+            run = password.charAt(index) == password.charAt(index - 1) ? run + 1 : 1;
+            if (run >= 6) return true;
+        }
+        return false;
+    }
+
+    private boolean hasRepeatedSubstringPattern(String password) {
+        for (int size = 2; size <= Math.min(8, password.length() / 3); size++) {
+            if (password.length() % size != 0) continue;
+            String unit = password.substring(0, size);
+            if (unit.repeat(password.length() / size).equals(password)) return true;
+        }
+        return false;
+    }
+
+    private boolean hasSequentialPattern(String password) {
+        return SEQUENTIAL_PATTERNS.stream().anyMatch(pattern ->
+            password.contains(pattern) || password.contains(new StringBuilder(pattern).reverse().toString()));
+    }
+
     private boolean isPasswordShapeValid(String password) {
-        int bytes = password.getBytes(StandardCharsets.UTF_8).length;
-        boolean containsControl = password.codePoints()
-            .anyMatch(Character::isISOControl);
-        return password.length() >= PASSWORD_MIN_CHARACTERS
-            && bytes <= BCRYPT_MAX_BYTES
-            && !containsControl;
+        return password.length() >= PASSWORD_MIN_CHARACTERS && password.length() <= PASSWORD_MAX_CHARACTERS;
+    }
+
+    private boolean isLoginPasswordShapeValid(String password) {
+        return password != null && !password.isEmpty() && password.length() <= 72;
     }
 
     private String hash(String token) {

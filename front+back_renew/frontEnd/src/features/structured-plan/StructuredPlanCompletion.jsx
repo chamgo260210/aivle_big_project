@@ -327,7 +327,7 @@ export function StructuredPlanCompletion({
             <div><dt>확정 사용자</dt><dd>{plan.confirmedBy != null ? `사용자 #${plan.confirmedBy}` : '정보 없음'}</dd></div>
             <div><dt>출처 문서 버전</dt><dd>{plan.versionNumber}</dd></div>
           </dl>
-          <Link className="primary-link" to={`/projects/${projectId}/legal-review`}>
+          <Link className="primary-link" to={`/app/projects/${projectId}/review/legal`}>
             법률·규제 검토 단계로 이동
           </Link>
         </Card>

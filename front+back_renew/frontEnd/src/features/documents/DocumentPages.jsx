@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 
 import {
@@ -8,13 +8,13 @@ import {
 } from '../document/filePolicy.js';
 import { getUserErrorMessage } from '../../shared/api/apiError.js';
 import {
+  AppIcon,
   Alert,
   Badge,
   Button,
   Card,
   EmptyState,
   ErrorState,
-  FileInput,
   LoadingState,
   PageHeader,
   Progress,
@@ -24,15 +24,21 @@ import { useDocuments, useDocumentUpload } from './hooks/useDocuments.js';
 import { useJobRecovery } from './hooks/useJobRecovery.js';
 import { formatDocumentDate } from './model/documentViewModel.js';
 import { StructuredPlanCompletion } from '../structured-plan/StructuredPlanCompletion.jsx';
+import { projectRoutes } from '../projects/routing/projectRoutes.js';
+import { ResourceDownload } from '../projects/BusinessPlanResources.jsx';
+import { BUSINESS_PLAN_RESOURCES } from '../projects/businessPlanResources.js';
 import './documents.css';
 
+/* Replaced by ModernUploadExperience. Kept only temporarily while reviewing the
+   pre-existing implementation; it is intentionally excluded from the bundle. */
+/*
 function UploadForm({ projectId, newVersion = false }) {
   const navigate = useNavigate();
   const [validationError, setValidationError] = useState('');
   const [dragging, setDragging] = useState(false);
   const errorRef = useRef(null);
   const onSuccess = useCallback(() => {
-    navigate(`/projects/${projectId}/structure`);
+    navigate(projectRoutes.structure(projectId));
   }, [navigate, projectId]);
   const { file, setFile, upload, uploading, error } =
     useDocumentUpload(projectId, onSuccess);
@@ -65,7 +71,7 @@ function UploadForm({ projectId, newVersion = false }) {
   };
 
   return (
-    <Card className={`document-upload ${dragging ? 'is-dragging' : ''}`}>
+    <section className={`document-upload ${dragging ? 'is-dragging' : ''}`}>
       <h2>{newVersion ? '새 버전 업로드' : '사업계획서 업로드'}</h2>
       <p>DOCX 형식, 최대 20MB까지 업로드할 수 있습니다.</p>
       <form onSubmit={submit}>
@@ -82,6 +88,7 @@ function UploadForm({ projectId, newVersion = false }) {
             onFiles([...event.dataTransfer.files]);
           }}
         >
+          <span className="document-drop-zone__icon" aria-hidden="true">⇧</span>
           <FileInput
             label="사업계획서 파일"
             description="파일 선택 버튼은 키보드와 화면 읽기 도구에서도 사용할 수 있습니다."
@@ -122,8 +129,73 @@ function UploadForm({ projectId, newVersion = false }) {
           {newVersion ? '새 버전 분석 시작' : '업로드하고 분석 시작'}
         </Button>
       </form>
-    </Card>
+    </section>
   );
+}
+
+*/
+function ModernUploadExperience({ projectId, newVersion = false }) {
+  const navigate = useNavigate();
+  const inputId = `business-plan-file-${projectId}`;
+  const [fileError, setFileError] = useState('');
+  const [dragging, setDragging] = useState(false);
+  const { file, setFile, upload, uploading, error } = useDocumentUpload(projectId, () => navigate(projectRoutes.structure(projectId)));
+
+  const selectFile = (candidate) => {
+    const nextError = validateBusinessPlanFile(candidate);
+    setFileError(nextError);
+    setFile(nextError ? null : candidate);
+  };
+  const receiveFiles = (files) => {
+    if (files.length !== 1) {
+      setFileError('한 번에 DOCX 파일 하나만 선택해 주세요.');
+      setFile(null);
+      return;
+    }
+    selectFile(files[0]);
+  };
+  const submit = async (event) => {
+    event.preventDefault();
+    if (!file) {
+      setFileError('업로드할 DOCX 파일을 선택해 주세요.');
+      return;
+    }
+    await upload();
+  };
+
+  return <section className="document-upload document-upload--modern" aria-labelledby="document-upload-title">
+    <div className="document-upload__heading">
+      <p>Business plan</p>
+      <h2 id="document-upload-title">{newVersion ? '새 버전 업로드' : '사업계획서를 업로드하세요'}</h2>
+      <span>DOCX 파일을 업로드하면 프로젝트의 문서 분석을 시작합니다.</span>
+    </div>
+    <form onSubmit={submit}>
+      <input id={inputId} aria-label="사업계획서 파일" className="document-file-control" type="file" accept={BUSINESS_PLAN_ACCEPT} onChange={(event) => receiveFiles([...event.target.files])} disabled={uploading} />
+      {!file ? <div
+        className="document-drop-zone document-drop-zone--modern"
+        onDragEnter={(event) => { event.preventDefault(); setDragging(true); }}
+        onDragOver={(event) => event.preventDefault()}
+        onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setDragging(false); }}
+        onDrop={(event) => { event.preventDefault(); setDragging(false); receiveFiles([...event.dataTransfer.files]); }}
+        data-dragging={dragging || undefined}
+      >
+        <span className="document-drop-zone__icon"><AppIcon name="upload" size={24} /></span>
+        <strong>사업계획서 DOCX를 놓아주세요</strong>
+        <span>또는 아래 버튼으로 파일을 선택해 주세요.</span>
+        <label className="ui-button ui-button--primary" htmlFor={inputId}><AppIcon name="upload" />파일 선택</label>
+        <small>DOCX · 최대 20MB · 1개</small>
+      </div> : <div className="document-selected-file">
+        <span className="document-selected-file__icon"><AppIcon name="file" size={22} /></span>
+        <div><strong title={file.name}>{file.name}</strong><span>{formatFileSize(file.size)} · 업로드 준비 완료</span></div>
+        <Button type="button" variant="outline" onClick={() => { setFile(null); setFileError(''); }} disabled={uploading}>다시 선택</Button>
+        <Button type="button" variant="ghost" onClick={() => { setFile(null); setFileError(''); }} disabled={uploading}>제거</Button>
+      </div>}
+      {fileError && <p className="document-form-error" role="alert">{fileError}</p>}
+      {error && <Alert title="업로드하지 못했습니다" tone="danger"><p>{getUserErrorMessage(error)}</p></Alert>}
+      {uploading && <Alert title="파일을 업로드하고 있습니다"><p>파일 전송이 끝날 때까지 이 화면을 닫지 말아 주세요.</p></Alert>}
+      <Button type="submit" loading={uploading} disabled={!file || uploading}><AppIcon name="upload" />{newVersion ? '업로드하고 분석 시작' : '업로드하고 분석 시작'}</Button>
+    </form>
+  </section>;
 }
 
 function DocumentList({ projectId, documentState }) {
@@ -161,7 +233,7 @@ function DocumentList({ projectId, documentState }) {
                 <div><dt>최근 업로드</dt><dd>{formatDocumentDate(version.uploadedAt)}</dd></div>
               </dl>
             )}
-            <Link to={`/projects/${projectId}/structure`}>구조화 결과 확인</Link>
+            <Link to={projectRoutes.structure(projectId)}>구조화 결과 확인</Link>
           </Card>
         );
       })}
@@ -178,8 +250,19 @@ export function DocumentUploadPage() {
         title="사업계획서 문서"
         description="DOCX 원본과 분석 버전을 프로젝트 단위로 관리합니다."
       />
-      <UploadForm projectId={projectId} newVersion={documentState.documents.length > 0} />
-      <DocumentList projectId={projectId} documentState={documentState} />
+      <div className="document-upload-layout">
+        <div>
+          <ModernUploadExperience projectId={projectId} newVersion={documentState.documents.length > 0} />
+          <DocumentList projectId={projectId} documentState={documentState} />
+        </div>
+        <aside className="document-resources" aria-labelledby="document-resources-title">
+          <p>Resources</p>
+          <h2 id="document-resources-title">사업계획서가 준비되지 않았나요?</h2>
+          <span>가이드와 완성 예시를 참고해 DOCX 파일을 준비해 주세요.</span>
+          {BUSINESS_PLAN_RESOURCES.map((resource) => <ResourceDownload key={resource.id} resource={resource} />)}
+          <small>업로드 전 개인정보와 민감한 정보가 포함되어 있는지 확인해 주세요.</small>
+        </aside>
+      </div>
     </div>
   );
 }
@@ -319,6 +402,13 @@ export function StructuredPlanPage() {
         />
       )}
       {(status === 'processing' || status === 'terminal') && <JobState job={job} retry={retry} />}
+      {status === 'waiting' && (
+        <Card className="job-state job-state--waiting" aria-live="polite">
+          <div><StatusBadge status="QUEUED" /><h2>분석 준비 상태</h2><p>문서 업로드는 완료되었습니다. 구조화 결과가 준비되면 이 화면에서 확인할 수 있습니다.</p></div>
+          <p>현재는 자동 상태 확인을 멈췄습니다. 잠시 후 직접 새로고침하거나 업로드 문서를 확인해 주세요.</p>
+          <div className="document-actions"><Button variant="outline" onClick={retry}>상태 새로고침</Button><Link className="primary-link" to={projectRoutes.documents(projectId)}>업로드 문서 보기</Link><Link to={projectRoutes.overview(projectId)}>프로젝트 Overview</Link></div>
+        </Card>
+      )}
       {currentPlan && (
         <>
           <PlanResults plan={currentPlan} />
