@@ -13,6 +13,7 @@ import {
 const ACTIVE_INTERVAL = 2000;
 const HIDDEN_INTERVAL = 5000;
 const MAX_BACKOFF = 30000;
+const MAX_AUTOMATIC_POLLS = 8;
 
 function isNotFound(error) {
   return error?.status === 404;
@@ -24,6 +25,7 @@ export function useJobRecovery(projectId) {
   const timer = useRef(null);
   const request = useRef(null);
   const failures = useRef(0);
+  const pollCount = useRef(0);
   const [state, setState] = useState({
     status: 'loading',
     job: null,
@@ -72,6 +74,11 @@ export function useJobRecovery(projectId) {
         error: null,
       }));
       if (ACTIVE_JOB_STATUSES.has(job.status)) {
+        pollCount.current += 1;
+        if (pollCount.current >= MAX_AUTOMATIC_POLLS) {
+          setState((current) => ({ ...current, status: 'waiting', job: view }));
+          return;
+        }
         const delay = document.hidden ? HIDDEN_INTERVAL : ACTIVE_INTERVAL;
         timer.current = setTimeout(() => poll(jobId), delay);
       } else if (RESULT_JOB_STATUSES.has(job.status)) {
@@ -99,6 +106,7 @@ export function useJobRecovery(projectId) {
 
   const recover = useCallback(async () => {
     clearPending();
+    pollCount.current = 0;
     setState({ status: 'loading', job: null, plan: null, error: null });
     request.current = new AbortController();
     try {

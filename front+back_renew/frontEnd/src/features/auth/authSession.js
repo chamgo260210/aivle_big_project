@@ -74,7 +74,6 @@ export function createAuthSession({ authApi, tokenProvider }) {
     },
     async signup(input) {
       const result = await authApi.signup(input);
-      tokenProvider.setTokenPair(result.tokens);
       return result.user;
     },
     refreshAccessToken,

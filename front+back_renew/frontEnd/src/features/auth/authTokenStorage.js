@@ -1,5 +1,7 @@
 const REFRESH_TOKEN_KEY = 'business-validation-refresh-token';
 
+// Same-tab refresh recovery only; the backend does not yet issue an HttpOnly refresh cookie.
+
 function getSessionStorage() {
   return typeof window === 'undefined' ? null : window.sessionStorage;
 }

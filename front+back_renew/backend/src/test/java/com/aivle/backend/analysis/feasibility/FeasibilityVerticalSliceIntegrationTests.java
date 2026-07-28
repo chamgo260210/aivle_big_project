@@ -32,12 +32,12 @@ class FeasibilityVerticalSliceIntegrationTests {
     void fixture() {
         jdbc.sql("""
             insert into users (
-              id, email, password_hash, name, role, status, failed_login_count,
+              id, username, email, password_hash, name, role, status, failed_login_count,
               created_at, updated_at, version
             ) values
-              (100, 'owner@example.com', 'hash', 'owner', 'USER', 'ACTIVE', 0,
+              (100, 'owneruser', 'owner@example.com', 'hash', 'owner', 'USER', 'ACTIVE', 0,
                current_timestamp, current_timestamp, 0),
-              (200, 'other@example.com', 'hash', 'other', 'USER', 'ACTIVE', 0,
+              (200, 'otheruser', 'other@example.com', 'hash', 'other', 'USER', 'ACTIVE', 0,
                current_timestamp, current_timestamp, 0)
             """).update();
         jdbc.sql("""

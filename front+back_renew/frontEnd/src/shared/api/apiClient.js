@@ -12,6 +12,25 @@ async function readResponseBody(response) {
   return text || null;
 }
 
+function retryAfterSeconds(response, payload) {
+  const retryAfter = response.headers.get('retry-after')?.trim();
+  if (retryAfter) {
+    const seconds = Number(retryAfter);
+    if (Number.isFinite(seconds) && seconds >= 0) return Math.ceil(seconds);
+
+    const retryAt = Date.parse(retryAfter);
+    if (Number.isFinite(retryAt)) {
+      return Math.max(0, Math.ceil((retryAt - Date.now()) / 1000));
+    }
+  }
+
+  const bodyValue = payload?.error?.retryAfterSeconds
+    ?? payload?.error?.loginAttempt?.retryAfterSeconds
+    ?? payload?.retryAfterSeconds;
+  const seconds = Number(bodyValue);
+  return Number.isFinite(seconds) && seconds > 0 ? Math.ceil(seconds) : null;
+}
+
 function createRequestSignal(externalSignal, timeoutMs) {
   const controller = new AbortController();
   const abort = () => controller.abort(externalSignal?.reason);
@@ -110,6 +129,8 @@ export function createApiClient({
           fieldErrors: payload?.error?.fieldErrors ?? [],
           retryable: payload?.error?.retryable ?? false,
           requestId: payload?.meta?.requestId ?? response.headers.get('x-request-id'),
+          retryAfterSeconds: retryAfterSeconds(response, payload),
+          loginAttempt: payload?.error?.loginAttempt ?? null,
         });
       }
       return payload;

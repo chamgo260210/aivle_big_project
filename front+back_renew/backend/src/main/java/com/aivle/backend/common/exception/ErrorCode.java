@@ -8,10 +8,13 @@ import org.springframework.http.HttpStatus;
 @RequiredArgsConstructor
 public enum ErrorCode {
     AUTHENTICATION_REQUIRED(HttpStatus.UNAUTHORIZED, "로그인이 필요합니다.", false),
-    INVALID_CREDENTIALS(HttpStatus.UNAUTHORIZED, "이메일 또는 비밀번호가 올바르지 않습니다.", false),
+    INVALID_CREDENTIALS(HttpStatus.UNAUTHORIZED, "아이디 또는 비밀번호를 확인해 주세요.", false),
     ACCESS_TOKEN_INVALID(HttpStatus.UNAUTHORIZED, "인증 토큰이 올바르지 않습니다.", false),
     REFRESH_TOKEN_INVALID(HttpStatus.UNAUTHORIZED, "갱신 토큰이 올바르지 않습니다.", false),
     EMAIL_ALREADY_EXISTS(HttpStatus.CONFLICT, "이미 사용 중인 이메일입니다.", false),
+    USERNAME_ALREADY_EXISTS(HttpStatus.CONFLICT, "이미 사용 중인 아이디입니다.", false),
+    USERNAME_NOT_ALLOWED(HttpStatus.BAD_REQUEST, "사용할 수 없는 아이디입니다. 다른 아이디를 입력해 주세요.", false),
+    LOGIN_RATE_LIMITED(HttpStatus.TOO_MANY_REQUESTS, "로그인 시도가 여러 번 실패했습니다. 잠시 후 다시 시도해 주세요.", false),
     USER_INACTIVE(HttpStatus.UNAUTHORIZED, "현재 로그인할 수 없는 계정입니다.", false),
     PASSWORD_POLICY_VIOLATION(HttpStatus.BAD_REQUEST, "비밀번호 정책을 확인해 주세요.", false),
     MISSING_FIELD_NOT_FOUND(HttpStatus.NOT_FOUND, "보완 항목을 찾을 수 없습니다.", false),

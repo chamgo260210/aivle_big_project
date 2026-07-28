@@ -42,17 +42,18 @@ class PostgreSqlContainerSmokeTests extends PostgreSqlIntegrationTestSupport {
         assertThat(version).contains("PostgreSQL 17.10");
         assertThat(timezone).isEqualTo("UTC");
         assertThat(encoding).isEqualTo("UTF8");
-        assertThat(flyway.info().applied()).hasSize(9);
+        assertThat(flyway.info().applied()).hasSize(10);
     }
 
     @Test
     void persistsKoreanTextEnumAndTimestampOnPostgreSql() {
         jdbcTemplate.update("""
             insert into users (
-                email, password_hash, name, role, status, failed_login_count,
+                username, email, password_hash, name, role, status, failed_login_count,
                 created_at, updated_at, version
             ) values (?, ?, ?, ?, ?, 0, current_timestamp, current_timestamp, 0)
             """,
+            "phase2-smoke",
             "phase2-smoke@example.com",
             "not-a-real-password-hash",
             "한글 사용자",

@@ -8,6 +8,7 @@ import { AUTH_STATUS } from '../features/auth/authSession.js';
 
 const user = {
   id: 1,
+  username: 'ventureuser',
   email: 'user@example.com',
   displayName: '통합 사용자',
 };
@@ -39,7 +40,7 @@ function renderFlow(path, { session, client, initialSnapshot }) {
 }
 
 describe('auth and project integration flow', () => {
-  it('logs in, lists empty projects, creates one and opens its overview', async () => {
+  it('logs in, shows the project hub, and creates a project without automatic analysis', async () => {
     const session = {
       login: vi.fn(async () => user),
       subscribe: vi.fn(),
@@ -56,15 +57,15 @@ describe('auth and project integration flow', () => {
       initialSnapshot: { status: AUTH_STATUS.UNAUTHENTICATED, user: null },
     });
 
-    fireEvent.change(document.getElementById('login-email'), {
-      target: { value: 'user@example.com' },
+    fireEvent.change(document.getElementById('login-username'), {
+      target: { value: 'ventureuser' },
     });
     fireEvent.change(document.getElementById('login-password'), {
       target: { value: 'safe-password' },
     });
     fireEvent.submit(screen.getByRole('button', { name: '로그인' }).closest('form'));
 
-    expect(await screen.findByRole('heading', { name: '아직 프로젝트가 없습니다' }))
+    expect(await screen.findByRole('heading', { name: '첫 사업 검증 프로젝트를 만들어 보세요' }))
       .toBeInTheDocument();
     fireEvent.click(screen.getByRole('link', { name: '프로젝트 만들기' }));
     fireEvent.change(document.getElementById('project-title'), {
@@ -72,9 +73,9 @@ describe('auth and project integration flow', () => {
     });
     fireEvent.submit(screen.getByRole('button', { name: '프로젝트 만들기' }).closest('form'));
 
-    expect(await screen.findByRole('heading', { name: '통합 프로젝트' }))
+    expect(await screen.findByRole('heading', { name: '프로젝트가 생성되었습니다' }))
       .toBeInTheDocument();
-    expect(screen.getAllByText('문서 등록')).toHaveLength(2);
+    expect(screen.getByRole('link', { name: /프로젝트만 열기/ })).toHaveAttribute('href', '/app/projects/21');
     expect(client.post).toHaveBeenCalledWith('/projects', expect.objectContaining({
       title: '통합 프로젝트',
     }));
@@ -88,7 +89,7 @@ describe('auth and project integration flow', () => {
     const client = {
       get: vi.fn(async () => ({ data: project })),
     };
-    renderFlow('/projects/21/overview', {
+    renderFlow('/app/projects/21', {
       session,
       client,
       initialSnapshot: { status: AUTH_STATUS.UNKNOWN, user: null },

@@ -2,6 +2,8 @@ package com.aivle.backend.project.service;
 
 import com.aivle.backend.common.exception.BusinessException;
 import com.aivle.backend.common.exception.ErrorCode;
+import com.aivle.backend.audit.AuditEventType;
+import com.aivle.backend.audit.DomainAuditService;
 import com.aivle.backend.project.dto.request.*;
 import com.aivle.backend.project.dto.response.*;
 import com.aivle.backend.project.entity.Project;
@@ -19,6 +21,7 @@ import java.util.List;
 public class ProjectService {
     private final ProjectRepository projectRepository;
     private final UserRepository userRepository;
+    private final DomainAuditService auditService;
 
     @Transactional
     public ProjectDetailResponse create(Long userId, CreateProjectRequest request) {
@@ -43,6 +46,13 @@ public class ProjectService {
         Project project = ownedProject(userId, projectId);
         project.updateBasicInfo(request.title(), request.description(), request.industryCategory());
         return detail(project);
+    }
+
+    @Transactional
+    public void delete(Long userId, Long projectId, String requestId) {
+        Project project = ownedProject(userId, projectId);
+        project.softDelete();
+        auditService.record(userId, projectId, AuditEventType.PROJECT_DELETED, "PROJECT", projectId, requestId, java.util.Map.of());
     }
 
     private Project ownedProject(Long userId, Long projectId) {

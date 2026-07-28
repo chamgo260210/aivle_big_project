@@ -22,13 +22,17 @@ class Phase3MigrationTests {
     @Autowired JdbcClient jdbcClient;
 
     @Test
-    void freshH2SchemaAppliesV1ThroughV9AndValidatesNewTables() {
+    void freshH2SchemaAppliesV1ThroughV10AndValidatesNewTables() {
         assertThat(jdbcClient.sql("""
             select version from flyway_schema_history
             where success = true and version is not null
             order by installed_rank desc
             limit 1
-            """).query(String.class).single()).isEqualTo("9");
+            """).query(String.class).single()).isEqualTo("10");
+        assertThat(columnExists("users", "username")).isTrue();
+        assertThat(columnExists("users", "organization_name")).isTrue();
+        assertThat(columnExists("users", "department_name")).isTrue();
+        assertThat(columnExists("users", "job_title")).isTrue();
         assertThat(tableExists("refresh_tokens")).isTrue();
         assertThat(tableExists("audit_events")).isTrue();
         assertThat(columnExists(

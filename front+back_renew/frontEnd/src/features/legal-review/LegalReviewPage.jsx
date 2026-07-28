@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useProjectContext } from '../projects/ProjectContext.jsx';
+import { projectRoutes } from '../projects/routing/projectRoutes.js';
 import {
   Alert, Button, Card, Dialog, ErrorState, LoadingState, PageHeader, Progress, StatusBadge,
 } from '../../shared/ui/index.js';
@@ -149,7 +150,7 @@ export default function LegalReviewPage() {
           <StatusBadge status="NEEDS_INPUT" />
           <h2>사업계획 확정이 먼저 필요합니다</h2>
           <p>필수 항목을 모두 보완하고 구조화 계획을 확정한 뒤 다시 방문하세요.</p>
-          <Link className="primary-link" to="../structure">구조화 계획 확인</Link>
+          <Link className="primary-link" to={projectRoutes.structure(projectId)}>구조화 계획 확인</Link>
         </Card>
       )}
       {state.status === 'failed' && (

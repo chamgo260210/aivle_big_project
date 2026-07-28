@@ -6,14 +6,14 @@ import { ApiError } from '../../shared/api/apiError.js';
 import { ApiClientProvider } from '../../shared/api/ApiClientProvider.jsx';
 import { ProjectCreatePage, ProjectListPage } from './ProjectPages.jsx';
 
-function renderProject(element, client, path = '/projects') {
+function renderProject(element, client, path = '/app/projects') {
   return render(
     <MemoryRouter initialEntries={[path]}>
       <ApiClientProvider client={client}>
         <Routes>
-          <Route path="/projects" element={element} />
-          <Route path="/projects/new" element={element} />
-          <Route path="/projects/:id/overview" element={<h1>프로젝트 상세 도착</h1>} />
+          <Route path="/app/projects" element={element} />
+          <Route path="/app/projects/new" element={element} />
+          <Route path="/app/projects/:id/get-started" element={<h1>Start this project</h1>} />
         </Routes>
       </ApiClientProvider>
     </MemoryRouter>,
@@ -45,7 +45,7 @@ describe('project pages', () => {
     });
     expect(await screen.findByRole('link', { name: '실제 프로젝트' })).toBeInTheDocument();
     expect(screen.getByText('작성 중')).toBeInTheDocument();
-    expect(screen.getByText('문서 등록')).toBeInTheDocument();
+    expect(screen.getByText('Plan')).toBeInTheDocument();
   });
 
   it('renders a retryable project load error', async () => {
@@ -59,20 +59,20 @@ describe('project pages', () => {
 
   it('validates project title before create', () => {
     const client = { post: vi.fn() };
-    renderProject(<ProjectCreatePage />, client, '/projects/new');
+    renderProject(<ProjectCreatePage />, client, '/app/projects/new');
     fireEvent.submit(screen.getByRole('button', { name: '프로젝트 만들기' }).closest('form'));
     expect(screen.getByText('프로젝트 이름을 입력해 주세요.')).toBeInTheDocument();
     expect(client.post).not.toHaveBeenCalled();
   });
 
-  it('creates a project and navigates to its URL identity', async () => {
+  it('creates a project and lets the user choose how to start', async () => {
     const client = { post: vi.fn(async () => ({ data: project })) };
-    renderProject(<ProjectCreatePage />, client, '/projects/new');
+    renderProject(<ProjectCreatePage />, client, '/app/projects/new');
     fireEvent.change(document.getElementById('project-title'), {
       target: { value: '실제 프로젝트' },
     });
     fireEvent.submit(screen.getByRole('button', { name: '프로젝트 만들기' }).closest('form'));
-    expect(await screen.findByRole('heading', { name: '프로젝트 상세 도착' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Start this project' })).toBeInTheDocument();
     expect(client.post).toHaveBeenCalledWith('/projects', {
       title: '실제 프로젝트',
       description: null,

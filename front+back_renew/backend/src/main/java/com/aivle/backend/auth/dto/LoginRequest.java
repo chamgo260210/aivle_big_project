@@ -1,19 +1,15 @@
 package com.aivle.backend.auth.dto;
 
-import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Size;
+import jakarta.validation.constraints.Pattern;
+
+import java.util.Locale;
 
 public record LoginRequest(
     @NotBlank
-    @Email
-    @Size(max = 254)
-    String email,
-
-    @NotBlank
-    String password
+    @Pattern(regexp = UsernamePolicy.FORMAT)
+    String username,
+    @NotBlank String password
 ) {
-    public LoginRequest {
-        email = email == null ? null : email.trim();
-    }
+    public LoginRequest { username = username == null ? null : username.trim().toLowerCase(Locale.ROOT); }
 }
