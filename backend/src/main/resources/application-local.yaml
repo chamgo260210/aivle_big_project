@@ -7,3 +7,7 @@ spring:
   h2:
     console:
       enabled: true
+
+app:
+  ai-server:
+    base-url: ${AI_SERVER_BASE_URL:http://127.0.0.1:8000}
