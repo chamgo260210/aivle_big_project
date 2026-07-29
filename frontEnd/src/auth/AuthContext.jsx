@@ -26,28 +26,8 @@ export const USER_ROLE = Object.freeze({
   ADMIN: 'ADMIN',
 });
 
-/* =========================================================
-   기본 데모 계정
-
-   백엔드 연동 전 화면 테스트용이다.
-========================================================= */
-
-const DEFAULT_USERS = [
-  {
-    id: 1,
-    name: '일반 사용자',
-    email: 'user@test.com',
-    password: 'user1234',
-    role: USER_ROLE.USER,
-  },
-  {
-    id: 2,
-    name: '관리자',
-    email: 'admin@test.com',
-    password: 'admin1234',
-    role: USER_ROLE.ADMIN,
-  },
-];
+// Admin 시각 참고 화면만 남아 있어 기본 계정은 제공하지 않는다.
+const DEFAULT_USERS = [];
 
 const AuthContext = createContext(null);
 

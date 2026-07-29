@@ -1,22 +1,18 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import {
-  BrowserRouter,
-} from 'react-router-dom';
+import { BrowserRouter } from 'react-router-dom';
 
-import App from './App.jsx';
-import {
-  AuthProvider,
-} from './auth/AuthContext.jsx';
+import App from './app/App.jsx';
+import AppProviders from './app/providers/AppProviders.jsx';
+import './shared/styles/global.css';
+import './app/transitions/auth-transition.css';
 
-ReactDOM.createRoot(
-  document.getElementById('root'),
-).render(
+ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <BrowserRouter>
-      <AuthProvider>
+      <AppProviders>
         <App />
-      </AuthProvider>
+      </AppProviders>
     </BrowserRouter>
   </React.StrictMode>,
 );
