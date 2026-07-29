@@ -21,18 +21,6 @@ import {
    실제 백엔드 연동 시 제거한다.
 ========================================================= */
 
-const DEMO_ACCOUNT = {
-  USER: {
-    email: 'user@test.com',
-    password: 'user1234',
-  },
-
-  ADMIN: {
-    email: 'admin@test.com',
-    password: 'admin1234',
-  },
-};
-
 /* =========================================================
    로그인 페이지
 ========================================================= */
@@ -117,17 +105,6 @@ function Login() {
   /* =======================================================
      데모 계정 자동 입력
   ======================================================= */
-
-  const handleFillDemoAccount = (
-    accountType,
-  ) => {
-    const account =
-      DEMO_ACCOUNT[accountType];
-
-    setEmail(account.email);
-    setPassword(account.password);
-    setErrorMessage('');
-  };
 
   /* =======================================================
      로그인 제출
@@ -301,48 +278,6 @@ function Login() {
             ? '로그인 중...'
             : '로그인'}
         </button>
-
-        <div className="login-demo-section">
-          <p>데모 계정</p>
-
-          <div className="login-demo-buttons">
-            <button
-              type="button"
-              onClick={() =>
-                handleFillDemoAccount(
-                  'USER',
-                )
-              }
-              disabled={isSubmitting}
-            >
-              일반 사용자 계정 입력
-            </button>
-
-            <button
-              type="button"
-              onClick={() =>
-                handleFillDemoAccount(
-                  'ADMIN',
-                )
-              }
-              disabled={isSubmitting}
-            >
-              관리자 계정 입력
-            </button>
-          </div>
-
-          <div className="login-demo-info">
-            <span>
-              일반 사용자:
-              user@test.com / user1234
-            </span>
-
-            <span>
-              관리자:
-              admin@test.com / admin1234
-            </span>
-          </div>
-        </div>
 
         <p className="mt-5 mb-3 text-muted">
           © KT AIVLE Persona Platform

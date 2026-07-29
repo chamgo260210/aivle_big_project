@@ -1,5 +1,0 @@
-.env
-.env.*
-!.env.demo.example
-.demo*
-.github
