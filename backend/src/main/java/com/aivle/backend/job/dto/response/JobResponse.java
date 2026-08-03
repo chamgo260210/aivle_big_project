@@ -17,6 +17,11 @@ public record JobResponse(
     Boolean retryable,
     Long sourceDocumentVersionId,
     LocalDateTime startedAt,
-    LocalDateTime completedAt
+    LocalDateTime completedAt,
+    String errorCode,
+    String externalRequestId,
+    String resultReferenceType,
+    Long resultReferenceId,
+    Long rerunOfJobId
 ) {
 }

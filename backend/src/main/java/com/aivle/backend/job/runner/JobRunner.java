@@ -81,6 +81,24 @@ public class JobRunner {
             task.get(properties.executionTimeout().toMillis(), TimeUnit.MILLISECONDS);
         } catch (TimeoutException exception) {
             task.cancel(true);
+            if (
+                claim.jobType()
+                == com.aivle.backend.common.entity.JobType.SYSTEM_SMOKE_TEST
+                || claim.jobType()
+                == com.aivle.backend.common.entity.JobType.SYSTEM_ARTIFACT_SMOKE_TEST
+                || claim.jobType()
+                == com.aivle.backend.common.entity.JobType.MARKETING_GENERATION
+            ) {
+                failureService.handle(
+                    claim,
+                    JobProcessingException.nonRetryable(
+                        "AI_TASK_TIMEOUT",
+                        "AI 작업 시간이 초과되었습니다.",
+                        exception
+                    )
+                );
+                return;
+            }
             failureService.handle(
                 claim,
                 JobProcessingException.retryable(
@@ -92,6 +110,24 @@ public class JobRunner {
             );
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
+            if (
+                claim.jobType()
+                == com.aivle.backend.common.entity.JobType.SYSTEM_SMOKE_TEST
+                || claim.jobType()
+                == com.aivle.backend.common.entity.JobType.SYSTEM_ARTIFACT_SMOKE_TEST
+                || claim.jobType()
+                == com.aivle.backend.common.entity.JobType.MARKETING_GENERATION
+            ) {
+                failureService.handle(
+                    claim,
+                    JobProcessingException.nonRetryable(
+                        "AI_TASK_INTERRUPTED",
+                        "AI 작업이 중단되었습니다.",
+                        exception
+                    )
+                );
+                return;
+            }
             failureService.handle(
                 claim,
                 JobProcessingException.retryable(
@@ -112,6 +148,20 @@ public class JobRunner {
         }
         log.error("Unexpected analysis job failure, jobId={}, jobType={}, attempt={}",
             claim.jobId(), claim.jobType(), claim.attempt(), failure);
+        if (
+            claim.jobType()
+            == com.aivle.backend.common.entity.JobType.SYSTEM_SMOKE_TEST
+            || claim.jobType()
+            == com.aivle.backend.common.entity.JobType.SYSTEM_ARTIFACT_SMOKE_TEST
+            || claim.jobType()
+            == com.aivle.backend.common.entity.JobType.MARKETING_GENERATION
+        ) {
+            return JobProcessingException.nonRetryable(
+                "AI_TASK_EXECUTION_FAILED",
+                "AI 작업 중 내부 오류가 발생했습니다.",
+                failure
+            );
+        }
         return JobProcessingException.nonRetryable(
             "DOCUMENT_PROCESSING_FAILED",
             "문서 처리 중 내부 오류가 발생했습니다.",

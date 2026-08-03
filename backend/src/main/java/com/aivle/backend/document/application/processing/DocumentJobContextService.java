@@ -41,7 +41,9 @@ public class DocumentJobContextService {
         return new DocumentJobContext(
             job.getId(),
             job.getProject().getId(),
+            version.getDocument().getId(),
             version.getId(),
+            file.getStorageType(),
             file.getStorageKey(),
             file.getOriginalFilename(),
             file.getMimeType(),

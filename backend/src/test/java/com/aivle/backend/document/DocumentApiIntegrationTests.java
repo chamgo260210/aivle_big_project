@@ -21,6 +21,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -53,6 +54,10 @@ class DocumentApiIntegrationTests {
     @DynamicPropertySource
     static void storageProperties(DynamicPropertyRegistry registry) {
         registry.add("app.file-storage.root", () -> STORAGE_ROOT.toString());
+        registry.add(
+            "app.object-storage.local-root",
+            () -> STORAGE_ROOT.toString()
+        );
     }
 
     @AfterAll
@@ -82,6 +87,36 @@ class DocumentApiIntegrationTests {
             .andExpect(jsonPath("$.data.jobId").isNumber())
             .andExpect(jsonPath("$.data.status").value("QUEUED"))
             .andExpect(jsonPath("$.data.storedFileId").doesNotExist());
+    }
+
+    @Test
+    @Transactional
+    void uploadStoresSourceThroughObjectStorageWithOpaqueKey() {
+        Fixture fixture = fixture();
+
+        DocumentUploadResult uploaded = commandService.upload(
+            command(fixture, DOCX_A, "object-source")
+        );
+        var version = documentVersionRepository.findById(
+            uploaded.versionId()
+        ).orElseThrow();
+        var stored = version.getStoredFile();
+
+        assertThat(stored.getStorageKey())
+            .startsWith(
+                "projects/" + fixture.project().getId()
+                    + "/documents/" + uploaded.documentId()
+                    + "/versions/" + uploaded.versionId()
+                    + "/source/"
+            )
+            .endsWith(".docx")
+            .doesNotContain("plan.docx");
+        assertThat(stored.getSizeBytes()).isEqualTo(DOCX_A.length);
+        assertThat(stored.getChecksumSha256())
+            .matches("[0-9a-f]{64}");
+        assertThat(Files.isRegularFile(
+            STORAGE_ROOT.resolve(stored.getStorageKey())
+        )).isTrue();
     }
 
     @Test
@@ -128,6 +163,11 @@ class DocumentApiIntegrationTests {
             .andExpect(jsonPath("$.data.versionId").value(uploaded.versionId()))
             .andExpect(jsonPath("$.data.originalFileName").value("plan.docx"))
             .andExpect(jsonPath("$.data.sizeBytes").value(DOCX_A.length))
+            .andExpect(jsonPath("$.data.parserArtifactStatus").value("QUEUED"))
+            .andExpect(jsonPath("$.data.parserVersion").isEmpty())
+            .andExpect(jsonPath("$.data.parserArtifactSchemaVersion").isEmpty())
+            .andExpect(jsonPath("$.data.parserBlockCount").isEmpty())
+            .andExpect(jsonPath("$.data.parsedAt").isEmpty())
             .andExpect(jsonPath("$.data.storageKey").doesNotExist())
             .andExpect(jsonPath("$.data.checksum").doesNotExist());
     }

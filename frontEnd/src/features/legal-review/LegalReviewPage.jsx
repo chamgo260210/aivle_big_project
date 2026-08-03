@@ -6,12 +6,14 @@ import {
   Alert, Button, Card, Dialog, ErrorState, LoadingState, PageHeader, Progress, StatusBadge,
 } from '../../shared/ui/index.js';
 import { useLegalReview } from './hooks/useLegalReview.js';
+import { useServicePolicy } from '../service-policy/useServicePolicy.js';
+import { getWriteRestriction } from '../service-policy/servicePolicyRestrictions.js';
 import {
   APPLICABILITY_LABELS, LEGAL_CATEGORY_LABELS, parseStringList, RISK_LABELS,
 } from './model/legalReviewViewModel.js';
 import './legal-review.css';
 
-function ReadyState({ plan, onStart }) {
+function ReadyState({ plan, onStart, restriction, onRefreshPolicy }) {
   const [confirming, setConfirming] = useState(false);
   return (
     <>
@@ -29,7 +31,13 @@ function ReadyState({ plan, onStart }) {
         <Alert title="민감정보 입력 주의" tone="warning">
           주민등록번호, 계좌번호, 영업비밀 등 불필요한 민감정보가 계획에 포함되지 않았는지 확인하세요.
         </Alert>
-        <Button onClick={() => setConfirming(true)}>법률·규제 사전검토 시작</Button>
+        {restriction.blocked && (
+          <Alert tone={restriction.code === 'POLICY_UNAVAILABLE' ? 'danger' : 'warning'} title="새 분석을 시작할 수 없습니다">
+            {restriction.message}
+            {restriction.code === 'POLICY_UNAVAILABLE' && <Button type="button" variant="outline" size="small" onClick={onRefreshPolicy}>다시 시도</Button>}
+          </Alert>
+        )}
+        <Button disabled={restriction.blocked} onClick={() => setConfirming(true)}>법률·규제 사전검토 시작</Button>
       </Card>
       <Dialog open={confirming} onClose={() => setConfirming(false)} title="사전검토를 시작할까요?">
         <p>
@@ -38,7 +46,7 @@ function ReadyState({ plan, onStart }) {
         </p>
         <div className="legal-dialog-actions">
           <Button variant="outline" onClick={() => setConfirming(false)}>취소</Button>
-          <Button onClick={() => { setConfirming(false); onStart(); }}>확인하고 시작</Button>
+          <Button disabled={restriction.blocked} onClick={() => { setConfirming(false); onStart(); }}>확인하고 시작</Button>
         </div>
       </Dialog>
     </>
@@ -128,6 +136,8 @@ export default function LegalReviewPage() {
   const { projectId } = useParams();
   const { project } = useProjectContext();
   const state = useLegalReview(projectId);
+  const servicePolicy = useServicePolicy();
+  const restriction = getWriteRestriction({ ...servicePolicy, documentProcessing: true });
 
   return (
     <>
@@ -138,7 +148,12 @@ export default function LegalReviewPage() {
       />
       {state.status === 'loading' && <LoadingState label="최신 사전검토 상태를 확인하고 있습니다" />}
       {state.status === 'ready' && project.stage === 'LEGAL_REVIEW' && (
-        <ReadyState plan={state.plan} onStart={state.start} />
+        <ReadyState
+          plan={state.plan}
+          onStart={state.start}
+          restriction={restriction}
+          onRefreshPolicy={() => void servicePolicy.refresh().catch(() => undefined)}
+        />
       )}
       {state.status === 'ready' && project.stage !== 'LEGAL_REVIEW' && (
         <Card><h2>현재 단계에서는 시작할 수 없습니다</h2><p>프로젝트 단계가 법률 검토에 도달하면 시작할 수 있습니다.</p></Card>

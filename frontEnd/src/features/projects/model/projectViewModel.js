@@ -6,16 +6,11 @@ import {
 } from './projectWorkflowModel.js';
 
 const STAGE_LABEL = {
-  DOCUMENT: '사업계획 입력',
-  STRUCTURING: '정보 구조화',
-  LEGAL_REVIEW: '법률·규제 검토',
-  FEASIBILITY: '사업 타당성 분석',
-  FINANCIAL: '재무·수익성 분석',
-  PERSONA_CONFIGURATION: 'AI 패널 검증',
-  PANEL_SURVEY: 'AI 패널 조사',
-  PANEL_DISCUSSION: 'AI 패널 토론',
-  REPORT: '통합 보고서',
-  COMPLETED: '통합 보고서',
+  DOCUMENT: '아이디어', STRUCTURING: '아이디어', LEGAL_REVIEW: '법률 검토',
+  FEASIBILITY: '콘셉트 생성', FINANCIAL: '콘셉트 분석',
+  PERSONA_CONFIGURATION: '콘셉트 선택', PANEL_SURVEY: '페르소나',
+  PANEL_DISCUSSION: '인터뷰', MARKETING: '마케팅', REPORT: '최종 보고서',
+  COMPLETED: '최종 보고서',
 };
 
 export function toProjectViewModel(project) {

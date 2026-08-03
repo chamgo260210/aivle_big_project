@@ -30,9 +30,9 @@ describe('ProjectDashboard', () => {
     expect(screen.getByText(/2026/)).toBeInTheDocument();
   });
 
-  it('shows four analysis status cards', () => {
+  it('shows five analysis status cards including financial analysis', () => {
     renderDashboard();
-    expect(screen.getAllByText('상세 결과 보기')).toHaveLength(4);
+    expect(screen.getAllByText('상세 결과 보기')).toHaveLength(5);
   });
 
   it('links to the canonical report route', () => {

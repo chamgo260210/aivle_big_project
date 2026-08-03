@@ -27,6 +27,8 @@ import { StructuredPlanCompletion } from '../structured-plan/StructuredPlanCompl
 import { projectRoutes } from '../projects/routing/projectRoutes.js';
 import { ResourceDownload } from '../projects/BusinessPlanResources.jsx';
 import { BUSINESS_PLAN_RESOURCES } from '../projects/businessPlanResources.js';
+import { useServicePolicy } from '../service-policy/useServicePolicy.js';
+import { getWriteRestriction } from '../service-policy/servicePolicyRestrictions.js';
 import './documents.css';
 
 /* Replaced by ModernUploadExperience. Kept only temporarily while reviewing the
@@ -136,17 +138,24 @@ function UploadForm({ projectId, newVersion = false }) {
 */
 function ModernUploadExperience({ projectId, newVersion = false }) {
   const navigate = useNavigate();
+  const servicePolicy = useServicePolicy();
+  const restriction = getWriteRestriction({
+    ...servicePolicy,
+    documentProcessing: true,
+  });
   const inputId = `business-plan-file-${projectId}`;
   const [fileError, setFileError] = useState('');
   const [dragging, setDragging] = useState(false);
   const { file, setFile, upload, uploading, error } = useDocumentUpload(projectId, () => navigate(projectRoutes.structure(projectId)));
 
   const selectFile = (candidate) => {
+    if (restriction.blocked) return;
     const nextError = validateBusinessPlanFile(candidate);
     setFileError(nextError);
     setFile(nextError ? null : candidate);
   };
   const receiveFiles = (files) => {
+    if (restriction.blocked) return;
     if (files.length !== 1) {
       setFileError('한 번에 DOCX 파일 하나만 선택해 주세요.');
       setFile(null);
@@ -156,6 +165,7 @@ function ModernUploadExperience({ projectId, newVersion = false }) {
   };
   const submit = async (event) => {
     event.preventDefault();
+    if (restriction.blocked) return;
     if (!file) {
       setFileError('업로드할 DOCX 파일을 선택해 주세요.');
       return;
@@ -170,19 +180,37 @@ function ModernUploadExperience({ projectId, newVersion = false }) {
       <span>DOCX 파일을 업로드하면 프로젝트의 문서 분석을 시작합니다.</span>
     </div>
     <form onSubmit={submit}>
-      <input id={inputId} aria-label="사업계획서 파일" className="document-file-control" type="file" accept={BUSINESS_PLAN_ACCEPT} onChange={(event) => receiveFiles([...event.target.files])} disabled={uploading} />
+      {restriction.blocked && (
+        <Alert
+          tone={restriction.code === 'POLICY_UNAVAILABLE' ? 'danger' : 'warning'}
+          title="새 문서 작업을 시작할 수 없습니다"
+        >
+          <p>{restriction.message}</p>
+          {restriction.code === 'POLICY_UNAVAILABLE' && (
+            <Button type="button" variant="outline" size="small" onClick={() => void servicePolicy.refresh().catch(() => undefined)}>
+              다시 시도
+            </Button>
+          )}
+        </Alert>
+      )}
+      <input id={inputId} aria-label="사업계획서 파일" className="document-file-control" type="file" accept={BUSINESS_PLAN_ACCEPT} onChange={(event) => receiveFiles([...event.target.files])} disabled={uploading || restriction.blocked} />
       {!file ? <div
         className="document-drop-zone document-drop-zone--modern"
-        onDragEnter={(event) => { event.preventDefault(); setDragging(true); }}
+        aria-disabled={restriction.blocked}
+        onDragEnter={(event) => { event.preventDefault(); if (!restriction.blocked) setDragging(true); }}
         onDragOver={(event) => event.preventDefault()}
         onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setDragging(false); }}
-        onDrop={(event) => { event.preventDefault(); setDragging(false); receiveFiles([...event.dataTransfer.files]); }}
+        onDrop={(event) => {
+          event.preventDefault();
+          setDragging(false);
+          if (!restriction.blocked) receiveFiles([...event.dataTransfer.files]);
+        }}
         data-dragging={dragging || undefined}
       >
         <span className="document-drop-zone__icon"><AppIcon name="upload" size={24} /></span>
         <strong>사업계획서 DOCX를 놓아주세요</strong>
         <span>또는 아래 버튼으로 파일을 선택해 주세요.</span>
-        <label className="ui-button ui-button--primary" htmlFor={inputId}><AppIcon name="upload" />파일 선택</label>
+        <label className={`ui-button ui-button--primary ${restriction.blocked ? 'is-disabled' : ''}`} aria-disabled={restriction.blocked} htmlFor={restriction.blocked ? undefined : inputId}><AppIcon name="upload" />파일 선택</label>
         <small>DOCX · 최대 20MB · 1개</small>
       </div> : <div className="document-selected-file">
         <span className="document-selected-file__icon"><AppIcon name="file" size={22} /></span>
@@ -193,7 +221,7 @@ function ModernUploadExperience({ projectId, newVersion = false }) {
       {fileError && <p className="document-form-error" role="alert">{fileError}</p>}
       {error && <Alert title="업로드하지 못했습니다" tone="danger"><p>{getUserErrorMessage(error)}</p></Alert>}
       {uploading && <Alert title="파일을 업로드하고 있습니다"><p>파일 전송이 끝날 때까지 이 화면을 닫지 말아 주세요.</p></Alert>}
-      <Button type="submit" loading={uploading} disabled={!file || uploading}><AppIcon name="upload" />{newVersion ? '업로드하고 분석 시작' : '업로드하고 분석 시작'}</Button>
+      <Button type="submit" loading={uploading} disabled={!file || uploading || restriction.blocked}><AppIcon name="upload" />{newVersion ? '업로드하고 분석 시작' : '업로드하고 분석 시작'}</Button>
     </form>
   </section>;
 }

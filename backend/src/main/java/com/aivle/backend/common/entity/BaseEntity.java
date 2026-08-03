@@ -34,9 +34,11 @@ public abstract class BaseEntity {
     private Long version;
 
     public void softDelete() {
-        if (deletedAt == null) {
-            deletedAt = LocalDateTime.now();
-        }
+        softDelete(LocalDateTime.now());
+    }
+
+    public void softDelete(LocalDateTime now) {
+        if (deletedAt == null) deletedAt = now;
     }
 
     public boolean isDeleted() {

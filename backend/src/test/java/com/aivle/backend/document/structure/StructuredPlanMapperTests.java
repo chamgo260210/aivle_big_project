@@ -281,6 +281,7 @@ class StructuredPlanMapperTests {
                         "body/paragraph[1]",
                         null,
                         null,
+                        null,
                         null
                 )),
                 List.of()

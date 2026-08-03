@@ -1,5 +1,6 @@
 package com.aivle.backend.analysis.legal.application;
 
+import com.aivle.backend.admin.ServicePolicyService;
 import com.aivle.backend.analysis.legal.dto.LegalReviewStartResponse;
 import com.aivle.backend.analysis.legal.repository.LegalReviewRepository;
 import com.aivle.backend.common.entity.*;
@@ -31,9 +32,12 @@ public class LegalReviewCommandService {
     private final LegalReviewRepository reviewRepository;
     private final ApplicationEventPublisher events;
     private final DomainAuditService audit;
+    private final ServicePolicyService servicePolicy;
 
     @Transactional
     public LegalReviewStartResponse start(Long userId, Long projectId) {
+        servicePolicy.requireWriteAvailableForUser(userId);
+        servicePolicy.requireDocumentProcessingEnabled();
         var project = projectRepository.findByIdAndOwnerIdAndDeletedAtIsNull(projectId, userId)
             .orElseThrow(() -> new BusinessException(ErrorCode.PROJECT_NOT_FOUND));
         var plan = planRepository

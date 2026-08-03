@@ -241,6 +241,6 @@ describe('structured plan completion', () => {
     expect(await screen.findByText('구조화된 사업계획이 확정되었습니다')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '내용 입력' })).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: '법률·규제 검토 단계로 이동' }))
-      .toHaveAttribute('href', '/app/projects/1/review/legal');
+      .toHaveAttribute('href', '/app/projects/1/legal');
   });
 });

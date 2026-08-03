@@ -1,5 +1,6 @@
 package com.aivle.backend.analysis.feasibility.application;
 
+import com.aivle.backend.admin.ServicePolicyService;
 import com.aivle.backend.analysis.feasibility.*;
 import com.aivle.backend.analysis.feasibility.dto.FeasibilityStartResponse;
 import com.aivle.backend.analysis.feasibility.repository.FeasibilityAssessmentRepository;
@@ -29,9 +30,12 @@ public class FeasibilityCommandService {
     private final FeasibilityAssessmentRepository assessments;
     private final ApplicationEventPublisher events;
     private final DomainAuditService audit;
+    private final ServicePolicyService servicePolicy;
 
     @Transactional
     public FeasibilityStartResponse start(Long userId, Long projectId) {
+        servicePolicy.requireWriteAvailableForUser(userId);
+        servicePolicy.requireDocumentProcessingEnabled();
         var project = projects.findByIdAndOwnerIdAndDeletedAtIsNull(projectId, userId)
             .orElseThrow(() -> new BusinessException(ErrorCode.PROJECT_NOT_FOUND));
         var plan = plans

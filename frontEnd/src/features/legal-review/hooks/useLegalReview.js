@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useApiClient } from '../../../shared/api/ApiClientProvider.jsx';
 import { createLegalReviewApi } from '../api/legalReviewApi.js';
+import { useServicePolicy } from '../../service-policy/useServicePolicy.js';
+import { isServicePolicyError } from '../../service-policy/servicePolicyRestrictions.js';
 
 const ACTIVE = new Set(['QUEUED', 'RUNNING']);
 const SUCCESS = new Set(['SUCCEEDED', 'PARTIAL']);
@@ -8,6 +10,7 @@ const POLL_MS = 2000;
 
 export function useLegalReview(projectId) {
   const client = useApiClient();
+  const { refresh: refreshPolicy } = useServicePolicy();
   const mounted = useRef(false);
   const timer = useRef(null);
   const aborter = useRef(null);
@@ -117,9 +120,12 @@ export function useLegalReview(projectId) {
       }));
       timer.current = setTimeout(() => poll(accepted.jobId), 0);
     } catch (error) {
+      if (isServicePolicyError(error)) {
+        void refreshPolicy().catch(() => undefined);
+      }
       if (mounted.current) setState((current) => ({ ...current, status: 'error', error }));
     }
-  }, [clear, client, poll, projectId]);
+  }, [clear, client, poll, projectId, refreshPolicy]);
 
   useEffect(() => {
     mounted.current = true;

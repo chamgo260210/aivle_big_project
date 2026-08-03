@@ -151,6 +151,12 @@ export function fullResources() {
     feasibilityJob: missing(),
     personaRecommendation: available(structuredClone(personaRecommendation)),
     personaJob: missing(),
+    financialAnalyses: available([{ id: 1, title: '재무 분석', status: 'COMPLETED', summaryJson: '{"headline":"완료"}' }]),
+    financialAnalysis: available({
+      summary: { id: 1, title: '재무 분석', status: 'COMPLETED' },
+      summaryJson: '{"headline":"완료","sensitiveAssumptions":["판매량"],"keyRisks":["비용"]}',
+      resultJson: '{"scenarios":[{"code":"BASE","totalRevenue":1200000,"totalOperatingProfit":400000,"breakEvenMonth":4,"paybackMonth":6,"requiredWorkingCapital":300000}]}',
+    }),
   };
 }
 
@@ -164,6 +170,8 @@ export function emptyResources() {
     feasibilityJob: missing(),
     personaRecommendation: missing(),
     personaJob: missing(),
+    financialAnalyses: missing(),
+    financialAnalysis: missing(),
   };
 }
 

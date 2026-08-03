@@ -10,11 +10,15 @@ import { useProjectContext } from './ProjectContext.jsx';
 import { appRoutes, projectRoutes } from './routing/projectRoutes.js';
 import { getProjectNameError } from './projectNameError.js';
 import ProjectDeleteDialog from './components/ProjectDeleteDialog.jsx';
+import { useServicePolicy } from '../service-policy/useServicePolicy.js';
+import { getWriteRestriction, isServicePolicyError } from '../service-policy/servicePolicyRestrictions.js';
 import './projects.css';
 
 const EXIT_FALLBACK_MS = 360;
 
 export function ProjectActionMenu({ project, onDelete, onOpenChange }) {
+  const servicePolicy = useServicePolicy();
+  const restriction = getWriteRestriction(servicePolicy);
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState(null);
   const triggerRef = useRef(null);
@@ -70,7 +74,7 @@ export function ProjectActionMenu({ project, onDelete, onOpenChange }) {
     <div id={menuId} className="project-action-menu__panel" role="menu" style={{ top: position.top, left: Math.max(8, position.left) }}>
       <button type="button" role="menuitem" onClick={() => go(projectRoutes.overview(project.projectId))}>프로젝트 열기</button>
       <button type="button" role="menuitem" onClick={() => go(projectRoutes.settings(project.projectId))}><AppIcon name="settings" />프로젝트 설정</button>
-      {onDelete && <button type="button" role="menuitem" className="is-danger" onClick={() => { onDelete(); close(); }}><AppIcon name="trash" />프로젝트 삭제</button>}
+      {onDelete && <button type="button" role="menuitem" className="is-danger" disabled={restriction.blocked} title={restriction.blocked ? restriction.message : undefined} onClick={() => { onDelete(); close(); }}><AppIcon name="trash" />프로젝트 삭제</button>}
     </div>,
     document.body,
   );
@@ -79,6 +83,8 @@ export function ProjectActionMenu({ project, onDelete, onOpenChange }) {
 
 function ProjectSettingsContent({ project, retry, onFinalClose }) {
   const client = useApiClient();
+  const servicePolicy = useServicePolicy();
+  const restriction = getWriteRestriction(servicePolicy);
   const navigate = useNavigate();
   const [values, setValues] = useState(() => ({ title: project.name, industryCategory: project.industryCategory || '', description: project.description || '' }));
   const [saving, setSaving] = useState(false);
@@ -104,7 +110,7 @@ function ProjectSettingsContent({ project, retry, onFinalClose }) {
   const update = (field) => (event) => { setValues((current) => ({ ...current, [field]: event.target.value })); setFieldErrors((current) => ({ ...current, [field]: undefined })); };
   const save = async (event) => {
     event.preventDefault();
-    if (saving || !values.title.trim()) return;
+    if (saving || restriction.blocked || !values.title.trim()) return;
     setSaving(true); setError(''); setMessage(''); setFieldErrors({});
     try {
       await createProjectApi(client).update(project.projectId, {
@@ -115,6 +121,9 @@ function ProjectSettingsContent({ project, retry, onFinalClose }) {
       await retry();
       setMessage('변경사항을 저장했습니다.');
     } catch (nextError) {
+      if (isServicePolicyError(nextError)) {
+        void servicePolicy.refresh().catch(() => undefined);
+      }
       const titleError = getProjectNameError(nextError);
       if (titleError) {
         setFieldErrors({ title: titleError });
@@ -129,16 +138,17 @@ function ProjectSettingsContent({ project, retry, onFinalClose }) {
 
   const requestDelete = () => setConfirmingDelete(true);
 
-  return <><SideSheet open title="프로젝트 설정" label="프로젝트 설정" phase={closing ? 'exiting' : 'entered'} onExited={finishClose} onClose={requestClose} footer={<><Button variant="outline" size="small" disabled={saving || closing} onClick={requestClose}>취소</Button><Button type="submit" size="small" form="project-settings-form" loading={saving} disabled={saving || closing}>변경사항 저장</Button></>}>
+  return <><SideSheet open title="프로젝트 설정" label="프로젝트 설정" phase={closing ? 'exiting' : 'entered'} onExited={finishClose} onClose={requestClose} footer={<><Button variant="outline" size="small" disabled={saving || closing} onClick={requestClose}>취소</Button><Button type="submit" size="small" form="project-settings-form" loading={saving} disabled={saving || closing || restriction.blocked}>변경사항 저장</Button></>}>
     <div className="project-sheet__heading"><span><AppIcon name="settings" size={20} /></span><div><h2>프로젝트 설정</h2><p>프로젝트 기본 정보와 삭제를 관리합니다.</p></div></div>
     <form id="project-settings-form" className="project-sheet__form" onSubmit={save}>
       {error && <Alert tone="danger" title="저장하지 못했습니다.">{error}</Alert>}
       {message && <Alert tone="success" title="저장됨">{message}</Alert>}
-      <TextInput ref={titleInputRef} id="project-settings-title" label="프로젝트 이름" value={values.title} error={fieldErrors.title} maxLength="150" required onChange={update('title')} />
-      <TextInput id="project-settings-industry" label="사업 분야" value={values.industryCategory} maxLength="100" onChange={update('industryCategory')} />
-      <Textarea id="project-settings-description" label="프로젝트 설명" value={values.description} maxLength="10000" onChange={update('description')} />
+      {restriction.blocked && <Alert tone={restriction.code === 'POLICY_UNAVAILABLE' ? 'danger' : 'warning'} title="프로젝트를 변경할 수 없습니다"><p>{restriction.message}</p>{restriction.code === 'POLICY_UNAVAILABLE' && <Button type="button" variant="outline" size="small" onClick={() => void servicePolicy.refresh().catch(() => undefined)}>다시 시도</Button>}</Alert>}
+      <TextInput ref={titleInputRef} id="project-settings-title" label="프로젝트 이름" value={values.title} error={fieldErrors.title} maxLength="150" required onChange={update('title')} disabled={restriction.blocked} />
+      <TextInput id="project-settings-industry" label="사업 분야" value={values.industryCategory} maxLength="100" onChange={update('industryCategory')} disabled={restriction.blocked} />
+      <Textarea id="project-settings-description" label="프로젝트 설명" value={values.description} maxLength="10000" onChange={update('description')} disabled={restriction.blocked} />
     </form>
-    <section className="project-sheet__danger"><div><span><AppIcon name="trash" /></span><div><h2>프로젝트 삭제</h2><p>프로젝트와 연결된 문서 및 분석 결과에 더 이상 접근할 수 없습니다. 이 작업은 되돌릴 수 없습니다.</p></div></div><Button variant="danger" size="small" onClick={requestDelete}><AppIcon name="trash" />프로젝트 삭제</Button></section>
+    <section className="project-sheet__danger"><div><span><AppIcon name="trash" /></span><div><h2>프로젝트 삭제</h2><p>프로젝트와 연결된 문서 및 분석 결과에 더 이상 접근할 수 없습니다. 이 작업은 되돌릴 수 없습니다.</p></div></div><Button variant="danger" size="small" disabled={restriction.blocked} title={restriction.blocked ? restriction.message : undefined} onClick={requestDelete}><AppIcon name="trash" />프로젝트 삭제</Button></section>
   </SideSheet>
   <ProjectDeleteDialog project={project} open={confirmingDelete} onClose={() => setConfirmingDelete(false)} onDeleted={() => navigate(appRoutes.projects, { replace: true, state: null })} />
   </>;

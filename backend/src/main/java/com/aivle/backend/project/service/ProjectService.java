@@ -4,6 +4,7 @@ import com.aivle.backend.common.exception.BusinessException;
 import com.aivle.backend.common.exception.ErrorCode;
 import com.aivle.backend.audit.AuditEventType;
 import com.aivle.backend.audit.DomainAuditService;
+import com.aivle.backend.admin.ServicePolicyService;
 import com.aivle.backend.project.dto.request.*;
 import com.aivle.backend.project.dto.response.*;
 import com.aivle.backend.project.entity.Project;
@@ -23,9 +24,11 @@ public class ProjectService {
     private final ProjectRepository projectRepository;
     private final UserRepository userRepository;
     private final DomainAuditService auditService;
+    private final ServicePolicyService servicePolicy;
 
     @Transactional
     public ProjectDetailResponse create(Long userId, CreateProjectRequest request) {
+        servicePolicy.requireWriteAvailableForUser(userId);
         User owner = userRepository.findById(userId).orElseThrow(() -> new BusinessException(ErrorCode.ACCESS_DENIED));
         ensureUniqueTitle(userId, request.title(), null);
         return detail(projectRepository.save(Project.create(owner, request.title(), request.description(), request.industryCategory())));
@@ -45,6 +48,7 @@ public class ProjectService {
 
     @Transactional
     public ProjectDetailResponse update(Long userId, Long projectId, UpdateProjectRequest request) {
+        servicePolicy.requireWriteAvailableForUser(userId);
         Project project = ownedProject(userId, projectId);
         ensureUniqueTitle(userId, request.title(), projectId);
         project.updateBasicInfo(request.title(), request.description(), request.industryCategory());
@@ -53,6 +57,7 @@ public class ProjectService {
 
     @Transactional
     public void delete(Long userId, Long projectId, String requestId) {
+        servicePolicy.requireWriteAvailableForUser(userId);
         Project project = ownedProject(userId, projectId);
         project.softDelete();
         auditService.record(userId, projectId, AuditEventType.PROJECT_DELETED, "PROJECT", projectId, requestId, java.util.Map.of());

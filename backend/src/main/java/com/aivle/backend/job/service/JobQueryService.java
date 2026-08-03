@@ -23,7 +23,10 @@ public class JobQueryService {
     public JobResponse findLatest(Long userId, Long projectId, JobType jobType) {
         if (jobType != JobType.DOCUMENT_PARSE && jobType != JobType.LEGAL_REVIEW
             && jobType != JobType.FEASIBILITY_ANALYSIS
-            && jobType != JobType.PERSONA_RECOMMENDATION) {
+            && jobType != JobType.PERSONA_RECOMMENDATION
+            && jobType != JobType.SYSTEM_SMOKE_TEST
+            && jobType != JobType.SYSTEM_ARTIFACT_SMOKE_TEST
+            && jobType != JobType.MARKETING_GENERATION) {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED);
         }
         AnalysisJob job = repository
@@ -46,6 +49,13 @@ public class JobQueryService {
                 job.getSourceDocumentVersion() == null
                     ? null
                     : job.getSourceDocumentVersion().getId(),
-                job.getStartedAt(), job.getCompletedAt());
+                job.getStartedAt(), job.getCompletedAt(),
+                job.getErrorCode(),
+                job.getExternalRequestId(),
+                job.getResultReferenceType(),
+                job.getResultReferenceId(),
+                job.getRerunOfJob() == null
+                    ? null
+                    : job.getRerunOfJob().getId());
     }
 }

@@ -49,7 +49,7 @@ public record ParsedDocument(
         String plainText = immutableBlocks.stream()
                 .map(ParsedDocumentBlock::text)
                 .filter(text -> !text.isBlank())
-                .collect(Collectors.joining(System.lineSeparator()));
+                .collect(Collectors.joining("\n"));
         return new ParsedDocument(
                 originalFileName,
                 documentType,

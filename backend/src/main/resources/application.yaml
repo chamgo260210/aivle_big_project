@@ -41,6 +41,11 @@ app:
     max-retries: ${AI_MAX_RETRIES:2}
     max-input-characters: ${AI_MAX_INPUT_CHARACTERS:200000}
     max-response-bytes: ${AI_MAX_RESPONSE_BYTES:1048576}
+  ai-server:
+    base-url: ${AI_SERVER_BASE_URL:http://127.0.0.1:8000}
+    connect-timeout: ${AI_SERVER_CONNECT_TIMEOUT:3s}
+    read-timeout: ${AI_SERVER_READ_TIMEOUT:30s}
+    internal-api-key: ${AI_SERVER_INTERNAL_API_KEY:}
   jobs:
     document-processing:
       enabled: ${DOCUMENT_JOB_RUNNER_ENABLED:false}
@@ -62,6 +67,26 @@ app:
     image-max-size: 10MB
     business-plan-extensions: docx
     image-extensions: png,jpg,jpeg,webp
+  object-storage:
+    provider: ${OBJECT_STORAGE_PROVIDER:local}
+    local-root: ${OBJECT_STORAGE_LOCAL_ROOT:./data/objects}
+    endpoint: ${OBJECT_STORAGE_ENDPOINT:http://127.0.0.1:9000}
+    public-endpoint: ${OBJECT_STORAGE_PUBLIC_ENDPOINT:http://127.0.0.1:9000}
+    region: ${OBJECT_STORAGE_REGION:us-east-1}
+    bucket: ${OBJECT_STORAGE_BUCKET:aivle-ai-artifacts}
+    access-key: ${OBJECT_STORAGE_ACCESS_KEY:}
+    secret-key: ${OBJECT_STORAGE_SECRET_KEY:}
+    path-style-access: ${OBJECT_STORAGE_PATH_STYLE_ACCESS:true}
+    connect-timeout: ${OBJECT_STORAGE_CONNECT_TIMEOUT:3s}
+    read-timeout: ${OBJECT_STORAGE_READ_TIMEOUT:30s}
+    presigned-get-expiry: ${OBJECT_STORAGE_PRESIGNED_GET_EXPIRY:5m}
+    presigned-put-expiry: ${OBJECT_STORAGE_PRESIGNED_PUT_EXPIRY:5m}
+    artifact-max-size: ${OBJECT_STORAGE_ARTIFACT_MAX_SIZE:1MB}
+    allowed-content-types:
+      - application/json
+      - image/png
+      - image/jpeg
+      - image/webp
   storage:
     reconciliation:
       enabled: ${STORAGE_RECONCILIATION_ENABLED:false}
@@ -81,3 +106,14 @@ app:
         max-blocks: 10000
         max-table-cells: 20000
         max-paragraph-characters: 50000
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true

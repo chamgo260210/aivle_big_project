@@ -1,5 +1,7 @@
 .env
 .env.*
 !.env.demo.example
+!.env.e2e.example
+!.env.infrastructure.example
 .demo*
 .github
