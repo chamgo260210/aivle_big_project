@@ -26,6 +26,7 @@ import ReportPage from '../../features/report/ReportPage.jsx';
 import LandingPage from '../../features/landing/LandingPage.jsx';
 import AdminShell from '../layouts/AdminShell.jsx';
 import { AdminAuditPage, AdminJobsPage, AdminOperationsPage, AdminOverviewPage, AdminProjectsPage, AdminSettingsPage, AdminUsersPage } from '../../features/admin/pages/AdminPages.jsx';
+import InterimReportTestPage from '../../features/report/InterimReportTestPage.jsx';
 
 function LegacyProjectRedirect({ suffix = '' }) {
   const { projectId } = useParams();
@@ -81,6 +82,9 @@ export default function AppRouter() {
             <Route path="settings/general" element={<Navigate to="../settings" replace />} />
             <Route path="settings/danger" element={<Navigate to="../settings" replace />} />
           </Route>
+
+          {/* 테스트용 임시 경로 */}
+          <Route path="app/test/interim-report/:projectId" element={<InterimReportTestPage />} />
 
           <Route path="dashboard" element={<Navigate to="/app" replace />} />
           <Route path="projects" element={<Navigate to="/app/projects" replace />} />
