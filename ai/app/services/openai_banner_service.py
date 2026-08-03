@@ -100,7 +100,7 @@ def generate_banner_with_openai(
                 image=input_image,
                 prompt=prompt,
                 size=output_size,
-                quality="low",
+                quality="high",
                 output_format="jpeg",
                 output_compression=90,
                 background="opaque",
@@ -128,7 +128,6 @@ def generate_banner_with_openai(
             badge=marketing_copy.badge,
             headline=marketing_copy.headline,
             subheadline=marketing_copy.subheadline,
-            cta=marketing_copy.cta,
             banner_format=banner_format,
         )
 

@@ -5,6 +5,7 @@ from PIL import (
     Image,
     ImageDraw,
     ImageFont,
+    ImageStat,
     UnidentifiedImageError,
 )
 
@@ -36,11 +37,24 @@ def _load_font(
             f"폰트 파일을 찾을 수 없습니다: {font_path}"
         )
 
-    return ImageFont.truetype(
+    font = ImageFont.truetype(
         str(font_path),
         size=size,
     )
+    # 일부 환경에서 폰트 파일의 글자 높이를 정상적으로
+    # 계산하지 못하는 경우에는 굵은 폰트로 안전하게 대체한다.
+    font_bbox = font.getbbox("한글Ag")
 
+    if (
+        font_bbox[3] <= font_bbox[1]
+        and font_path != BOLD_FONT_PATH
+    ):
+        return ImageFont.truetype(
+            str(BOLD_FONT_PATH),
+            size=size,
+        )
+
+    return font
 
 def _get_text_width(
     draw: ImageDraw.ImageDraw,
@@ -66,7 +80,8 @@ def _wrap_text(
 ) -> list[str]:
     """
     문구를 지정된 픽셀 너비에 맞춰 줄바꿈한다.
-    한글도 정확하게 줄바꿈할 수 있도록 글자 단위로 계산한다.
+    먼저 띄어쓰기 단위로 나누고, 한 단어가 영역보다 길 때만
+    글자 단위로 나눈다.
     """
 
     normalized_text = " ".join(text.split())
@@ -77,21 +92,52 @@ def _wrap_text(
     lines: list[str] = []
     current_line = ""
 
-    for character in normalized_text:
-        candidate = current_line + character
+    for word in normalized_text.split():
+        candidate = (
+            f"{current_line} {word}"
+            if current_line
+            else word
+        )
 
         if _get_text_width(draw, candidate, font) <= max_width:
             current_line = candidate
             continue
 
-        if current_line.strip():
-            lines.append(current_line.strip())
+        if current_line:
+            lines.append(current_line)
+            current_line = ""
 
-        current_line = character.lstrip()
+        if _get_text_width(draw, word, font) <= max_width:
+            current_line = word
+            continue
 
-    if current_line.strip():
-        lines.append(current_line.strip())
+        # 한 단어가 문구 영역보다 긴 경우에만 글자 단위로 나눈다.
+        word_fragment = ""
 
+        for character in word:
+            fragment_candidate = word_fragment + character
+
+            if (
+                _get_text_width(
+                    draw,
+                    fragment_candidate,
+                    font,
+                )
+                <= max_width
+            ):
+                word_fragment = fragment_candidate
+                continue
+
+            if word_fragment:
+                lines.append(word_fragment)
+
+            word_fragment = character
+
+        current_line = word_fragment
+
+    if current_line:
+        lines.append(current_line)    
+        
     return lines
 
 
@@ -174,41 +220,80 @@ def _fit_multiline_text(
     return font, lines, line_height
 
 
-def _get_text_panel(
+def _get_text_area(
     width: int,
     height: int,
     banner_format: BannerFormat,
 ) -> tuple[int, int, int, int]:
     """
-    배너 형식별 문구 영역을 반환한다.
+    상품과 겹치지 않도록 배너 형식별 문구 안전 영역을 반환한다.
 
-    가로형은 왼쪽,
-    정사각형과 세로형은 위쪽에 문구를 배치한다.
+    이미지 생성 프롬프트에서 지정한 상품 위치와 동일한 방향으로
+    가로형은 왼쪽, 정사각형은 왼쪽 위, 세로형은 위쪽을 사용한다.
     """
 
     if banner_format == BannerFormat.LANDSCAPE:
         return (
-            int(width * 0.045),
+            int(width * 0.055),
             int(height * 0.12),
-            int(width * 0.60),
+            int(width * 0.45),
             int(height * 0.88),
         )
 
     if banner_format == BannerFormat.SQUARE:
         return (
-            int(width * 0.055),
-            int(height * 0.07),
-            int(width * 0.945),
-            int(height * 0.58),
+            int(width * 0.065),
+            int(height * 0.075),
+            int(width * 0.58),
+            int(height * 0.48),
         )
 
     return (
-        int(width * 0.055),
-        int(height * 0.06),
-        int(width * 0.945),
-        int(height * 0.48),
+        int(width * 0.07),
+        int(height * 0.065),
+        int(width * 0.93),
+        int(height * 0.38),
     )
 
+def _get_text_colors(
+    image: Image.Image,
+    text_area: tuple[int, int, int, int],
+) -> tuple[
+    tuple[int, int, int, int],
+    tuple[int, int, int, int],
+    tuple[int, int, int, int],
+]:
+    """
+    문구 영역의 평균 밝기에 따라 기본 글자색과 보조 글자색,
+    외곽선 색을 선택한다.
+    """
+
+    sampled_area = image.crop(
+        text_area
+    ).convert("RGB")
+
+    red, green, blue = ImageStat.Stat(
+        sampled_area
+    ).mean
+
+    luminance = (
+        0.2126 * red
+        + 0.7152 * green
+        + 0.0722 * blue
+    )
+
+    if luminance >= 145:
+        return (
+            (28, 31, 35, 255),
+            (67, 71, 76, 255),
+            (255, 255, 255, 255),
+        )
+
+    return (
+        (255, 255, 255, 255),
+        (235, 238, 240, 255),
+        (20, 22, 25, 255),
+    )
 
 def add_text_to_banner(
     *,
@@ -216,12 +301,13 @@ def add_text_to_banner(
     badge:str,
     headline:str,
     subheadline:str,
-    cta:str,
     banner_format: BannerFormat,
 ) -> bytes:
     """
     AI가 생성한 배경 이미지 위에
     프로모션 이름, 메인 문구, 보조 문구를 합성한다.
+
+     상품을 가리는 큰 배경 패널과 CTA 버튼은 사용하지 않는다.
     """
 
     try:
@@ -237,116 +323,117 @@ def add_text_to_banner(
     width, height = source_image.size
     minimum_edge = min(width, height)
 
-    # 반투명 문구 패널을 만든다.
-    overlay = Image.new(
-        "RGBA",
-        source_image.size,
-        (0, 0, 0, 0),
-    )
-
-    overlay_draw = ImageDraw.Draw(overlay)
-
-    panel = _get_text_panel(
+    text_area = _get_text_area(
         width=width,
         height=height,
         banner_format=banner_format,
     )
-
-    panel_radius = max(
-        20,
-        int(minimum_edge * 0.025),
+     
+    (
+        primary_color,
+        secondary_color,
+        outline_color,
+    ) = _get_text_colors(
+        image=source_image,
+        text_area=text_area,
     )
 
-    overlay_draw.rounded_rectangle(
-        panel,
-        radius=panel_radius,
-        fill=(12, 20, 32, 165),
-    )
-
-    composed_image = Image.alpha_composite(
-        source_image,
-        overlay,
-    )
-
+    composed_image = source_image.copy()
     draw = ImageDraw.Draw(composed_image)
 
-    panel_left, panel_top, panel_right, _ = panel
+    (
+        text_left,
+        text_top,
+        text_right,
+        _,
+    ) = text_area
 
-    padding = max(
-        30,
-        int(minimum_edge * 0.045),
+    text_x = text_left
+    text_y = text_top
+    content_width = text_right - text_left
+
+    # 프로모션 이름을 작은 포인트 배지로 표시한다.
+    badge_font, badge_lines, _ = _fit_multiline_text(
+        draw=draw,
+        text=badge,
+        font_path=BOLD_FONT_PATH,
+        max_width=int(content_width * 0.85),
+        max_lines=1,
+        maximum_size=int(minimum_edge * 0.030),
+        minimum_size=20,
     )
 
-    text_x = panel_left + padding
-    text_y = panel_top + padding
-
-    content_width = (
-        panel_right
-        - panel_left
-        - padding * 2
+    badge_text = badge_lines[0]
+    badge_bbox = draw.textbbox(
+        (0, 0),
+        badge_text,
+        font=badge_font,
     )
 
-    # 왼쪽 포인트 선
-    accent_width = max(
-        6,
+    badge_padding_x = max(
+        14,
+        int(minimum_edge * 0.014),
+    )
+    badge_padding_y = max(
+        8,
         int(minimum_edge * 0.008),
+    )
+    badge_width = (
+        badge_bbox[2]
+        - badge_bbox[0]
+        + badge_padding_x * 2
+    )
+    badge_height = (
+        badge_bbox[3]
+        - badge_bbox[1]
+        + badge_padding_y * 2
+    )
+
+    badge_box = (
+        text_x,
+        text_y,
+        text_x + badge_width,
+        text_y + badge_height,
     )
 
     draw.rounded_rectangle(
-        (
-            text_x,
-            text_y,
-            text_x + accent_width,
-            text_y + int(minimum_edge * 0.06),
-        ),
-        radius=accent_width // 2,
-        fill=(78, 220, 190, 255),
-    )
-
-    # 프로모션 이름
-    promotion_font, promotion_lines, promotion_height = (
-        _fit_multiline_text(
-            draw=draw,
-            text=badge,
-            font_path=BOLD_FONT_PATH,
-            max_width=content_width - accent_width - 20,
-            max_lines=1,
-            maximum_size=int(minimum_edge * 0.034),
-            minimum_size=20,
-        )
+        badge_box,
+        radius=badge_height // 2,
+        fill=(197, 226, 79, 255),
     )
 
     draw.text(
         (
-            text_x + accent_width + 18,
-            text_y,
+            text_x + badge_padding_x,
+            text_y + badge_padding_y - badge_bbox[1],
         ),
-        promotion_lines[0],
-        font=promotion_font,
-        fill=(105, 240, 210, 255),
+        badge_text,
+        font=badge_font,
+        fill=(26, 35, 28, 255),
     )
 
     text_y += (
-        promotion_height
-        + int(minimum_edge * 0.065)
+        badge_height
+        + int(minimum_edge * 0.040)
     )
 
-    # 메인 문구
+    # 프로모션 이름
+    # 핵심 헤드라인은 최대 두 줄만 사용한다.
     main_font, main_lines, main_line_height = (
         _fit_multiline_text(
             draw=draw,
             text=headline,
             font_path=BOLD_FONT_PATH,
             max_width=content_width,
-            max_lines=3,
-            maximum_size=int(minimum_edge * 0.082),
-            minimum_size=38,
+            max_lines=2,
+            maximum_size=int(minimum_edge * 0.062),
+            minimum_size=34,
         )
     )
 
     main_line_spacing = max(
-        10,
-        int(main_line_height * 0.22),
+        8,
+        int(main_line_height * 0.18),
     )
 
     for line in main_lines:
@@ -354,9 +441,12 @@ def add_text_to_banner(
             (text_x, text_y),
             line,
             font=main_font,
-            fill=(255, 255, 255, 255),
-            stroke_width=1,
-            stroke_fill=(0, 0, 0, 130),
+            fill=primary_color,
+            stroke_width=max(
+                1,
+                int(minimum_edge * 0.0015),
+            ),
+            stroke_fill=outline_color,
         )
 
         text_y += (
@@ -364,9 +454,9 @@ def add_text_to_banner(
             + main_line_spacing
         )
 
-    text_y += int(minimum_edge * 0.04)
+    text_y += int(minimum_edge * 0.030)
 
-    # 보조 문구
+    # 보조 문구는 상품 설명을 방해하지 않도록 작고 짧게 표시한다.
     supporting_font, supporting_lines, supporting_line_height = (
         _fit_multiline_text(
             draw=draw,
@@ -374,14 +464,15 @@ def add_text_to_banner(
             font_path=REGULAR_FONT_PATH,
             max_width=content_width,
             max_lines=2,
-            maximum_size=int(minimum_edge * 0.038),
-            minimum_size=22,
+            maximum_size=int(minimum_edge * 0.029),
+            minimum_size=20,
         )
     )
 
+
     supporting_spacing = max(
-        8,
-        int(supporting_line_height * 0.25),
+        6,
+        int(supporting_line_height * 0.20),
     )
 
     for line in supporting_lines:
@@ -389,87 +480,15 @@ def add_text_to_banner(
             (text_x, text_y),
             line,
             font=supporting_font,
-            fill=(230, 235, 242, 255),
+            fill=secondary_color,
+            stroke_width=1,
+            stroke_fill=outline_color,
         )
 
         text_y += (
             supporting_line_height
             + supporting_spacing
         )
-
-        # CTA 버튼
-    text_y += int(minimum_edge * 0.035)
-
-    cta_font, cta_lines, _ = _fit_multiline_text(
-        draw=draw,
-        text=cta,
-        font_path=BOLD_FONT_PATH,
-        max_width=content_width,
-        max_lines=1,
-        maximum_size=int(minimum_edge * 0.032),
-        minimum_size=20,
-    )
-
-    cta_text = cta_lines[0]
-
-    cta_bbox = draw.textbbox(
-        (0, 0),
-        cta_text,
-        font=cta_font,
-    )
-
-    cta_text_width = cta_bbox[2] - cta_bbox[0]
-    cta_text_height = cta_bbox[3] - cta_bbox[1]
-
-    button_padding_x = max(
-        24,
-        int(minimum_edge * 0.028),
-    )
-
-    button_padding_y = max(
-        12,
-        int(minimum_edge * 0.014),
-    )
-
-    button_width = (
-        cta_text_width
-        + button_padding_x * 2
-    )
-
-    button_height = (
-        cta_text_height
-        + button_padding_y * 2
-    )
-
-    button_box = (
-        text_x,
-        text_y,
-        text_x + button_width,
-        text_y + button_height,
-    )
-
-    draw.rounded_rectangle(
-        button_box,
-        radius=button_height // 2,
-        fill=(78, 220, 190, 255),
-    )
-
-    # textbbox의 상단 여백을 고려해
-    # 버튼 중앙에 글자를 배치한다.
-    cta_text_x = text_x + button_padding_x
-
-    cta_text_y = (
-        text_y
-        + button_padding_y
-        - cta_bbox[1]
-    )
-
-    draw.text(
-        (cta_text_x, cta_text_y),
-        cta_text,
-        font=cta_font,
-        fill=(10, 28, 38, 255),
-    )
 
     # 최종 결과를 JPEG 바이트로 반환한다.
     output_buffer = BytesIO()

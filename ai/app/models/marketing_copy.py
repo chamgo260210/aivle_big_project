@@ -40,18 +40,10 @@ class GeneratedMarketingCopy(BaseModel):
         )
     )
 
-    cta: str = Field(
-        description=(
-            "사용자의 행동을 유도하는 짧은 문구. "
-            "예: 지금 확인하기."
-        )
-    )
-
     @field_validator(
         "badge",
         "headline",
         "subheadline",
-        "cta",
     )
     @classmethod
     def validate_copy_text(
