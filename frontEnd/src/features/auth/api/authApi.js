@@ -39,5 +39,8 @@ export function createAuthApi(client) {
     async changePassword(input) {
       await client.post('/users/me/password', input);
     },
+    async deleteAccount(input) {
+      await client.delete('/users/me', { body: input, refreshOnUnauthorized: false });
+    },
   };
 }

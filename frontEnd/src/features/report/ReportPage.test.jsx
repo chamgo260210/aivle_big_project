@@ -91,7 +91,7 @@ describe('ReportPage', () => {
     });
     renderPage();
     expect(screen.getByText('현재까지의 분석 결과 · 일부 검증 미완료')).toBeInTheDocument();
-    expect(screen.getAllByText('해당 단계로 이동')).toHaveLength(3);
+    expect(screen.getAllByText('해당 단계로 이동')).toHaveLength(4);
   });
 
   it('renders a failed section while keeping other results', () => {

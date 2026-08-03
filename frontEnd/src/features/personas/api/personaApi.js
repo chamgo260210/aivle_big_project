@@ -26,5 +26,18 @@ export function createPersonaApi(client) {
         options,
       )).data;
     },
+    async available(projectId, options) {
+      return (await client.get(
+        `/projects/${encodeURIComponent(projectId)}/personas/available`,
+        options,
+      )).data;
+    },
+    async select(projectId, personaId, options) {
+      return (await client.put(
+        `/projects/${encodeURIComponent(projectId)}/personas/selection`,
+        { personaId },
+        options,
+      )).data;
+    },
   };
 }

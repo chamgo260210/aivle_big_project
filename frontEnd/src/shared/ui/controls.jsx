@@ -84,11 +84,11 @@ export const TextInput = forwardRef(function TextInput(
   );
 });
 
-export function PasswordInput({ revealLabel = '비밀번호 표시', ...props }) {
+export const PasswordInput = forwardRef(function PasswordInput({ revealLabel = '비밀번호 표시', ...props }, ref) {
   const [visible, setVisible] = useState(false);
   return (
     <div className="ui-password">
-      <TextInput type={visible ? 'text' : 'password'} {...props} />
+      <TextInput ref={ref} type={visible ? 'text' : 'password'} {...props} />
       <button
         type="button"
         className="ui-password__toggle"
@@ -99,7 +99,7 @@ export function PasswordInput({ revealLabel = '비밀번호 표시', ...props })
       </button>
     </div>
   );
-}
+});
 
 export function Textarea({ label, description, error, required, id, ...props }) {
   return (

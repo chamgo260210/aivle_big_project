@@ -1,5 +1,6 @@
 package com.aivle.backend.document.application;
 
+import com.aivle.backend.admin.ServicePolicyService;
 import com.aivle.backend.audit.AuditEventType;
 import com.aivle.backend.audit.DomainAuditService;
 import com.aivle.backend.common.entity.MissingFieldStatus;
@@ -39,6 +40,7 @@ public class StructuredPlanCommandService {
     private final StructuredPlanQueryService queryService;
     private final DomainAuditService auditService;
     private final Clock jobClock;
+    private final ServicePolicyService servicePolicy;
 
     @Transactional
     public StructuredMissingFieldResponse updateMissingField(
@@ -49,6 +51,7 @@ public class StructuredPlanCommandService {
         UpdateMissingFieldRequest request,
         String requestId
     ) {
+        servicePolicy.requireWriteAvailableForUser(userId);
         requireOwnedProject(userId, projectId);
         StructuredPlan plan = requirePlan(projectId, planId);
         if (!plan.isEditable()) {
@@ -103,6 +106,7 @@ public class StructuredPlanCommandService {
         Long version,
         String requestId
     ) {
+        servicePolicy.requireWriteAvailableForUser(userId);
         Project project = requireOwnedProject(userId, projectId);
         StructuredPlan plan = requirePlan(projectId, planId);
         if (plan.getStatus() == StructuredPlanStatus.CONFIRMED) {

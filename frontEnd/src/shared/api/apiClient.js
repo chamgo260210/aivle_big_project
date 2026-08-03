@@ -79,6 +79,7 @@ export function createApiClient({
       requestId,
       authenticate = true,
       refreshOnUnauthorized = true,
+      timeoutMs: requestTimeoutMs = timeoutMs,
     } = options;
     const isMultipart = typeof FormData !== 'undefined' && body instanceof FormData;
     const requestHeaders = new Headers(headers);
@@ -94,7 +95,7 @@ export function createApiClient({
       requestBody = JSON.stringify(body);
     }
 
-    const requestSignal = createRequestSignal(externalSignal, timeoutMs);
+    const requestSignal = createRequestSignal(externalSignal, requestTimeoutMs);
     try {
       if (requestSignal.signal.aborted) {
         throw new DOMException('Request aborted', 'AbortError');

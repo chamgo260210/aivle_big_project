@@ -3,8 +3,12 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import PersonaPage from './PersonaPage.jsx';
 import { usePersonas } from './hooks/usePersonas.js';
+import useAvailablePersonas from './hooks/useAvailablePersonas.js';
+import { useServicePolicy } from '../service-policy/useServicePolicy.js';
 
 vi.mock('./hooks/usePersonas.js', () => ({ usePersonas: vi.fn() }));
+vi.mock('./hooks/useAvailablePersonas.js', () => ({ default: vi.fn() }));
+vi.mock('../service-policy/useServicePolicy.js', () => ({ useServicePolicy: vi.fn() }));
 vi.mock('../projects/ProjectContext.jsx', () => ({
   useProjectContext: () => ({ project: { stageLabel: '사업 타당성' } }),
 }));
@@ -18,7 +22,27 @@ function renderPage() {
 }
 
 describe('PersonaPage', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useServicePolicy.mockReturnValue({
+      loading: false,
+      error: null,
+      policy: {
+        documentProcessingEnabled: true,
+        maintenanceMode: false,
+        clusterPersonaEnabled: false,
+      },
+      refresh: vi.fn(),
+    });
+    useAvailablePersonas.mockReturnValue({
+      data: null,
+      loading: false,
+      error: null,
+      savingId: null,
+      refresh: vi.fn(),
+      select: vi.fn(),
+    });
+  });
 
   it('explains the hypothesis boundary before start', () => {
     usePersonas.mockReturnValue({

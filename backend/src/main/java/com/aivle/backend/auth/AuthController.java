@@ -10,14 +10,22 @@ import com.aivle.backend.auth.dto.TokenPairResponse;
 import com.aivle.backend.auth.dto.UserResponse;
 import com.aivle.backend.auth.dto.UpdateProfileRequest;
 import com.aivle.backend.auth.dto.ChangePasswordRequest;
+import com.aivle.backend.auth.dto.AccountDeletionRequest;
+import com.aivle.backend.admin.AdminAuditAction;
+import com.aivle.backend.admin.AdminAuditContext;
+import com.aivle.backend.admin.AdminAuditService;
+import com.aivle.backend.admin.AdminAuditTargetType;
+import com.aivle.backend.common.exception.BusinessException;
 import com.aivle.backend.common.response.ApiResponse;
 import com.aivle.backend.common.security.CurrentUserProvider;
+import com.aivle.backend.user.service.UserDeletionService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -30,6 +38,8 @@ import org.springframework.web.bind.annotation.RestController;
 public class AuthController {
     private final AuthService authService;
     private final CurrentUserProvider currentUserProvider;
+    private final UserDeletionService userDeletionService;
+    private final AdminAuditService audits;
 
     @PostMapping("/auth/signup")
     public ResponseEntity<ApiResponse<SignupResponse>> signup(
@@ -117,6 +127,38 @@ public class AuthController {
         String requestId = requestId(servletRequest);
         authService.changePassword(currentUserProvider.currentUserId(), request, requestId);
         return ApiResponse.success(null, requestId);
+    }
+
+    @DeleteMapping("/users/me")
+    public ApiResponse<Void> deleteAccount(
+        @Valid @RequestBody AccountDeletionRequest body,
+        HttpServletRequest request
+    ) {
+        Long actorUserId = currentUserProvider.currentUserId();
+        AdminAuditContext context = AdminAuditContext.from(request);
+        try {
+            userDeletionService.deleteSelf(
+                actorUserId,
+                body.password(),
+                body.confirmation(),
+                body.reason(),
+                context
+            );
+            return ApiResponse.success(null, requestId(request));
+        } catch (BusinessException failure) {
+            audits.recordFailureSafely(
+                actorUserId,
+                AdminAuditAction.USER_SELF_DELETED,
+                AdminAuditTargetType.USER,
+                actorUserId,
+                null,
+                body.reason(),
+                failure.getErrorCode().name(),
+                context,
+                java.util.Map.of()
+            );
+            throw failure;
+        }
     }
 
     private String requestId(HttpServletRequest request) {

@@ -9,7 +9,8 @@ import com.aivle.backend.document.repository.DocumentVersionRepository;
 import com.aivle.backend.document.repository.ProjectDocumentRepository;
 import com.aivle.backend.file.entity.StoredFile;
 import com.aivle.backend.file.repository.StoredFileRepository;
-import com.aivle.backend.file.storage.FileStorage;
+import com.aivle.backend.file.object.ObjectKeyGenerator;
+import com.aivle.backend.file.object.ObjectStoragePort;
 import com.aivle.backend.file.validation.ValidatedUpload;
 import com.aivle.backend.job.entity.AnalysisJob;
 import com.aivle.backend.job.repository.AnalysisJobRepository;
@@ -19,10 +20,18 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
+import lombok.extern.slf4j.Slf4j;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class DocumentUploadTransactionService {
@@ -32,6 +41,8 @@ public class DocumentUploadTransactionService {
     private final StoredFileRepository storedFileRepository;
     private final AnalysisJobRepository analysisJobRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final ObjectStoragePort objectStorage;
+    private final ObjectKeyGenerator objectKeys;
 
     @Transactional(readOnly = true)
     public void authorizeUpload(Long projectId, Long userId, DocumentType documentType) {
@@ -63,7 +74,6 @@ public class DocumentUploadTransactionService {
     public DocumentUploadResult create(
         DocumentUploadCommand command,
         ValidatedUpload upload,
-        FileStorage.StoredFileResult stored,
         String idempotencyKey,
         String fingerprint
     ) {
@@ -85,20 +95,33 @@ public class DocumentUploadTransactionService {
         }
 
         ProjectDocument document = resolveActiveDocument(project, command.documentType());
-        StoredFile storedFile = storedFileRepository.save(StoredFile.available(
-            stored.storageKey(),
+        StoredFile storedFile = storedFileRepository.save(
+            StoredFile.available(
+            objectStorage.storageType(),
+            "pending/document-source/" + UUID.randomUUID(),
             upload.originalFilename(),
-            stored.storedFilename(),
+            UUID.randomUUID() + "." + upload.extension(),
             upload.extension(),
             upload.contentType(),
-            stored.sizeBytes(),
-            stored.checksumSha256()
+            upload.sizeBytes(),
+            upload.checksumSha256()
         ));
         int versionNumber = document.allocateNextVersion();
         DocumentVersion version = documentVersionRepository.save(
             DocumentVersion.uploaded(document, versionNumber, storedFile, project.getOwner())
         );
         documentVersionRepository.flush();
+        String storageKey = objectKeys.documentSource(
+            project.getId(),
+            document.getId(),
+            version.getId(),
+            upload.extension()
+        );
+        storeSource(upload, storageKey);
+        storedFile.assignStorageKey(
+            storageKey,
+            Path.of(storageKey).getFileName().toString()
+        );
 
         AnalysisJob job = analysisJobRepository.save(AnalysisJob.queuedDocumentParse(
             project,
@@ -117,6 +140,77 @@ public class DocumentUploadTransactionService {
             job.getId(),
             job.getStatus(),
             true
+        );
+    }
+
+    private void storeSource(
+        ValidatedUpload upload,
+        String storageKey
+    ) {
+        try (InputStream input = upload.openStream()) {
+            ObjectStoragePort.StoredObject stored = objectStorage.store(
+                input,
+                upload.sizeBytes(),
+                upload.contentType(),
+                storageKey
+            );
+            registerRollbackCleanup(storageKey);
+            ObjectStoragePort.ObjectMetadata metadata =
+                objectStorage.metadata(storageKey);
+            if (stored.sizeBytes() != upload.sizeBytes()
+                || metadata.sizeBytes() != upload.sizeBytes()
+                || !upload.contentType().equals(stored.contentType())
+                || !upload.contentType().equals(metadata.contentType())
+                || !upload.checksumSha256().equals(
+                    stored.checksumSha256()
+                )) {
+                throw new BusinessException(
+                    ErrorCode.FILE_STORAGE_FAILED
+                );
+            }
+        } catch (BusinessException exception) {
+            throw exception;
+        } catch (IOException | RuntimeException exception) {
+            deleteBestEffort(storageKey);
+            throw new BusinessException(
+                ErrorCode.FILE_STORAGE_FAILED
+            );
+        }
+    }
+
+    private void deleteBestEffort(String storageKey) {
+        try {
+            objectStorage.delete(storageKey);
+        } catch (IOException | RuntimeException cleanupFailure) {
+            log.error(
+                "Failed to clean failed document object {}",
+                storageKey,
+                cleanupFailure
+            );
+        }
+    }
+
+    private void registerRollbackCleanup(String storageKey) {
+        TransactionSynchronizationManager.registerSynchronization(
+            new TransactionSynchronization() {
+                @Override
+                public void afterCompletion(int status) {
+                    if (status == STATUS_COMMITTED) {
+                        return;
+                    }
+                    try {
+                        objectStorage.delete(storageKey);
+                    } catch (IOException | RuntimeException exception) {
+                        // The storage reconciliation job is the crash and
+                        // cleanup-failure fallback for unreferenced objects.
+                        log.error(
+                            "Failed to compensate rolled back document object {}",
+                            storageKey,
+                            exception
+                        );
+                    }
+                }
+            }
         );
     }
 

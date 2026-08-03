@@ -12,7 +12,7 @@ describe('integrated report view model', () => {
   it('keeps a report partial when results still require validation', () => {
     const report = toIntegratedReportViewModel(projectFixture, fullResources());
     expect(report.reportStatus).toBe('PARTIAL');
-    expect(report.completedCount).toBe(4);
+    expect(report.completedCount).toBe(5);
     expect(report).not.toHaveProperty('overallScore');
   });
 
@@ -35,6 +35,17 @@ describe('integrated report view model', () => {
   it('keeps null feasibility score as null', () => {
     const report = toIntegratedReportViewModel(projectFixture, fullResources());
     expect(report.feasibility.data.overallScore).toBeNull();
+  });
+
+  it('uses completed financial detail and marks missing financial work honestly', () => {
+    const complete = toIntegratedReportViewModel(projectFixture, fullResources());
+    expect(complete.financial.data.resultJson).toContain('totalRevenue');
+    const missing = emptyResources();
+    missing.plan = fullResources().plan;
+    missing.feasibilityAssessment = fullResources().feasibilityAssessment;
+    const incomplete = toIntegratedReportViewModel(projectFixture, missing);
+    expect(incomplete.financial.summary).toBe('재무 분석 미완료');
+    expect(incomplete.financial.data).toBeNull();
   });
 
   it('discloses mock provider results', () => {
@@ -110,6 +121,7 @@ describe('integrated report view model', () => {
     ['legal', '법률·규제 사전검토'],
     ['feasibility', '사업 타당성'],
     ['persona', '페르소나·고객 검증 계획'],
+    ['financial', '재무·수익성 분석'],
   ])('exposes %s section with a user label', (key, label) => {
     expect(toIntegratedReportViewModel(projectFixture, fullResources())[key].title).toBe(label);
   });

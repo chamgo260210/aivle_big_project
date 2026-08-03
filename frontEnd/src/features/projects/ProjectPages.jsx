@@ -22,11 +22,40 @@ import ProjectDeleteDialog from './components/ProjectDeleteDialog.jsx';
 import { PROJECT_AREA_DEFINITIONS, PROJECT_STATUS_VIEW } from './model/projectWorkflowModel.js';
 import { appRoutes, projectRoutes } from './routing/projectRoutes.js';
 import { getProjectNameError } from './projectNameError.js';
+import { useServicePolicy } from '../service-policy/useServicePolicy.js';
+import { getWriteRestriction, isServicePolicyError } from '../service-policy/servicePolicyRestrictions.js';
 import './projects.css';
 
 function filterMatches(project, filter) {
   if (filter === 'all') return true;
   return project.status === filter;
+}
+
+function PolicyNotice({ restriction, onRetry }) {
+  if (!restriction.blocked) return null;
+  return (
+    <Alert tone={restriction.code === 'POLICY_UNAVAILABLE' ? 'danger' : 'warning'} title="변경 작업을 사용할 수 없습니다">
+      <p>{restriction.message}</p>
+      {restriction.code === 'POLICY_UNAVAILABLE' && <Button type="button" variant="outline" size="small" onClick={onRetry}>다시 시도</Button>}
+    </Alert>
+  );
+}
+
+function PolicyLink({ restriction, children, ...props }) {
+  return (
+    <Link
+      {...props}
+      aria-disabled={restriction.blocked}
+      title={restriction.blocked ? restriction.message : props.title}
+      className={`${props.className ?? ''} ${restriction.blocked ? 'is-policy-disabled' : ''}`.trim()}
+      onClick={(event) => {
+        if (restriction.blocked) event.preventDefault();
+        else props.onClick?.(event);
+      }}
+    >
+      {children}
+    </Link>
+  );
 }
 
 export function ProjectStatusHelpRail() {
@@ -48,6 +77,8 @@ export function ProjectStatusHelpRail() {
 
 export function ProjectListPage() {
   const location = useLocation();
+  const servicePolicy = useServicePolicy();
+  const restriction = getWriteRestriction(servicePolicy);
   const { status, projects, retry } = useProjects();
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState('all');
@@ -73,14 +104,14 @@ export function ProjectListPage() {
       <PageHeader
         eyebrow="내 워크스페이스"
         title="프로젝트"
-        description="사업 검증의 입력, 실행, 결과를 프로젝트 단위로 관리합니다."
-        actions={<Link className="primary-link" to={appRoutes.newProject} state={{ backgroundLocation: location, returnTo: `${location.pathname}${location.search}` }}>새 프로젝트</Link>}
+        description="아이디어부터 최종 보고서까지 현재 단계와 다음 작업을 확인하세요."
+        actions={<PolicyLink restriction={restriction} className="primary-link" to={appRoutes.newProject} state={{ backgroundLocation: location, returnTo: `${location.pathname}${location.search}` }}>새 프로젝트</PolicyLink>}
       />
       <div className="project-hub__body"><div className="project-hub__content">{!projects.length ? (
         <EmptyState
           title="아직 프로젝트가 없습니다"
           description="첫 사업 검증 프로젝트를 만들어 시작하세요."
-          action={<Link className="primary-link" to={appRoutes.newProject}>프로젝트 만들기</Link>}
+          action={<PolicyLink restriction={restriction} className="primary-link" to={appRoutes.newProject}>프로젝트 만들기</PolicyLink>}
         />
       ) : (
         <>
@@ -100,8 +131,7 @@ export function ProjectListPage() {
               <option value="name">이름순</option>
             </select>
           </div>
-          <div className="project-row-list" role="list" aria-label="프로젝트 목록">
-            <div className="project-row-list__header" aria-hidden="true"><span>Name</span><span>Area</span><span>Status</span><span>Next action</span><span>Updated</span><span /></div>
+          <div className="project-row-list project-card-grid" role="list" aria-label="프로젝트 목록">
             {visible.map((project) => <ProjectRow key={project.projectId} project={project} menuOpen={menuOpenProjectId === project.projectId} onMenuOpenChange={(open) => setMenuOpenProjectId(open ? project.projectId : null)} onDelete={() => setDeleteTarget(project)} />)}
           </div>
           {!visible.length && <p className="project-search-empty">조건에 맞는 프로젝트가 없습니다.</p>}
@@ -123,6 +153,8 @@ export function ProjectCreatePage() {
   const [globalError, setGlobalError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [closing, setClosing] = useState(false);
+  const servicePolicy = useServicePolicy();
+  const restriction = getWriteRestriction(servicePolicy);
   const pendingRouteRef = useRef(null);
   const closeTimerRef = useRef(null);
 
@@ -144,7 +176,7 @@ export function ProjectCreatePage() {
 
   async function handleSubmit(event) {
     event.preventDefault();
-    if (submitting) return;
+    if (submitting || restriction.blocked) return;
     if (!values.title.trim()) {
       setErrors({ title: '프로젝트 이름을 입력해 주세요.' });
       return;
@@ -157,8 +189,11 @@ export function ProjectCreatePage() {
         description: values.description.trim() || null,
         industryCategory: values.industryCategory.trim() || null,
       });
-      requestClose(projectRoutes.getStarted(nextProject.id));
+      requestClose(projectRoutes.base(nextProject.id));
     } catch (error) {
+      if (isServicePolicyError(error)) {
+        void servicePolicy.refresh().catch(() => undefined);
+      }
       const titleError = getProjectNameError(error);
       if (titleError) {
         setErrors({ title: titleError });
@@ -180,12 +215,13 @@ export function ProjectCreatePage() {
     <div className="project-create project-create--sheet">
       <PageHeader eyebrow="새 프로젝트" title="검증할 사업 아이디어를 만드세요" description="지금은 최소 정보만 필요합니다. 세부 자료와 분석 실행은 프로젝트 안에서 직접 시작합니다." />
       {globalError && <div ref={errorRef} tabIndex="-1"><Alert tone="danger" title="프로젝트를 만들지 못했습니다">{globalError}</Alert></div>}
+      <PolicyNotice restriction={restriction} onRetry={() => void servicePolicy.refresh().catch(() => undefined)} />
       <form className="project-form" onSubmit={handleSubmit} noValidate>
-        <TextInput ref={titleInputRef} id="project-title" label="프로젝트 이름" value={values.title} error={errors.title} maxLength="150" onChange={update('title')} required />
-        <TextInput id="project-category" label="사업 분야" description="선택 입력입니다." value={values.industryCategory} error={errors.industryCategory} maxLength="100" onChange={update('industryCategory')} />
-        <Textarea id="project-description" label="간단한 설명" description="선택 입력입니다." value={values.description} error={errors.description} maxLength="10000" onChange={update('description')} />
+        <TextInput ref={titleInputRef} id="project-title" label="프로젝트 이름" value={values.title} error={errors.title} maxLength="150" onChange={update('title')} disabled={restriction.blocked} required />
+        <TextInput id="project-category" label="사업 분야" description="선택 입력입니다." value={values.industryCategory} error={errors.industryCategory} maxLength="100" onChange={update('industryCategory')} disabled={restriction.blocked} />
+        <Textarea id="project-description" label="간단한 설명" description="선택 입력입니다." value={values.description} error={errors.description} maxLength="10000" onChange={update('description')} disabled={restriction.blocked} />
         <div className="project-form__actions">
-          <Button type="submit" loading={submitting} disabled={submitting || closing}>프로젝트 만들기</Button>
+          <Button type="submit" loading={submitting} disabled={submitting || closing || restriction.blocked}>프로젝트 만들기</Button>
           <Button type="button" variant="outline" disabled={submitting || closing} onClick={() => requestClose()}>취소</Button>
         </div>
       </form>
@@ -206,12 +242,14 @@ export function ProjectBriefInputPage() {
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const servicePolicy = useServicePolicy();
+  const restriction = getWriteRestriction(servicePolicy);
 
   const update = (field) => (event) => setValues((current) => ({ ...current, [field]: event.target.value }));
 
   async function handleSubmit(event) {
     event.preventDefault();
-    if (saving || !values.title.trim()) return;
+    if (saving || restriction.blocked || !values.title.trim()) return;
     setSaving(true);
     setError('');
     try {
@@ -222,6 +260,9 @@ export function ProjectBriefInputPage() {
       });
       navigate(`/app/projects/${project.projectId}`);
     } catch (requestError) {
+      if (isServicePolicyError(requestError)) {
+        void servicePolicy.refresh().catch(() => undefined);
+      }
       setError(getUserErrorMessage(requestError));
     } finally {
       setSaving(false);
@@ -237,12 +278,13 @@ export function ProjectBriefInputPage() {
         actions={<Link to={`/app/projects/${project.projectId}/plan/documents`}>문서 업로드로 시작</Link>}
       />
       {error && <Alert tone="danger" title="사업 개요를 저장하지 못했습니다">{error}</Alert>}
+      <PolicyNotice restriction={restriction} onRetry={() => void servicePolicy.refresh().catch(() => undefined)} />
       <form className="project-form" onSubmit={handleSubmit} noValidate>
-        <TextInput id="project-brief-title" label="프로젝트 이름" value={values.title} maxLength="150" onChange={update('title')} required />
-        <TextInput id="project-brief-category" label="사업 분야" value={values.industryCategory} maxLength="100" onChange={update('industryCategory')} />
-        <Textarea id="project-brief-description" label="사업 개요" description="누구의 어떤 문제를 어떻게 해결하는지 자유롭게 작성해 주세요." value={values.description} maxLength="10000" onChange={update('description')} />
+        <TextInput id="project-brief-title" label="프로젝트 이름" value={values.title} maxLength="150" onChange={update('title')} disabled={restriction.blocked} required />
+        <TextInput id="project-brief-category" label="사업 분야" value={values.industryCategory} maxLength="100" onChange={update('industryCategory')} disabled={restriction.blocked} />
+        <Textarea id="project-brief-description" label="사업 개요" description="누구의 어떤 문제를 어떻게 해결하는지 자유롭게 작성해 주세요." value={values.description} maxLength="10000" onChange={update('description')} disabled={restriction.blocked} />
         <div className="project-form__actions">
-          <Button type="submit" loading={saving} disabled={saving}>저장하고 개요로 이동</Button>
+          <Button type="submit" loading={saving} disabled={saving || restriction.blocked}>저장하고 개요로 이동</Button>
           <Button type="button" variant="outline" disabled={saving} onClick={() => navigate(`/app/projects/${project.projectId}`)}>나중에 작성</Button>
         </div>
       </form>

@@ -27,6 +27,15 @@ public interface AnalysisJobRepository extends JpaRepository<AnalysisJob, Long> 
     @EntityGraph(attributePaths = {"project"})
     Optional<AnalysisJob> findByIdAndProjectOwnerIdAndDeletedAtIsNull(Long id, Long ownerId);
 
+    @EntityGraph(attributePaths = {"project", "rerunOfJob"})
+    Optional<AnalysisJob>
+        findByIdAndProjectIdAndProjectOwnerIdAndJobTypeAndDeletedAtIsNull(
+            Long id,
+            Long projectId,
+            Long ownerId,
+            JobType jobType
+        );
+
     @EntityGraph(attributePaths = {"project", "sourceDocumentVersion"})
     Optional<AnalysisJob>
         findTopByProjectIdAndProjectOwnerIdAndJobTypeAndDeletedAtIsNullOrderByCreatedAtDescIdDesc(
@@ -55,6 +64,12 @@ public interface AnalysisJobRepository extends JpaRepository<AnalysisJob, Long> 
             (j.jobType = com.aivle.backend.common.entity.JobType.PERSONA_RECOMMENDATION
               and j.sourceStructuredPlan is not null
               and j.sourceFeasibilityAssessment is not null)
+            or
+            j.jobType = com.aivle.backend.common.entity.JobType.SYSTEM_SMOKE_TEST
+            or
+            j.jobType = com.aivle.backend.common.entity.JobType.SYSTEM_ARTIFACT_SMOKE_TEST
+            or
+            j.jobType = com.aivle.backend.common.entity.JobType.MARKETING_GENERATION
           )
           and j.deletedAt is null
           and (j.nextAttemptAt is null or j.nextAttemptAt <= :now)

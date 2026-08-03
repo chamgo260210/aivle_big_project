@@ -84,6 +84,9 @@ public class FeasibilityPersistenceService {
         }
         job.complete(claim.claimToken(), claim.attempt(), JobStatus.SUCCEEDED,
             "FEASIBILITY_ASSESSMENT", assessment.getId(), LocalDateTime.now(jobClock));
+        if (assessment.getStatus() == AssessmentStatus.COMPLETED) {
+            job.getProject().enterFinancial();
+        }
         Map<String, String> metadata = new LinkedHashMap<>();
         metadata.put("assessmentId", assessment.getId().toString());
         metadata.put("structuredPlanId", plan.getId().toString());

@@ -24,6 +24,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.time.Instant;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.HashMap;
@@ -40,7 +41,7 @@ public class DocxDocumentParser implements DocumentParser {
     static final String DOCX_CONTENT_TYPE =
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
     static final String PARSER_NAME = "apache-poi-xwpf";
-    static final String PARSER_VERSION = "5.5.1";
+    static final String PARSER_VERSION = "spring-docx-blocks-v2";
 
     private static final byte[] ZIP_SIGNATURE = {0x50, 0x4b, 0x03, 0x04};
     private static final byte[] OLE2_SIGNATURE = {
@@ -95,6 +96,9 @@ public class DocxDocumentParser implements DocumentParser {
         metadata.put("archiveEntries", Integer.toString(archive.entryCount()));
         metadata.put("uncompressedBytes", Long.toString(archive.uncompressedBytes()));
         metadata.put("headerFooterPolicy", "NOT_EXTRACTED");
+        metadata.put("footnotePolicy", "NOT_EXTRACTED");
+        metadata.put("textboxPolicy", "BEST_EFFORT_BODY_TEXT_ONLY");
+        metadata.put("ocrPolicy", "NOT_SUPPORTED");
 
         return ParsedDocument.fromBlocks(
                 request.originalFileName(),
@@ -208,6 +212,14 @@ public class DocxDocumentParser implements DocumentParser {
                 hasContentTypes |= "[content_types].xml".equals(normalizedName);
                 hasDocumentXml |= "word/document.xml".equals(normalizedName);
                 hasMedia |= normalizedName.startsWith("word/media/");
+                if ("word/document.xml".equals(normalizedName)
+                    && containsToken(
+                        zipFile,
+                        entry,
+                        "txbxContent"
+                    )) {
+                    warnings.add("TEXTBOXES_NOT_EXTRACTED");
+                }
                 if (normalizedName.endsWith("vbaproject.bin")) {
                     throw failure(
                             DocumentParseErrorCode.DOCUMENT_FORMAT_UNSUPPORTED,
@@ -217,6 +229,10 @@ public class DocxDocumentParser implements DocumentParser {
                 if (normalizedName.startsWith("word/embeddings/")
                         || normalizedName.contains("oleobject")) {
                     warnings.add("EMBEDDED_OBJECTS_NOT_EXTRACTED");
+                }
+                if (normalizedName.equals("word/footnotes.xml")
+                        || normalizedName.equals("word/endnotes.xml")) {
+                    warnings.add("FOOTNOTES_ENDNOTES_NOT_EXTRACTED");
                 }
                 if (normalizedName.startsWith("word/externallinks/")) {
                     warnings.add("EXTERNAL_LINKS_NOT_FOLLOWED");
@@ -269,6 +285,19 @@ public class DocxDocumentParser implements DocumentParser {
             }
         }
         return size;
+    }
+
+    private boolean containsToken(
+        ZipFile zipFile,
+        ZipArchiveEntry entry,
+        String token
+    ) throws IOException {
+        try (InputStream input = zipFile.getInputStream(entry)) {
+            return new String(
+                input.readAllBytes(),
+                StandardCharsets.UTF_8
+            ).contains(token);
+        }
     }
 
     private List<ParsedDocumentBlock> extractBlocks(byte[] content, Set<String> warnings) {
@@ -332,6 +361,7 @@ public class DocxDocumentParser implements DocumentParser {
                         "body/paragraph[" + paragraphIndex + "]",
                         null,
                         null,
+                        null,
                         headingLevel
                 ),
                 budget
@@ -369,6 +399,7 @@ public class DocxDocumentParser implements DocumentParser {
                                 text,
                                 "body/table[" + tableIndex + "]/row[" + rowIndex
                                         + "]/cell[" + columnIndex + "]",
+                                tableIndex,
                                 rowIndex,
                                 columnIndex,
                                 null
@@ -387,7 +418,7 @@ public class DocxDocumentParser implements DocumentParser {
         if (blocks.size() + 1 > properties.maxBlocks()) {
             throw limitExceeded("추출 블록 수가 허용 한도를 초과했습니다.");
         }
-        int separatorLength = blocks.isEmpty() ? 0 : System.lineSeparator().length();
+        int separatorLength = blocks.isEmpty() ? 0 : 1;
         budget.characters = Math.addExact(
                 budget.characters,
                 block.text().length() + separatorLength
@@ -455,7 +486,11 @@ public class DocxDocumentParser implements DocumentParser {
     }
 
     private String normalizedText(String value) {
-        return value == null ? "" : value.strip();
+        return value == null
+            ? ""
+            : value.replace("\r\n", "\n")
+                .replace('\r', '\n')
+                .strip();
     }
 
     private DocumentParseException limitExceeded(String message) {

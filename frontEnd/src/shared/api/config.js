@@ -17,5 +17,9 @@ export function buildApiUrl(baseUrl, path) {
     );
   }
 
+  if (path.startsWith('/api/')) {
+    if (/^https?:\/\//i.test(baseUrl)) return `${new URL(baseUrl).origin}${path}`;
+    return path;
+  }
   return `${baseUrl}${path}`;
 }
