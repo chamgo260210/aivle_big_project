@@ -8,7 +8,7 @@ import {
   safeReportFileName,
 } from './reportMarkdownExporter.js';
 
-const report = () => toIntegratedReportViewModel(projectFixture, fullResources());
+const report = () => toIntegratedReportViewModel(structuredClone(projectFixture), fullResources());
 
 describe('report markdown export', () => {
   it('exports every visible report family', () => {

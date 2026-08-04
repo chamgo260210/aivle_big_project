@@ -1,7 +1,5 @@
 package com.aivle.backend.admin;
 
-import com.aivle.backend.audit.AuditEventType;
-import com.aivle.backend.audit.DomainAuditService;
 import com.aivle.backend.auth.RefreshTokenRepository;
 import com.aivle.backend.common.entity.UserRole;
 import com.aivle.backend.common.entity.UserStatus;
@@ -25,20 +23,31 @@ public class AdminUserService {
     private final UserRepository users;
     private final ProjectRepository projects;
     private final RefreshTokenRepository refreshTokens;
-    private final DomainAuditService audits;
+    private final AdminAuditService audits;
+    private final AdminReauthenticationService reauthentication;
     private final Clock jobClock;
 
     @Transactional(readOnly = true)
     public Page<AdminUserResponse> list(String keyword, UserRole role, UserStatus status, Pageable pageable) {
         String normalized = keyword == null || keyword.isBlank() ? null : keyword.trim();
-        return users.searchAdminUsers(normalized, role, status, pageable).map(this::response);
+        long activeAdminCount = users.countByRoleAndStatusAndDeletedAtIsNull(UserRole.ADMIN, UserStatus.ACTIVE);
+        return users.searchAdminUsers(normalized, role, status, pageable)
+            .map(user -> response(user, activeAdminCount));
     }
 
     @Transactional(readOnly = true)
-    public AdminUserResponse detail(Long userId) { return response(find(userId)); }
+    public AdminUserResponse detail(Long userId) {
+        return response(find(userId), users.countByRoleAndStatusAndDeletedAtIsNull(UserRole.ADMIN, UserStatus.ACTIVE));
+    }
 
     @Transactional
-    public AdminUserResponse changeStatus(User actor, Long userId, UserStatus status, String reason, String requestId) {
+    public AdminUserResponse changeStatus(User actor, Long userId, UserStatus status, String reason,
+                                          String actionToken, AdminAuditContext context) {
+        if (status == UserStatus.DISABLED) {
+            reauthentication.requireAndConsume(
+                actor, actionToken, AdminActionPurpose.USER_DISABLE, context
+            );
+        }
         User target = find(userId);
         if (actor.getId().equals(target.getId()) && status != UserStatus.ACTIVE) throw new BusinessException(ErrorCode.SELF_ADMIN_ACCOUNT_CHANGE_NOT_ALLOWED);
         if (target.getStatus() == status) {
@@ -53,13 +62,21 @@ public class AdminUserService {
         target.updateStatus(status, reason.trim(), LocalDateTime.now(jobClock));
         target.advanceSecurityVersion();
         revoke(target.getId());
-        audits.record(actor.getId(), null, AuditEventType.ADMIN_USER_STATUS_CHANGED, "USER", target.getId(), requestId,
-            Map.of("before", before.name(), "after", status.name(), "reason", reason.trim(), "targetUserId", target.getId().toString()));
+        audits.recordSuccess(
+            actor.getId(), AdminAuditAction.USER_STATUS_CHANGED, AdminAuditTargetType.USER,
+            target.getId(), target.getUsername(), reason.trim(),
+            Map.of("status", before.name()), Map.of("status", status.name()),
+            context, Map.of()
+        );
         return response(target);
     }
 
     @Transactional
-    public AdminUserResponse changeRole(User actor, Long userId, UserRole role, String reason, String requestId) {
+    public AdminUserResponse changeRole(User actor, Long userId, UserRole role, String reason,
+                                        String actionToken, AdminAuditContext context) {
+        reauthentication.requireAndConsume(
+            actor, actionToken, AdminActionPurpose.USER_ROLE_CHANGE, context
+        );
         User target = find(userId);
         if (actor.getId().equals(target.getId()) && target.getRole() == UserRole.ADMIN && role != UserRole.ADMIN) {
             throw new BusinessException(ErrorCode.SELF_ADMIN_ROLE_CHANGE_NOT_ALLOWED);
@@ -72,19 +89,26 @@ public class AdminUserService {
         target.updateRole(role, actor.getId(), LocalDateTime.now(jobClock));
         target.advanceSecurityVersion();
         revoke(target.getId());
-        audits.record(actor.getId(), null, AuditEventType.ADMIN_USER_ROLE_CHANGED, "USER", target.getId(), requestId,
-            Map.of("before", before.name(), "after", role.name(), "reason", reason.trim(), "targetUserId", target.getId().toString()));
+        audits.recordSuccess(
+            actor.getId(), AdminAuditAction.USER_ROLE_CHANGED, AdminAuditTargetType.USER,
+            target.getId(), target.getUsername(), reason.trim(),
+            Map.of("role", before.name()), Map.of("role", role.name()),
+            context, Map.of()
+        );
         return response(target);
     }
 
     @Transactional
-    public void revokeSessions(User actor, Long userId, String reason, String requestId) {
+    public void revokeSessions(User actor, Long userId, String reason, AdminAuditContext context) {
         if (actor.getId().equals(userId)) throw new BusinessException(ErrorCode.SELF_SESSION_REVOKE_NOT_ALLOWED);
-        find(userId);
-        users.findById(userId).ifPresent(User::advanceSecurityVersion);
+        User target = find(userId);
+        target.advanceSecurityVersion();
         revoke(userId);
-        audits.record(actor.getId(), null, AuditEventType.ADMIN_USER_SESSIONS_REVOKED, "USER", userId, requestId,
-            Map.of("reason", reason.trim(), "targetUserId", userId.toString()));
+        audits.recordSuccess(
+            actor.getId(), AdminAuditAction.USER_SESSION_REVOKED, AdminAuditTargetType.USER,
+            userId, target.getUsername(), reason.trim(),
+            Map.of(), Map.of("sessions", "REVOKED"), context, Map.of()
+        );
     }
 
     private void revoke(Long userId) {
@@ -92,14 +116,21 @@ public class AdminUserService {
         refreshTokens.findAllByUserIdAndDeletedAtIsNull(userId).forEach(token -> token.revoke(now));
     }
     private java.util.List<User> activeAdminsForUpdate() { return users.findByRoleAndStatusForUpdate(UserRole.ADMIN, UserStatus.ACTIVE); }
-    private User find(Long userId) { return users.findById(userId).orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND)); }
+    private User find(Long userId) { return users.findByIdAndDeletedAtIsNull(userId).orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND)); }
     private AdminUserResponse response(User user) {
+        return response(user, users.countByRoleAndStatusAndDeletedAtIsNull(UserRole.ADMIN, UserStatus.ACTIVE));
+    }
+    private AdminUserResponse response(User user, long activeAdminCount) {
         return new AdminUserResponse(user.getId(), user.getUsername(), user.getEmail(), user.getName(), user.getRole().name(),
             user.getStatus().name(), projects.countByOwnerIdAndDeletedAtIsNull(user.getId()), user.getLastLoginAt(), user.getCreatedAt(),
-            user.getLockedAt(), user.getLockedReason(), user.getDisabledAt());
+            user.getOrganizationName(), user.getDepartmentName(), user.getJobTitle(), user.getSecurityVersion(),
+            user.getLockedAt(), user.getLockedReason(), user.getDisabledAt(), user.getDisabledReason(),
+            user.getRole() == UserRole.ADMIN && user.getStatus() == UserStatus.ACTIVE && activeAdminCount <= 1);
     }
 
     public record AdminUserResponse(Long id, String username, String email, String displayName, String role, String accountStatus,
-                                    long projectCount, LocalDateTime lastLoginAt, LocalDateTime createdAt, LocalDateTime lockedAt,
-                                    String lockedReason, LocalDateTime disabledAt) { }
+                                    long projectCount, LocalDateTime lastLoginAt, LocalDateTime createdAt,
+                                    String organizationName, String departmentName, String jobTitle, Long securityVersion,
+                                    LocalDateTime lockedAt, String lockedReason, LocalDateTime disabledAt,
+                                    String disabledReason, boolean lastActiveAdmin) { }
 }

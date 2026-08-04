@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useApiClient } from '../../../shared/api/ApiClientProvider.jsx';
 import { createPersonaApi } from '../api/personaApi.js';
+import { useServicePolicy } from '../../service-policy/useServicePolicy.js';
+import { isServicePolicyError } from '../../service-policy/servicePolicyRestrictions.js';
 
 const ACTIVE = new Set(['QUEUED', 'RUNNING']);
 const SUCCESS = new Set(['SUCCEEDED', 'PARTIAL']);
@@ -9,6 +11,7 @@ const INITIAL_RETRY_DELAY = 900;
 
 export function usePersonas(projectId) {
   const client = useApiClient();
+  const { refresh: refreshPolicy } = useServicePolicy();
   const mounted = useRef(false);
   const timer = useRef(null);
   const aborter = useRef(null);
@@ -126,9 +129,12 @@ export function usePersonas(projectId) {
       setState((current) => ({ ...current, status: 'processing', job: { jobId: accepted.jobId, status: accepted.status, progress: 0 }, refreshError: null }));
       timer.current = window.setTimeout(() => poll(accepted.jobId), 0);
     } catch (error) {
+      if (isServicePolicyError(error)) {
+        void refreshPolicy().catch(() => undefined);
+      }
       preserveOrFail(error);
     }
-  }, [clear, client, poll, preserveOrFail, projectId]);
+  }, [clear, client, poll, preserveOrFail, projectId, refreshPolicy]);
 
   useEffect(() => {
     mounted.current = true;

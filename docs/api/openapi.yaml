@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: AI Business Validation Platform Document API
-  version: 0.10.0-phase10
+  version: 0.12.0-phase3-taskrun
   license:
     name: Proprietary
     identifier: LicenseRef-Proprietary
@@ -539,6 +539,123 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/PersonaRecommendationApiResponse'}
         '404': {$ref: '#/components/responses/StandardError'}
+  /projects/{projectId}/financial-analysis/source:
+    get:
+      tags: [Financial Analyses]
+      summary: Confirmed feasibility and structured-plan source for a financial analysis
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      responses:
+        '200': {description: Financial source snapshot metadata}
+  /projects/{projectId}/financial-analyses:
+    get:
+      tags: [Financial Analyses]
+      summary: List non-deleted project financial analyses
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      responses:
+        '200': {description: Financial analysis summaries}
+    post:
+      tags: [Financial Analyses]
+      summary: Create a financial-analysis draft from confirmed assumptions
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      responses:
+        '201': {description: Financial analysis draft}
+  /projects/{projectId}/financial-analyses/{analysisId}:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/AnalysisId'
+    get:
+      tags: [Financial Analyses]
+      summary: Get a financial analysis and its immutable source snapshot
+      responses:
+        '200': {description: Financial analysis detail}
+    patch:
+      tags: [Financial Analyses]
+      summary: Update a draft financial analysis
+      responses:
+        '200': {description: Updated financial analysis}
+    delete:
+      tags: [Financial Analyses]
+      summary: Soft-delete a financial analysis
+      responses:
+        '204': {description: Deleted}
+  /projects/{projectId}/financial-analyses/{analysisId}/run:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/AnalysisId'
+    post:
+      tags: [Financial Analyses]
+      summary: Deterministically calculate and complete a financial analysis
+      responses:
+        '200': {description: Completed financial analysis}
+  /projects/{projectId}/financial-analyses/{analysisId}/duplicate:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/AnalysisId'
+    post:
+      tags: [Financial Analyses]
+      summary: Duplicate assumptions into a new financial-analysis draft
+      responses:
+        '201': {description: New financial analysis draft}
+  /api/v2/projects/{projectId}/task-runs/{taskRunId}:
+    get:
+      tags: [Jobs]
+      servers:
+        - url: /
+      summary: Read an owner-scoped Target TaskRun
+      operationId: getTaskRunV2
+      parameters:
+        - {$ref: '#/components/parameters/ProjectId'}
+        - {$ref: '#/components/parameters/TaskRunId'}
+      responses:
+        '200':
+          description: Current state, including terminal failure states
+          headers:
+            X-Correlation-Id:
+              description: Request correlation identifier
+              schema: {type: string, maxLength: 128}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TaskRunV2Response'}
+        '404': {$ref: '#/components/responses/TaskRunV2Error'}
+  /api/v2/projects/{projectId}/task-runs/{taskRunId}/retry:
+    post:
+      tags: [Jobs]
+      servers:
+        - url: /
+      summary: Queue a new attempt on the same retryable TaskRun
+      operationId: retryTaskRunV2
+      parameters:
+        - {$ref: '#/components/parameters/ProjectId'}
+        - {$ref: '#/components/parameters/TaskRunId'}
+        - {$ref: '#/components/parameters/TaskCommandIdempotencyKey'}
+      responses:
+        '202':
+          description: Retry accepted
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TaskRunV2Response'}
+        '404': {$ref: '#/components/responses/TaskRunV2Error'}
+        '409': {$ref: '#/components/responses/TaskRunV2Error'}
+  /api/v2/projects/{projectId}/task-runs/{taskRunId}/cancel:
+    post:
+      tags: [Jobs]
+      servers:
+        - url: /
+      summary: Idempotently request TaskRun cancellation
+      operationId: cancelTaskRunV2
+      parameters:
+        - {$ref: '#/components/parameters/ProjectId'}
+        - {$ref: '#/components/parameters/TaskRunId'}
+      responses:
+        '200':
+          description: Current TaskRun state
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TaskRunV2Response'}
+        '404': {$ref: '#/components/responses/TaskRunV2Error'}
 components:
   securitySchemes:
     platformAuth:
@@ -551,6 +668,16 @@ components:
   parameters:
     ProjectId:
       name: projectId
+      in: path
+      required: true
+      schema: {type: integer, format: int64}
+    TaskRunId:
+      name: taskRunId
+      in: path
+      required: true
+      schema: {type: string, minLength: 1, maxLength: 64}
+    AnalysisId:
+      name: analysisId
       in: path
       required: true
       schema: {type: integer, format: int64}
@@ -581,6 +708,16 @@ components:
         minLength: 1
         maxLength: 100
         pattern: '^[A-Za-z0-9._:-]+$'
+    TaskCommandIdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Required command replay key scoped to owner, project, method and normalized path.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+        pattern: '^[A-Za-z0-9._:-]+$'
     PlanId:
       name: planId
       in: path
@@ -592,6 +729,11 @@ components:
       required: true
       schema: {type: integer, format: int64}
   responses:
+    TaskRunV2Error:
+      description: Public v2 safe error envelope
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/TaskRunV2ErrorResponse'}
     StandardError:
       description: Standard API error
       content:
@@ -599,6 +741,68 @@ components:
           schema:
             $ref: '#/components/schemas/ErrorApiResponse'
   schemas:
+    TaskRunV2ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, correlationId, taskRunId, details]
+          properties:
+            code: {type: string}
+            message: {type: string}
+            correlationId: {type: string, maxLength: 128}
+            taskRunId: {type: [string, 'null'], maxLength: 64}
+            details:
+              type: array
+              items:
+                type: object
+                required: [field, reason, resourceType, resourceId]
+                properties:
+                  field: {type: [string, 'null']}
+                  reason: {type: string}
+                  resourceType: {type: [string, 'null']}
+                  resourceId: {type: [string, 'null']}
+    TaskRunV2Response:
+      type: object
+      required: [data, meta]
+      properties:
+        data: {$ref: '#/components/schemas/TaskRunPublicViewV2'}
+        meta:
+          type: object
+          required: [correlationId]
+          properties:
+            correlationId: {type: string, maxLength: 128}
+    TaskRunPublicViewV2:
+      type: object
+      required: [id, taskType, subject, state, retryable, cancelable, correlationId, createdAt]
+      properties:
+        id: {type: string, maxLength: 64}
+        taskType: {type: string}
+        subject:
+          type: object
+          required: [type, id]
+          properties:
+            type: {type: string, maxLength: 80}
+            id: {type: string, maxLength: 64}
+        state:
+          type: string
+          enum: [QUEUED, READY, RUNNING, SUCCEEDED, FAILED, CANCELLED, TIMED_OUT]
+        retryable: {type: boolean}
+        cancelable: {type: boolean}
+        correlationId: {type: string, maxLength: 128}
+        createdAt: {type: string, format: date-time}
+        startedAt: {type: [string, 'null'], format: date-time}
+        finishedAt: {type: [string, 'null'], format: date-time}
+        errorSummary:
+          type: [object, 'null']
+          properties:
+            code: {type: string}
+        resultResource:
+          type: [object, 'null']
+          properties:
+            type: {type: string}
+            id: {type: string}
     Meta:
       type: object
       required: [requestId, timestamp]

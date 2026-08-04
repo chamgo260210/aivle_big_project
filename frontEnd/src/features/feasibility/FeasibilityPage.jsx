@@ -6,12 +6,14 @@ import {
   Alert, Button, Card, Dialog, ErrorState, LoadingState, PageHeader, Progress, StatusBadge,
 } from '../../shared/ui/index.js';
 import { useFeasibility } from './hooks/useFeasibility.js';
+import { useServicePolicy } from '../service-policy/useServicePolicy.js';
+import { getWriteRestriction } from '../service-policy/servicePolicyRestrictions.js';
 import {
   CONFIDENCE_LABELS, DIMENSION_LABELS, EVIDENCE_TYPE_LABELS, VERDICT_LABELS, parseJsonList,
 } from './model/feasibilityViewModel.js';
 import './feasibility.css';
 
-function ReadyState({ plan, legalReview, onStart }) {
+function ReadyState({ plan, legalReview, onStart, restriction, onRefreshPolicy }) {
   const [confirming, setConfirming] = useState(false);
   return (
     <>
@@ -31,7 +33,13 @@ function ReadyState({ plan, legalReview, onStart }) {
           시장 규모와 재무 수치는 자동 생성하지 않습니다. 문서의 가정은 외부 출처와
           실제 운영 자료로 검증해야 하며, 불필요한 민감정보를 추가하지 마세요.
         </Alert>
-        <Button onClick={() => setConfirming(true)}>사업 타당성 사전분석 시작</Button>
+        {restriction.blocked && (
+          <Alert tone={restriction.code === 'POLICY_UNAVAILABLE' ? 'danger' : 'warning'} title="새 분석을 시작할 수 없습니다">
+            {restriction.message}
+            {restriction.code === 'POLICY_UNAVAILABLE' && <Button type="button" variant="outline" size="small" onClick={onRefreshPolicy}>다시 시도</Button>}
+          </Alert>
+        )}
+        <Button disabled={restriction.blocked} onClick={() => setConfirming(true)}>사업 타당성 사전분석 시작</Button>
       </Card>
       <Dialog open={confirming} onClose={() => setConfirming(false)} title="사전분석을 시작할까요?">
         <p>
@@ -40,7 +48,7 @@ function ReadyState({ plan, legalReview, onStart }) {
         </p>
         <div className="feasibility-dialog-actions">
           <Button variant="outline" onClick={() => setConfirming(false)}>취소</Button>
-          <Button onClick={() => { setConfirming(false); onStart(); }}>확인하고 시작</Button>
+          <Button disabled={restriction.blocked} onClick={() => { setConfirming(false); onStart(); }}>확인하고 시작</Button>
         </div>
       </Dialog>
     </>
@@ -158,6 +166,8 @@ export default function FeasibilityPage() {
   const { projectId } = useParams();
   const { project } = useProjectContext();
   const state = useFeasibility(projectId);
+  const servicePolicy = useServicePolicy();
+  const restriction = getWriteRestriction({ ...servicePolicy, documentProcessing: true });
   return (
     <>
       <PageHeader
@@ -167,7 +177,13 @@ export default function FeasibilityPage() {
       />
       {state.status === 'loading' && <LoadingState label="최신 사업 타당성 상태를 확인하고 있습니다" />}
       {state.status === 'ready' && project.stage === 'FEASIBILITY' && (
-        <ReadyState plan={state.plan} legalReview={state.legalReview} onStart={state.start} />
+        <ReadyState
+          plan={state.plan}
+          legalReview={state.legalReview}
+          onStart={state.start}
+          restriction={restriction}
+          onRefreshPolicy={() => void servicePolicy.refresh().catch(() => undefined)}
+        />
       )}
       {state.status === 'ready' && project.stage !== 'FEASIBILITY' && (
         <Card><h2>현재 단계에서는 시작할 수 없습니다</h2><p>프로젝트가 사업성 분석 단계에 도달하면 시작할 수 있습니다.</p></Card>

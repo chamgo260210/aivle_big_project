@@ -193,6 +193,18 @@ function PersonaSection({ section }) {
   );
 }
 
+function FinancialSection({ section }) {
+  if (!section.data) return <ReportSection id="report-financial" section={section} />;
+  let summary; let result;
+  try { summary = section.data.summaryJson ? JSON.parse(section.data.summaryJson) : null; } catch { summary = null; }
+  try { result = section.data.resultJson ? JSON.parse(section.data.resultJson) : null; } catch { result = null; }
+  const base = result?.scenarios?.find((item) => item.code === 'BASE') ?? null;
+  return <ReportSection id="report-financial" section={section}>
+    <Card className="report-summary-card"><h3>{summary?.headline ?? '재무·수익성 분석 완료'}</h3>{base && <dl className="report-facts"><div><dt>총 매출</dt><dd>{Number(base.totalRevenue).toLocaleString('ko-KR')}원</dd></div><div><dt>총 영업손익</dt><dd>{Number(base.totalOperatingProfit).toLocaleString('ko-KR')}원</dd></div><div><dt>손익분기</dt><dd>{base.breakEvenMonth ? `${base.breakEvenMonth}개월` : '미도달'}</dd></div><div><dt>투자 회수</dt><dd>{base.paybackMonth != null ? `${base.paybackMonth}개월` : '미도달'}</dd></div><div><dt>필요 운영자금</dt><dd>{Number(base.requiredWorkingCapital).toLocaleString('ko-KR')}원</dd></div></dl>}<p>{summary?.breakEvenSummary}</p><p>{summary?.cashRiskSummary}</p>{summary?.sensitiveAssumptions?.length > 0 && <><h4>민감한 가정</h4><ul>{summary.sensitiveAssumptions.map((item) => <li key={item}>{item}</li>)}</ul></>}{summary?.keyRisks?.length > 0 && <><h4>주요 위험</h4><ul>{summary.keyRisks.map((item) => <li key={item}>{item}</li>)}</ul></>}<p>{summary?.disclaimer}</p></Card>
+    <Link to={section.route}>재무 분석 상세 보기</Link>
+  </ReportSection>;
+}
+
 function ValidationTasks({ report }) {
   return (
     <section className="report-section" id="report-validation" aria-labelledby="report-validation-title">
@@ -299,6 +311,7 @@ export default function ReportPage() {
       <StructuredPlanSection section={report.plan} />
       <LegalSection section={report.legal} />
       <FeasibilitySection section={report.feasibility} />
+      <FinancialSection section={report.financial} />
       <PersonaSection section={report.persona} />
       <ValidationTasks report={report} />
       <Provenance report={report} />

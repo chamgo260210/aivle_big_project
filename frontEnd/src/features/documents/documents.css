@@ -469,3 +469,11 @@
   .document-selected-file { grid-template-columns: auto minmax(0, 1fr); }
   .document-selected-file .ui-button { grid-column: span 1; }
 }
+.document-drop-zone[aria-disabled='true'] {
+  opacity: .62;
+  cursor: not-allowed;
+}
+
+.document-drop-zone[aria-disabled='true'] .ui-button {
+  pointer-events: none;
+}

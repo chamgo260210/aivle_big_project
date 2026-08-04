@@ -33,7 +33,17 @@ public class DomainAuditService {
         "before",
         "after",
         "targetUserId",
-        "settingKey"
+        "settingKey",
+        "personaId",
+        "marketingContentId",
+        "versionNumber",
+        "panelInterviewId",
+        "marketResponseId",
+        "sourceSnapshotVersion",
+        "financialAnalysisId",
+        "scenarioCount",
+        "periodMonths",
+        "sourceFeasibilityAssessmentId"
     );
 
     private final AuditEventRepository repository;

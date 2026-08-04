@@ -16,6 +16,8 @@ import {
 import { useProjectContext } from '../projects/ProjectContext.jsx';
 import { createStructuredPlanApi } from './api/structuredPlanApi.js';
 import { toStructuredPlanViewModel } from './model/structuredPlanViewModel.js';
+import { useServicePolicy } from '../service-policy/useServicePolicy.js';
+import { getWriteRestriction, isServicePolicyError } from '../service-policy/servicePolicyRestrictions.js';
 
 const FILTERS = [
   ['all', '전체'],
@@ -69,6 +71,8 @@ export function StructuredPlanCompletion({
   sourceIsLatest = true,
 }) {
   const client = useApiClient();
+  const servicePolicy = useServicePolicy();
+  const restriction = getWriteRestriction(servicePolicy);
   const { retry: refreshProject } = useProjectContext();
   const api = useMemo(() => createStructuredPlanApi(client), [client]);
   const errorRef = useRef(null);
@@ -123,6 +127,7 @@ export function StructuredPlanCompletion({
     && Number(plan.completionRate) === 100
     && plan.openRequiredCount === 0
     && !mutationInProgress
+    && !restriction.blocked
     && plan.lockVersion != null;
   const confirmBlockers = [
     !sourceIsLatest && '최신 문서 버전의 구조화 결과가 아직 준비되지 않았습니다.',
@@ -132,6 +137,7 @@ export function StructuredPlanCompletion({
     Number(plan.completionRate) !== 100 && '서버 완성도가 100%가 되어야 합니다.',
     plan.openRequiredCount > 0 && `필수 보완 항목 ${plan.openRequiredCount}개가 남아 있습니다.`,
     mutationInProgress && '보완 항목 저장이 끝날 때까지 기다려 주세요.',
+    restriction.blocked && restriction.message,
     plan.lockVersion == null && '최신 잠금 버전을 확인할 수 없습니다.',
   ].filter(Boolean);
 
@@ -174,7 +180,7 @@ export function StructuredPlanCompletion({
       setFieldErrors((current) => ({ ...current, [key]: validationError }));
       return;
     }
-    if (busyFieldId != null || plan.status === 'CONFIRMED' || !sourceIsLatest) return;
+    if (busyFieldId != null || plan.status === 'CONFIRMED' || !sourceIsLatest || restriction.blocked) return;
 
     setBusyFieldId(field.fieldId);
     setActionError('');
@@ -220,6 +226,9 @@ export function StructuredPlanCompletion({
           setActionError(getUserErrorMessage(refreshError));
         }
       } else {
+        if (isServicePolicyError(error)) {
+          void servicePolicy.refresh().catch(() => undefined);
+        }
         setActionError(getUserErrorMessage(error));
       }
       requestAnimationFrame(() => errorRef.current?.focus());
@@ -243,7 +252,7 @@ export function StructuredPlanCompletion({
   }
 
   async function confirmPlan() {
-    if (!confirmReady || confirming) return;
+    if (!confirmReady || confirming || restriction.blocked) return;
     setConfirming(true);
     setActionError('');
     setConfirmConflict('');
@@ -272,6 +281,9 @@ export function StructuredPlanCompletion({
           setActionError(getUserErrorMessage(refreshError));
         }
       } else {
+        if (isServicePolicyError(error)) {
+          void servicePolicy.refresh().catch(() => undefined);
+        }
         setActionError(getUserErrorMessage(error));
       }
       requestAnimationFrame(() => errorRef.current?.focus());
@@ -314,6 +326,12 @@ export function StructuredPlanCompletion({
           이전 계획은 편집하지 않습니다. 최신 분석 작업이 끝난 뒤 새 계획을 다시 불러오세요.
         </Alert>
       )}
+      {restriction.blocked && (
+        <Alert tone={restriction.code === 'POLICY_UNAVAILABLE' ? 'danger' : 'warning'} title="계획을 변경할 수 없습니다">
+          <p>{restriction.message}</p>
+          {restriction.code === 'POLICY_UNAVAILABLE' && <Button type="button" variant="outline" size="small" onClick={() => void servicePolicy.refresh().catch(() => undefined)}>다시 시도</Button>}
+        </Alert>
+      )}
 
       {plan.status === 'CONFIRMED' ? (
         <Card className="confirmed-plan">
@@ -327,7 +345,7 @@ export function StructuredPlanCompletion({
             <div><dt>확정 사용자</dt><dd>{plan.confirmedBy != null ? `사용자 #${plan.confirmedBy}` : '정보 없음'}</dd></div>
             <div><dt>출처 문서 버전</dt><dd>{plan.versionNumber}</dd></div>
           </dl>
-          <Link className="primary-link" to={`/app/projects/${projectId}/review/legal`}>
+          <Link className="primary-link" to={`/app/projects/${projectId}/legal`}>
             법률·규제 검토 단계로 이동
           </Link>
         </Card>
@@ -416,11 +434,11 @@ export function StructuredPlanCompletion({
                               submitField(field, 'FILLED', value);
                             }
                           }}
-                          disabled={busyFieldId === field.fieldId}
+                          disabled={busyFieldId === field.fieldId || restriction.blocked}
                           required
                         />
                         <div className="missing-field-actions">
-                          <Button type="submit" loading={busyFieldId === field.fieldId}>
+                          <Button type="submit" loading={busyFieldId === field.fieldId} disabled={restriction.blocked}>
                             보완 내용 저장
                           </Button>
                           <Button
@@ -457,6 +475,7 @@ export function StructuredPlanCompletion({
                         <div className="missing-field-actions">
                           <Button
                             type="button"
+                            disabled={restriction.blocked}
                             onClick={() => submitField(
                               fieldConflict.latestField,
                               fieldConflict.mode,
@@ -475,10 +494,10 @@ export function StructuredPlanCompletion({
 
                     {field.isEditable && sourceIsLatest && editor?.fieldId !== field.fieldId && (
                       <div className="missing-field-actions">
-                        <Button type="button" onClick={() => beginFill(field)}>
+                        <Button type="button" disabled={restriction.blocked} onClick={() => beginFill(field)}>
                           {field.status === 'FILLED' ? '입력 수정' : '내용 입력'}
                         </Button>
-                        <Button type="button" variant="outline" onClick={() => beginWaive(field)}>
+                        <Button type="button" variant="outline" disabled={restriction.blocked} onClick={() => beginWaive(field)}>
                           {field.status === 'WAIVED' ? '제외 사유 수정' : '이번 단계에서 제외'}
                         </Button>
                       </div>
@@ -530,11 +549,11 @@ export function StructuredPlanCompletion({
                 ...current,
                 [waiverDraftKey]: event.target.value,
               }))}
-              disabled={busyFieldId === waiverField.fieldId}
+              disabled={busyFieldId === waiverField.fieldId || restriction.blocked}
               required
             />
             <div className="missing-field-actions">
-              <Button type="submit" loading={busyFieldId === waiverField.fieldId}>
+              <Button type="submit" loading={busyFieldId === waiverField.fieldId} disabled={restriction.blocked}>
                 제외 사유 저장
               </Button>
               <Button
@@ -566,7 +585,7 @@ export function StructuredPlanCompletion({
           <p>출처 문서 버전 <strong>{plan.versionNumber}</strong></p>
         </div>
         <div className="missing-field-actions">
-          <Button type="button" loading={confirming} onClick={confirmPlan}>
+          <Button type="button" loading={confirming} disabled={restriction.blocked} onClick={confirmPlan}>
             확인하고 확정
           </Button>
           <Button

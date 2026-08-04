@@ -7,6 +7,8 @@ import { appRoutes, projectRoutes } from '../../features/projects/routing/projec
 import { useProjects } from '../../features/projects/hooks/useProjects.js';
 import ProjectStatusHelp from '../../features/projects/components/ProjectStatusHelp.jsx';
 import { AppIcon, Button, Drawer, ToastRegion } from '../../shared/ui/index.js';
+import { useServicePolicy } from '../../features/service-policy/useServicePolicy.js';
+import { getWriteRestriction } from '../../features/service-policy/servicePolicyRestrictions.js';
 import './layouts.css';
 
 function userLabel(user) {
@@ -86,6 +88,8 @@ export default function AppShell() {
   const accountExitAction = useRef(null);
   const previousPathRef = useRef(null);
   const { user, logout } = useAuth();
+  const servicePolicy = useServicePolicy();
+  const writeRestriction = getWriteRestriction(servicePolicy);
   const { start } = useAuthTransition();
   const navigate = useNavigate();
   const location = useLocation();
@@ -166,12 +170,32 @@ export default function AppShell() {
         </div>
         <button type="button" className="app-mobile-menu" aria-label="메뉴 열기" aria-expanded={drawerOpen} onClick={() => setDrawerOpen(true)}><AppIcon name="more" /></button>
       </header>
+      {servicePolicy.policy.maintenanceMode && !servicePolicy.loading && !servicePolicy.error && (
+        <div className="app-maintenance-banner" role="status" aria-live="polite">
+          <strong>현재 서비스 점검 중입니다.</strong>
+          <span>조회 기능은 이용할 수 있지만 변경 작업은 잠시 사용할 수 없습니다.</span>
+        </div>
+      )}
       <main id="main-content" className="app-main" tabIndex="-1"><div key={pageKey} className="app-page-transition"><Outlet /></div></main>
       <ProjectStatusHelp visible={projectHelp.visible} context={projectHelp.context} />
       <Drawer open={drawerOpen} onClose={() => setDrawerOpen(false)} title="메뉴">
         <GlobalNavigation onNavigate={() => setDrawerOpen(false)} />
         <ProjectSearch onChoose={() => setDrawerOpen(false)} />
-        <Link className="app-drawer-new" to={appRoutes.newProject} onClick={() => setDrawerOpen(false)}>새 프로젝트</Link>
+        <Link
+          className={`app-drawer-new ${writeRestriction.blocked ? 'is-disabled' : ''}`}
+          to={appRoutes.newProject}
+          aria-disabled={writeRestriction.blocked}
+          title={writeRestriction.blocked ? writeRestriction.message : undefined}
+          onClick={(event) => {
+            if (writeRestriction.blocked) {
+              event.preventDefault();
+              return;
+            }
+            setDrawerOpen(false);
+          }}
+        >
+          새 프로젝트
+        </Link>
         <AccountMenu user={user} onLogout={handleLogout} onSettings={() => { setDrawerOpen(false); navigate(appRoutes.profileSettings); }} />
       </Drawer>
       <ToastRegion />

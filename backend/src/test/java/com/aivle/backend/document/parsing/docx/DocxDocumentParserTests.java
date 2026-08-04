@@ -34,6 +34,12 @@ class DocxDocumentParserTests {
 
         assertThat(parsed.blocks()).extracting(block -> block.text())
                 .containsExactly("첫 문단", "둘째 문단");
+        assertThat(parsed.blocks()).extracting(block -> block.blockId())
+                .containsExactly("b-000001", "b-000002");
+        assertThat(parsed.blocks()).extracting(block -> block.sequence())
+                .containsExactly(1, 2);
+        assertThat(parsed.parserVersion())
+                .isEqualTo("spring-docx-blocks-v2");
     }
 
     @Test
@@ -58,6 +64,7 @@ class DocxDocumentParserTests {
 
         assertThat(parsed.blocks()).hasSize(2);
         assertThat(parsed.blocks().get(1).blockType()).isEqualTo(ParsedBlockType.TABLE_CELL);
+        assertThat(parsed.blocks().get(1).tableIndex()).isEqualTo(1);
         assertThat(parsed.blocks().get(1).tableRow()).isEqualTo(1);
         assertThat(parsed.blocks().get(1).tableColumn()).isEqualTo(2);
     }

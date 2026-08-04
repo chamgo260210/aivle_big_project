@@ -7,6 +7,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -14,6 +15,7 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.AnonymousAuthenticationFilter;
 
 @Configuration
 @RequiredArgsConstructor
@@ -34,12 +36,12 @@ public class SecurityConfiguration {
             .sessionManagement(session -> session
                 .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(authorize -> authorize
+                .requestMatchers(HttpMethod.GET, "/api/v1/service-policy").permitAll()
                 .requestMatchers(
                     "/api/v1/auth/signup",
                     "/api/v1/auth/login",
                     "/api/v1/auth/refresh",
-                    "/api/v1/test/ai-server/**",
-                    "/actuator/health",
+                    "/actuator/health/**",
                     "/h2-console/**"
                 ).permitAll()
                 .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
@@ -81,14 +83,64 @@ public class SecurityConfiguration {
     }
 
     @Bean
-    @Profile({"test", "dev-header-auth"})
-    SecurityFilterChain developmentSecurityFilterChain(HttpSecurity http)
-        throws Exception {
+    @Profile("test")
+    SecurityFilterChain testSecurityFilterChain(
+        HttpSecurity http,
+        DevHeaderAuthenticationFilter headerAuthenticationFilter
+    ) throws Exception {
         return http
             .csrf(csrf -> csrf.disable())
             .cors(Customizer.withDefaults())
+            .sessionManagement(session -> session
+                .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(authorize -> authorize
-                .anyRequest().permitAll())
+                .requestMatchers(HttpMethod.GET, "/api/v1/service-policy").permitAll()
+                .requestMatchers(
+                    "/api/v1/auth/signup",
+                    "/api/v1/auth/login",
+                    "/api/v1/auth/refresh",
+                    "/actuator/health/**",
+                    "/h2-console/**"
+                ).permitAll()
+                .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
+                .anyRequest().authenticated())
+            .addFilterBefore(headerAuthenticationFilter, AnonymousAuthenticationFilter.class)
+            .exceptionHandling(exceptions -> exceptions
+                .authenticationEntryPoint((request, response, exception) ->
+                    errorWriter.write(response, ErrorCode.AUTHENTICATION_REQUIRED, requestId(request)))
+                .accessDeniedHandler((request, response, exception) ->
+                    errorWriter.write(response, ErrorCode.ACCESS_DENIED, requestId(request))))
+            .build();
+    }
+
+    @Bean
+    @Profile("dev-header-auth")
+    SecurityFilterChain developmentSecurityFilterChain(
+        HttpSecurity http,
+        DevHeaderAuthenticationFilter headerAuthenticationFilter
+    ) throws Exception {
+        return http
+            .csrf(csrf -> csrf.disable())
+            .cors(Customizer.withDefaults())
+            .sessionManagement(session -> session
+                .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            .authorizeHttpRequests(authorize -> authorize
+                .requestMatchers(HttpMethod.GET, "/api/v1/service-policy").permitAll()
+                .requestMatchers(
+                    "/api/v1/auth/signup",
+                    "/api/v1/auth/login",
+                    "/api/v1/auth/refresh",
+                    "/actuator/health/**",
+                    "/h2-console/**"
+                ).permitAll()
+                .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
+                .anyRequest().authenticated())
+            .addFilterBefore(headerAuthenticationFilter, AnonymousAuthenticationFilter.class)
+            .exceptionHandling(exceptions -> exceptions
+                .authenticationEntryPoint((request, response, exception) ->
+                    errorWriter.write(response, ErrorCode.AUTHENTICATION_REQUIRED, requestId(request)))
+                .accessDeniedHandler((request, response, exception) ->
+                    errorWriter.write(response, ErrorCode.ACCESS_DENIED, requestId(request))))
             .build();
     }
 

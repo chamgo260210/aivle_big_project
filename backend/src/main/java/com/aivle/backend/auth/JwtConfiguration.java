@@ -56,7 +56,7 @@ public class JwtConfiguration {
             try {
                 Long userId = Long.valueOf(jwt.getSubject());
                 Number claimedVersion = jwt.getClaim("securityVersion");
-                return users.findById(userId)
+                return users.findByIdAndDeletedAtIsNull(userId)
                     .filter(user -> user.getStatus() == UserStatus.ACTIVE
                         && claimedVersion != null
                         && user.getSecurityVersion().equals(claimedVersion.longValue()))

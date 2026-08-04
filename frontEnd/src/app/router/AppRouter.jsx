@@ -11,22 +11,24 @@ import {
   ProjectCreatePage,
   ProjectListPage,
 } from '../../features/projects/ProjectPages.jsx';
-import ProjectGetStartedPage from '../../features/projects/ProjectGetStartedPage.jsx';
-import { ProjectOverviewPage } from '../../features/projects/ProjectAreaPages.jsx';
 import WorkspaceHomePage from '../../features/projects/WorkspaceHomePage.jsx';
 import { AccountSettingsLayout, AccountSettingsRedirect, ProfileSettingsPage, SecuritySettingsPage } from '../../features/settings/AccountSettingsPages.jsx';
 import ProjectSettingsSheet from '../../features/projects/ProjectSettingsSheet.jsx';
 import { ProjectProvider } from '../../features/projects/ProjectContext.jsx';
-import { DocumentUploadPage, StructuredPlanPage } from '../../features/documents/DocumentPages.jsx';
 import { AuthPlaceholderPage, NotFoundPage } from '../../pages/FoundationPages.jsx';
-import LegalReviewPage from '../../features/legal-review/LegalReviewPage.jsx';
-import FeasibilityPage from '../../features/feasibility/FeasibilityPage.jsx';
-import PersonaPage from '../../features/personas/PersonaPage.jsx';
-import ReportPage from '../../features/report/ReportPage.jsx';
 import LandingPage from '../../features/landing/LandingPage.jsx';
 import AdminShell from '../layouts/AdminShell.jsx';
-import { AdminAuditPage, AdminJobsPage, AdminOperationsPage, AdminOverviewPage, AdminProjectsPage, AdminSettingsPage, AdminUsersPage } from '../../features/admin/pages/AdminPages.jsx';
-import InterimReportTestPage from '../../features/report/InterimReportTestPage.jsx';
+import AdminOverviewPage from '../../features/admin/pages/AdminOverviewPage.jsx';
+import AdminOperationsPage from '../../features/admin/pages/AdminOperationsPage.jsx';
+import AdminJobsPage from '../../features/admin/pages/AdminJobsPage.jsx';
+import AdminSettingsPage from '../../features/admin/pages/AdminSettingsPage.jsx';
+import AdminUsersPage, { AdminUserDetailOverlay } from '../../features/admin/pages/AdminUsersPage.jsx';
+import AdminProjectsPage, { AdminProjectDetailOverlay } from '../../features/admin/pages/AdminProjectsPage.jsx';
+import AdminAuditPage, { AdminAuditDetailOverlay } from '../../features/admin/pages/AdminAuditPage.jsx';
+import { IdeaJourneyPage, LegalJourneyPage } from '../../features/journey/JourneyPages.jsx';
+import { ConceptAnalysisPage, ConceptGenerationPage, ConceptSelectionPage } from '../../features/journey/ConceptJourneyPages.jsx';
+import { InterviewJourneyPage, PersonaJourneyPage } from '../../features/journey/PersonaInterviewPages.jsx';
+import { FinalReportJourneyPage, MarketingJourneyPage } from '../../features/journey/MarketingReportPages.jsx';
 
 function LegacyProjectRedirect({ suffix = '' }) {
   const { projectId } = useParams();
@@ -66,25 +68,45 @@ export default function AppRouter() {
             <Route path="security" element={<SecuritySettingsPage />} />
           </Route>
           <Route path="app/projects/:projectId" element={<ProjectLayout />}>
-            <Route index element={<ProjectOverviewPage />} />
-            <Route path="get-started" element={<ProjectGetStartedPage />} />
-            <Route path="plan" element={<Navigate to="documents" replace />} />
+            <Route index element={<IdeaJourneyPage />} />
+            <Route path="idea" element={<IdeaJourneyPage />} />
+            <Route path="legal" element={<LegalJourneyPage />} />
+            <Route path="journey/concept" element={<ConceptGenerationPage />} />
+            <Route path="journey/concept-analysis" element={<ConceptAnalysisPage />} />
+            <Route path="journey/concept-selection" element={<ConceptSelectionPage />} />
+            <Route path="journey/persona" element={<PersonaJourneyPage />} />
+            <Route path="journey/interview" element={<InterviewJourneyPage />} />
+            <Route path="journey/marketing" element={<MarketingJourneyPage />} />
+            <Route path="journey/final-report" element={<FinalReportJourneyPage />} />
+            <Route path="get-started" element={<Navigate to=".." replace />} />
+            <Route path="plan" element={<LegacyProjectRedirect />} />
             <Route path="plan/brief" element={<Navigate to="../settings" replace />} />
-            <Route path="plan/documents" element={<DocumentUploadPage />} />
-            <Route path="plan/structure" element={<StructuredPlanPage />} />
+            <Route path="plan/documents" element={<LegacyProjectRedirect />} />
+            <Route path="plan/structure" element={<LegacyProjectRedirect />} />
             <Route path="review" element={<Navigate to="legal" replace />} />
-            <Route path="review/legal" element={<LegalReviewPage />} />
-            <Route path="review/market" element={<FeasibilityPage />} />
-            <Route path="validate" element={<Navigate to="personas" replace />} />
-            <Route path="validate/personas" element={<PersonaPage />} />
-            <Route path="report" element={<ReportPage />} />
+            <Route path="review/legal" element={<LegacyProjectRedirect suffix="/legal" />} />
+            <Route path="review/market" element={<LegacyProjectRedirect suffix="/journey/concept" />} />
+            <Route path="review/financial" element={<LegacyProjectRedirect suffix="/journey/concept-analysis" />} />
+            <Route path="review/financial/new" element={<LegacyProjectRedirect suffix="/journey/concept-analysis" />} />
+            <Route path="review/financial/:analysisId" element={<LegacyProjectRedirect suffix="/journey/concept-analysis" />} />
+            <Route path="validate" element={<LegacyProjectRedirect suffix="/journey/persona" />} />
+            <Route path="validate/personas" element={<LegacyProjectRedirect suffix="/journey/persona" />} />
+            <Route path="validate/interview" element={<LegacyProjectRedirect suffix="/journey/interview" />} />
+            <Route path="validate/interview/:interviewId" element={<LegacyProjectRedirect suffix="/journey/interview" />} />
+            <Route path="validate/market-response" element={<LegacyProjectRedirect suffix="/journey/interview" />} />
+            <Route path="validate/market-response/:predictionId" element={<LegacyProjectRedirect suffix="/journey/interview" />} />
+            <Route path="validate/marketing" element={<LegacyProjectRedirect suffix="/journey/marketing" />} />
+            <Route path="validate/marketing/new" element={<LegacyProjectRedirect suffix="/journey/marketing" />} />
+            <Route path="validate/marketing/:contentId" element={<LegacyProjectRedirect suffix="/journey/marketing" />} />
+            <Route path="validation" element={<LegacyProjectRedirect suffix="/journey/persona" />} />
+            <Route path="validation/interview" element={<LegacyProjectRedirect suffix="/journey/interview" />} />
+            <Route path="validation/market-response" element={<LegacyProjectRedirect suffix="/journey/interview" />} />
+            <Route path="validation/marketing" element={<LegacyProjectRedirect suffix="/journey/marketing" />} />
+            <Route path="report" element={<LegacyProjectRedirect suffix="/journey/final-report" />} />
             <Route path="settings" element={<ProjectSettingsSheet />} />
             <Route path="settings/general" element={<Navigate to="../settings" replace />} />
             <Route path="settings/danger" element={<Navigate to="../settings" replace />} />
           </Route>
-
-          {/* 테스트용 임시 경로 */}
-          <Route path="app/test/interim-report/:projectId" element={<InterimReportTestPage />} />
 
           <Route path="dashboard" element={<Navigate to="/app" replace />} />
           <Route path="projects" element={<Navigate to="/app/projects" replace />} />
@@ -94,20 +116,21 @@ export default function AppRouter() {
           <Route path="projects/:projectId" element={<LegacyProjectRedirect />} />
           <Route path="projects/:projectId/overview" element={<LegacyProjectRedirect />} />
           <Route path="projects/:projectId/input" element={<LegacyProjectRedirect suffix="/settings" />} />
-          <Route path="projects/:projectId/documents" element={<LegacyProjectRedirect suffix="/plan/documents" />} />
-          <Route path="projects/:projectId/structure" element={<LegacyProjectRedirect suffix="/plan/structure" />} />
-          <Route path="projects/:projectId/structured-plan" element={<LegacyProjectRedirect suffix="/plan/structure" />} />
-          <Route path="projects/:projectId/structured-plan/missing-fields" element={<LegacyProjectRedirect suffix="/plan/structure" />} />
-          <Route path="projects/:projectId/legal-review" element={<LegacyProjectRedirect suffix="/review/legal" />} />
-          <Route path="projects/:projectId/feasibility" element={<LegacyProjectRedirect suffix="/review/market" />} />
-          <Route path="projects/:projectId/analyses/:analysis" element={<LegacyProjectRedirect suffix="/review/market" />} />
-          <Route path="projects/:projectId/personas" element={<LegacyProjectRedirect suffix="/validate/personas" />} />
-          <Route path="projects/:projectId/panel-survey" element={<LegacyProjectRedirect suffix="/validate" />} />
-          <Route path="projects/:projectId/panel-discussion" element={<LegacyProjectRedirect suffix="/validate" />} />
-          <Route path="projects/:projectId/market-validation" element={<LegacyProjectRedirect suffix="/validate" />} />
-          <Route path="projects/:projectId/report" element={<LegacyProjectRedirect suffix="/report" />} />
-          <Route path="projects/:projectId/reports/*" element={<LegacyProjectRedirect suffix="/report" />} />
-          <Route path="projects/:projectId/marketing" element={<LegacyProjectRedirect suffix="/report" />} />
+          <Route path="projects/:projectId/documents" element={<LegacyProjectRedirect />} />
+          <Route path="projects/:projectId/structure" element={<LegacyProjectRedirect />} />
+          <Route path="projects/:projectId/structured-plan" element={<LegacyProjectRedirect />} />
+          <Route path="projects/:projectId/structured-plan/missing-fields" element={<LegacyProjectRedirect />} />
+          <Route path="projects/:projectId/legal-review" element={<LegacyProjectRedirect suffix="/legal" />} />
+          <Route path="projects/:projectId/feasibility" element={<LegacyProjectRedirect suffix="/journey/concept" />} />
+          <Route path="projects/:projectId/financial" element={<LegacyProjectRedirect suffix="/journey/concept-analysis" />} />
+          <Route path="projects/:projectId/analyses/:analysis" element={<LegacyProjectRedirect suffix="/journey/concept-analysis" />} />
+          <Route path="projects/:projectId/personas" element={<LegacyProjectRedirect suffix="/journey/persona" />} />
+          <Route path="projects/:projectId/panel-survey" element={<LegacyProjectRedirect suffix="/journey/interview" />} />
+          <Route path="projects/:projectId/panel-discussion" element={<LegacyProjectRedirect suffix="/journey/interview" />} />
+          <Route path="projects/:projectId/market-validation" element={<LegacyProjectRedirect suffix="/journey/interview" />} />
+          <Route path="projects/:projectId/report" element={<LegacyProjectRedirect suffix="/journey/final-report" />} />
+          <Route path="projects/:projectId/reports/*" element={<LegacyProjectRedirect suffix="/journey/final-report" />} />
+          <Route path="projects/:projectId/marketing" element={<LegacyProjectRedirect suffix="/journey/marketing" />} />
           <Route path="projects/:projectId/settings" element={<LegacyProjectRedirect suffix="/settings" />} />
         </Route>
 
@@ -115,10 +138,13 @@ export default function AppRouter() {
           <Route element={<AdminShell />}>
             <Route path="admin" element={<AdminOverviewPage />} />
             <Route path="admin/users" element={<AdminUsersPage />} />
+            <Route path="admin/users/:userId" element={<AdminUsersPage />} />
             <Route path="admin/projects" element={<AdminProjectsPage />} />
+            <Route path="admin/projects/:projectId" element={<AdminProjectsPage />} />
             <Route path="admin/operations" element={<AdminOperationsPage />} />
             <Route path="admin/jobs" element={<AdminJobsPage />} />
             <Route path="admin/audit" element={<AdminAuditPage />} />
+            <Route path="admin/audit/:auditId" element={<AdminAuditPage />} />
             <Route path="admin/settings" element={<AdminSettingsPage />} />
           </Route>
         </Route>
@@ -130,6 +156,11 @@ export default function AppRouter() {
       <Route element={<ProtectedRoute />}>
         <Route path="app/projects/new" element={<ProjectCreatePage />} />
         <Route path="app/projects/:projectId/settings" element={<ProjectSettingsOverlay />} />
+        <Route element={<AdminRoute />}>
+          <Route path="admin/users/:userId" element={<AdminUserDetailOverlay />} />
+          <Route path="admin/projects/:projectId" element={<AdminProjectDetailOverlay />} />
+          <Route path="admin/audit/:auditId" element={<AdminAuditDetailOverlay />} />
+        </Route>
       </Route>
     </Routes>}
     </>

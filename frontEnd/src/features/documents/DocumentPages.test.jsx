@@ -5,20 +5,34 @@ import { describe, expect, it, vi } from 'vitest';
 import { ApiClientProvider } from '../../shared/api/ApiClientProvider.jsx';
 import { ApiError } from '../../shared/api/apiError.js';
 import { ProjectProvider } from '../projects/ProjectContext.jsx';
+import ServicePolicyContext from '../service-policy/servicePolicyContext.js';
 import { CANONICAL_SECTION_ORDER } from '../structured-plan/model/structuredPlanViewModel.js';
 import { DocumentUploadPage, StructuredPlanPage } from './DocumentPages.jsx';
 
 function renderPage(element, client, path) {
   const projectId = path.split('/')[2];
+  const servicePolicy = {
+    loading: false,
+    policy: {
+      registrationEnabled: true,
+      documentProcessingEnabled: true,
+      maintenanceMode: false,
+      clusterPersonaEnabled: true,
+    },
+    error: null,
+    refresh: vi.fn(async () => undefined),
+  };
   return render(
     <MemoryRouter initialEntries={[path]}>
       <ApiClientProvider client={client}>
-        <ProjectProvider projectId={projectId}>
-          <Routes>
-            <Route path="/projects/:projectId/documents" element={element} />
-            <Route path="/projects/:projectId/structure" element={element} />
-          </Routes>
-        </ProjectProvider>
+        <ServicePolicyContext.Provider value={servicePolicy}>
+          <ProjectProvider projectId={projectId}>
+            <Routes>
+              <Route path="/projects/:projectId/documents" element={element} />
+              <Route path="/projects/:projectId/structure" element={element} />
+            </Routes>
+          </ProjectProvider>
+        </ServicePolicyContext.Provider>
       </ApiClientProvider>
     </MemoryRouter>,
   );

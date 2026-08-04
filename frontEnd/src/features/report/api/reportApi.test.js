@@ -9,16 +9,19 @@ function clientWith(handler) {
 }
 
 describe('report api aggregation', () => {
-  it('loads eight existing result and job resources in parallel', async () => {
-    const pending = [];
-    const client = clientWith((path) => new Promise((resolve) => pending.push({ path, resolve })));
-    const promise = createReportApi(client).load(10);
-    await Promise.resolve();
-    expect(client.get).toHaveBeenCalledTimes(8);
-    pending.forEach(({ path, resolve }) => resolve({ data: { path } }));
-    const result = await promise;
+  it('loads result, job, and financial resources in parallel', async () => {
+    const client = clientWith(async (path) => ({
+      data: path === '/projects/10/financial-analyses'
+        ? [{ id: 7, status: 'COMPLETED' }]
+        : { path },
+    }));
+    const result = await createReportApi(client).load(10);
+    expect(client.get).toHaveBeenCalledTimes(10);
     expect(result.plan.state).toBe('available');
     expect(result.personaJob.state).toBe('available');
+    expect(result.financialAnalyses.state).toBe('available');
+    expect(result.financialAnalysis.state).toBe('available');
+    expect(client.get).toHaveBeenCalledWith('/projects/10/financial-analyses/7', undefined);
   });
 
   it('classifies 404 as an unstarted section', async () => {
@@ -53,6 +56,7 @@ describe('report api aggregation', () => {
     ['/projects/10/jobs/latest?jobType=FEASIBILITY_ANALYSIS'],
     ['/projects/10/persona-recommendations/latest'],
     ['/projects/10/jobs/latest?jobType=PERSONA_RECOMMENDATION'],
+    ['/projects/10/financial-analyses'],
   ])('reuses existing endpoint %s', async (expectedPath) => {
     const client = clientWith(async () => ({ data: {} }));
     await createReportApi(client).load(10);

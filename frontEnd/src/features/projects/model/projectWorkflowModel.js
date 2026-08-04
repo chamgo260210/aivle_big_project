@@ -37,7 +37,7 @@ export const PROJECT_AREA_DEFINITIONS = Object.freeze([
   { id: PROJECT_AREAS.REPORT, label: 'Report', path: 'report' },
 ]);
 
-const STAGE_AREA = Object.freeze({
+export const STAGE_AREA = Object.freeze({
   DOCUMENT: PROJECT_AREAS.PLAN,
   STRUCTURING: PROJECT_AREAS.PLAN,
   LEGAL_REVIEW: PROJECT_AREAS.REVIEW,
@@ -50,17 +50,24 @@ const STAGE_AREA = Object.freeze({
   COMPLETED: PROJECT_AREAS.REPORT,
 });
 
-const STAGE_VIEW = Object.freeze({
-  DOCUMENT: { label: '사업계획 입력', route: 'plan/documents' },
-  STRUCTURING: { label: '정보 구조화', route: 'plan/structure' },
-  LEGAL_REVIEW: { label: '법률·규제 검토', route: 'review/legal' },
-  FEASIBILITY: { label: '사업 타당성 분석', route: 'review' },
-  FINANCIAL: { label: '재무·수익성 분석', route: 'review' },
-  PERSONA_CONFIGURATION: { label: 'AI 패널 검증', route: 'validate/personas' },
-  PANEL_SURVEY: { label: 'AI 패널 조사', route: 'validate' },
-  PANEL_DISCUSSION: { label: 'AI 패널 토론', route: 'validate' },
-  REPORT: { label: '통합 보고서', route: 'report' },
-  COMPLETED: { label: '통합 보고서', route: 'report' },
+export const STAGE_VIEW = Object.freeze({
+  DOCUMENT: { label: '아이디어 입력', route: '' },
+  STRUCTURING: { label: '아이디어 해석', route: '' },
+  LEGAL_REVIEW: { label: '법률·규제 검토', route: 'legal' },
+  FEASIBILITY: { label: '콘셉트 생성', route: 'journey/concept' },
+  FINANCIAL: { label: '콘셉트 분석', route: 'journey/concept-analysis' },
+  PERSONA_CONFIGURATION: { label: '콘셉트 선택', route: 'journey/concept-selection' },
+  PANEL_SURVEY: { label: '페르소나', route: 'journey/persona' },
+  PANEL_DISCUSSION: { label: '인터뷰', route: 'journey/interview' },
+  MARKETING: { label: '마케팅', route: 'journey/marketing' },
+  REPORT: { label: '최종 보고서', route: 'journey/final-report' },
+  COMPLETED: { label: '최종 보고서', route: 'journey/final-report' },
+});
+
+const JOURNEY_STAGE_INDEX = Object.freeze({
+  DOCUMENT: 0, STRUCTURING: 0, LEGAL_REVIEW: 1, FEASIBILITY: 2, FINANCIAL: 3,
+  PERSONA_CONFIGURATION: 4, PANEL_SURVEY: 5, PANEL_DISCUSSION: 6,
+  MARKETING: 7, REPORT: 8, COMPLETED: 9,
 });
 
 export function getProjectBasePath(projectId) {
@@ -87,7 +94,7 @@ export function getProjectNextAction(project) {
       type: 'COMPLETED',
       label: '통합 보고서를 검토하세요',
       description: '검증 결과와 근거를 보고서에서 다시 확인할 수 있습니다.',
-      route: projectRoutes.report(project.projectId),
+      route: `${getProjectBasePath(project.projectId)}/journey/final-report`,
       priority: 'NORMAL',
     };
   }
@@ -96,26 +103,27 @@ export function getProjectNextAction(project) {
     type: getTaskStatusForProject(project),
     label: `${stage.label}을(를) 계속하세요`,
     description: '현재 프로젝트의 입력과 결과를 확인한 뒤 다음 검증 단계로 이어갈 수 있습니다.',
-    route: `${getProjectBasePath(project.projectId)}/${stage.route}`,
+    route: stage.route ? `${getProjectBasePath(project.projectId)}/${stage.route}` : getProjectBasePath(project.projectId),
     priority: 'NORMAL',
   };
 }
 
 export function getProjectProgress(project) {
-  const area = getProjectArea(project);
-  const index = PROJECT_AREA_DEFINITIONS.findIndex((definition) => definition.id === area);
-  return Math.max(0, Math.round((index / (PROJECT_AREA_DEFINITIONS.length - 1)) * 100));
+  const index = JOURNEY_STAGE_INDEX[project?.stage] ?? 0;
+  return Math.max(0, Math.min(100, Math.round((index / 9) * 100)));
 }
 
 export function getAreaSummary(project) {
   const currentArea = getProjectArea(project);
   const currentIndex = PROJECT_AREA_DEFINITIONS.findIndex((definition) => definition.id === currentArea);
-  return PROJECT_AREA_DEFINITIONS.filter(({ id }) => id !== PROJECT_AREAS.OVERVIEW).map((definition, index) => ({
-    ...definition,
-    taskStatus: project?.status === 'COMPLETED' || index < currentIndex - 1
-      ? 'COMPLETED'
-      : index === currentIndex - 1
-        ? getTaskStatusForProject(project)
-        : 'BLOCKED',
-  }));
+  return PROJECT_AREA_DEFINITIONS
+    .filter(({ id }) => id !== PROJECT_AREAS.OVERVIEW)
+    .map((definition, index) => ({
+      ...definition,
+      taskStatus: project?.status === 'COMPLETED' || index < currentIndex - 1
+        ? 'COMPLETED'
+        : index === currentIndex - 1
+          ? getTaskStatusForProject(project)
+          : 'BLOCKED',
+    }));
 }

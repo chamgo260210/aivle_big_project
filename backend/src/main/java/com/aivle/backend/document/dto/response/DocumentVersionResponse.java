@@ -12,7 +12,12 @@ public record DocumentVersionResponse(
     String originalFileName,
     long sizeBytes,
     JobStatus parseStatus,
-    LocalDateTime uploadedAt
+    LocalDateTime uploadedAt,
+    JobStatus parserArtifactStatus,
+    String parserVersion,
+    String parserArtifactSchemaVersion,
+    Integer parserBlockCount,
+    LocalDateTime parsedAt
 ) {
     public static DocumentVersionResponse from(DocumentVersion version) {
         return new DocumentVersionResponse(
@@ -22,7 +27,12 @@ public record DocumentVersionResponse(
             version.getStoredFile().getOriginalFilename(),
             version.getStoredFile().getSizeBytes(),
             version.getParseStatus(),
-            version.getUploadedAt()
+            version.getUploadedAt(),
+            version.getParserArtifactStatus(),
+            version.getParserVersion(),
+            version.getParserArtifactSchemaVersion(),
+            version.getParserBlockCount(),
+            version.getParsedAt()
         );
     }
 }

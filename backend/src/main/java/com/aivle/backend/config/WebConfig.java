@@ -16,7 +16,8 @@ public class WebConfig implements WebMvcConfigurer {
             "Content-Type", "Authorization", "X-Request-Id", "Idempotency-Key"
     };
     private static final String[] DEVELOPMENT_HEADERS = {
-            "Content-Type", "Authorization", "X-User-Id", "X-Request-Id", "Idempotency-Key"
+            "Content-Type", "Authorization", "X-User-Id", "X-User-Role",
+            "X-Request-Id", "Idempotency-Key"
     };
 
     private final CorsProperties corsProperties;
