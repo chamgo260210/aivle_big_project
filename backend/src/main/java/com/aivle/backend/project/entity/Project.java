@@ -85,4 +85,16 @@ public class Project extends BaseEntity {
         }
         this.stage = ProjectStage.FEASIBILITY;
     }
+
+    public void enterFinancial() {
+        if (this.stage == ProjectStage.FEASIBILITY) {
+            this.stage = ProjectStage.FINANCIAL;
+        }
+    }
+
+    public void enterPersonaConfiguration() {
+        if (this.stage == ProjectStage.FINANCIAL) {
+            this.stage = ProjectStage.PERSONA_CONFIGURATION;
+        }
+    }
 }

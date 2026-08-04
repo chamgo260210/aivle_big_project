@@ -64,6 +64,9 @@ public class AnalysisJob extends BaseEntity {
     @Column(length = 100) private String lastErrorCode;
     private Boolean retryable;
     @Column(length = 64) private String claimToken;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "rerun_of_job_id")
+    private AnalysisJob rerunOfJob;
 
     private AnalysisJob(Project project, JobType jobType, String requestJson) {
         this.project = project;
@@ -128,8 +131,64 @@ public class AnalysisJob extends BaseEntity {
         return job;
     }
 
+    public static AnalysisJob queuedSystemSmoke(
+        Project project,
+        String requestJson,
+        String idempotencyKey,
+        String requestFingerprint,
+        AnalysisJob rerunOfJob
+    ) {
+        AnalysisJob job = new AnalysisJob(
+            project,
+            JobType.SYSTEM_SMOKE_TEST,
+            requestJson
+        );
+        job.idempotencyKey = idempotencyKey;
+        job.requestFingerprint = requestFingerprint;
+        job.rerunOfJob = rerunOfJob;
+        return job;
+    }
+
+    public static AnalysisJob queuedSystemArtifactSmoke(
+        Project project,
+        String requestJson,
+        String idempotencyKey,
+        String requestFingerprint
+    ) {
+        AnalysisJob job = new AnalysisJob(
+            project,
+            JobType.SYSTEM_ARTIFACT_SMOKE_TEST,
+            requestJson
+        );
+        job.idempotencyKey = idempotencyKey;
+        job.requestFingerprint = requestFingerprint;
+        return job;
+    }
+
+    public static AnalysisJob queuedMarketingGeneration(
+        Project project,
+        String requestJson,
+        String idempotencyKey,
+        String requestFingerprint,
+        AnalysisJob rerunOfJob
+    ) {
+        AnalysisJob job = new AnalysisJob(
+            project,
+            JobType.MARKETING_GENERATION,
+            requestJson
+        );
+        job.idempotencyKey = idempotencyKey;
+        job.requestFingerprint = requestFingerprint;
+        job.rerunOfJob = rerunOfJob;
+        return job;
+    }
+
     public boolean hasSameIdempotentRequest(String fingerprint) {
         return Objects.equals(this.requestFingerprint, fingerprint);
+    }
+
+    public boolean isTerminalStatus() {
+        return isTerminal();
     }
 
     public void updateProgress(int progress) {

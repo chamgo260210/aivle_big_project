@@ -24,6 +24,7 @@ public class StoredFile extends BaseEntity {
     private LocalDateTime retentionUntil;
 
     private StoredFile(
+        StorageType storageType,
         String storageKey,
         String originalFilename,
         String storedFilename,
@@ -32,7 +33,7 @@ public class StoredFile extends BaseEntity {
         long sizeBytes,
         String checksumSha256
     ) {
-        this.storageType = StorageType.LOCAL;
+        this.storageType = storageType;
         this.storageKey = storageKey;
         this.originalFilename = originalFilename;
         this.storedFilename = storedFilename;
@@ -54,6 +55,7 @@ public class StoredFile extends BaseEntity {
         String checksumSha256
     ) {
         return new StoredFile(
+            StorageType.LOCAL,
             storageKey,
             originalFilename,
             storedFilename,
@@ -62,5 +64,38 @@ public class StoredFile extends BaseEntity {
             sizeBytes,
             checksumSha256
         );
+    }
+
+    public static StoredFile available(
+        StorageType storageType,
+        String storageKey,
+        String originalFilename,
+        String storedFilename,
+        String extension,
+        String mimeType,
+        long sizeBytes,
+        String checksumSha256
+    ) {
+        return new StoredFile(
+            storageType,
+            storageKey,
+            originalFilename,
+            storedFilename,
+            extension,
+            mimeType,
+            sizeBytes,
+            checksumSha256
+        );
+    }
+
+    public void assignStorageKey(String storageKey, String storedFilename) {
+        if (storageKey == null || storageKey.isBlank()
+            || storedFilename == null || storedFilename.isBlank()) {
+            throw new IllegalArgumentException(
+                "storage key and stored filename are required"
+            );
+        }
+        this.storageKey = storageKey;
+        this.storedFilename = storedFilename;
     }
 }

@@ -5,6 +5,7 @@ public record ParsedDocumentBlock(
         int sequence,
         String text,
         String sourceLocation,
+        Integer tableIndex,
         Integer tableRow,
         Integer tableColumn,
         Integer headingLevel
@@ -18,5 +19,9 @@ public record ParsedDocumentBlock(
         }
         text = text == null ? "" : text;
         sourceLocation = sourceLocation == null ? "" : sourceLocation;
+    }
+
+    public String blockId() {
+        return "b-%06d".formatted(sequence);
     }
 }

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { useApiClient } from '../../../shared/api/ApiClientProvider.jsx';
+import { useServicePolicy } from '../../service-policy/useServicePolicy.js';
+import { isServicePolicyError } from '../../service-policy/servicePolicyRestrictions.js';
 import { createDocumentApi } from '../api/documentApi.js';
 
 function createIdempotencyKey() {
@@ -72,6 +74,7 @@ export function useDocuments(projectId) {
 
 export function useDocumentUpload(projectId, onSuccess) {
   const client = useApiClient();
+  const { refresh: refreshPolicy } = useServicePolicy();
   const [file, setFileState] = useState(null);
   const [error, setError] = useState(null);
   const [uploading, setUploading] = useState(false);
@@ -101,11 +104,14 @@ export function useDocumentUpload(projectId, onSuccess) {
       return result;
     } catch (nextError) {
       setError(nextError);
+      if (isServicePolicyError(nextError)) {
+        void refreshPolicy().catch(() => undefined);
+      }
       return null;
     } finally {
       setUploading(false);
     }
-  }, [client, file, onSuccess, projectId, uploading]);
+  }, [client, file, onSuccess, projectId, refreshPolicy, uploading]);
 
   return { file, setFile, upload, uploading, error };
 }

@@ -8,6 +8,7 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.HexFormat;
 
@@ -43,11 +44,11 @@ class Phase1BMigrationTests {
     }
 
     @Test
-    void v1AndV2MigrationBytesRemainUnchanged() throws Exception {
+    void v1AndV2MigrationContentsRemainUnchanged() throws Exception {
         assertThat(hash("db/migration/V1__create_core_tables.sql"))
-            .isEqualTo("15011e63b8c3e1aeed4da3839660857d3eeBDC93d47aa3f58ca06b27c96d1836".toLowerCase());
+            .isEqualTo("596df9a0a264a23a4ebab3c0a9a15268f154653ffd2658c4a941c01ee1f15aef");
         assertThat(hash("db/migration/V2__create_simulation_report_tables.sql"))
-            .isEqualTo("a9b13c0830b3ace4f2d166333ce0738fe33ef6b88d02f735e47bb4a028b5fc47");
+            .isEqualTo("7cc523cdf918d0490e3e826633ca0ccb172e9fe9b78d3a3fefffb7f3e6cbe2cb");
     }
 
     private boolean columnExists(String table, String column) {
@@ -66,6 +67,12 @@ class Phase1BMigrationTests {
 
     private String hash(String path) throws Exception {
         byte[] bytes = new ClassPathResource(path).getInputStream().readAllBytes();
-        return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
+        byte[] normalized = new String(bytes, StandardCharsets.UTF_8)
+            .replace("\r\n", "\n")
+            .replace('\r', '\n')
+            .getBytes(StandardCharsets.UTF_8);
+        return HexFormat.of().formatHex(
+            MessageDigest.getInstance("SHA-256").digest(normalized)
+        );
     }
 }

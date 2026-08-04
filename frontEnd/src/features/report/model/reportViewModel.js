@@ -161,6 +161,21 @@ function personaSection(resource, job, feasibility) {
   });
 }
 
+function financialSection(listResource, detailResource, feasibility) {
+  const items = listResource?.state === 'available' ? listResource.data : [];
+  const summary = items.find((item) => item.status === 'COMPLETED') ?? null;
+  const latest = detailResource?.state === 'available' ? detailResource.data : null;
+  const status = latest ? 'COMPLETED' : feasibility.data ? 'NOT_STARTED' : 'BLOCKED';
+  return withView(status, {
+    data: latest,
+    error: detailResource?.error ?? listResource?.error,
+    route: '../review/financial',
+    title: '재무·수익성 분석',
+    summary: latest ? '완료된 재무 분석의 기준 시나리오와 손익분기 정보를 보고서에 반영합니다.' : '재무 분석 미완료',
+    listSummary: summary,
+  });
+}
+
 function validationTasks(feasibility, persona) {
   const tasks = [];
   const seen = new Set();
@@ -243,7 +258,8 @@ export function toIntegratedReportViewModel(project, resources) {
     plan,
   );
   const persona = personaSection(resources.personaRecommendation, resources.personaJob, feasibility);
-  const sections = [plan, legal, feasibility, persona];
+  const financial = financialSection(resources.financialAnalyses, resources.financialAnalysis, feasibility);
+  const sections = [plan, legal, feasibility, financial, persona];
   const completed = sections.filter((section) => ['COMPLETED', 'PARTIAL'].includes(section.status)).length;
   const failed = sections.filter((section) => section.status === 'FAILED').length;
   const allResults = sections.every((section) => Boolean(section.data));
@@ -269,6 +285,7 @@ export function toIntegratedReportViewModel(project, resources) {
     legal,
     feasibility,
     persona,
+    financial,
     validationTasks: validationTasks(feasibility, persona),
     nextAction: nextAction(plan, legal, feasibility, persona),
     provenance: providers(sections),

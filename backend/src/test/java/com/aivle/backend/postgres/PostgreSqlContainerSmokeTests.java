@@ -42,7 +42,15 @@ class PostgreSqlContainerSmokeTests extends PostgreSqlIntegrationTestSupport {
         assertThat(version).contains("PostgreSQL 17.10");
         assertThat(timezone).isEqualTo("UTC");
         assertThat(encoding).isEqualTo("UTF8");
-        assertThat(flyway.info().applied()).hasSize(10);
+        assertThat(flyway.info().applied()).hasSize(27);
+        assertThat(flyway.info().current().getVersion().getVersion())
+            .isEqualTo("27");
+        System.out.printf(
+            "D2_PG_FRESH postgres=\"%s\" flywayLatest=27 "
+                + "applied=27 applicationContext=PASS "
+                + "ddlAutoValidate=PASS%n",
+            version
+        );
     }
 
     @Test
@@ -51,7 +59,7 @@ class PostgreSqlContainerSmokeTests extends PostgreSqlIntegrationTestSupport {
             insert into users (
                 username, email, password_hash, name, role, status, failed_login_count,
                 created_at, updated_at, version
-            ) values (?, ?, ?, ?, ?, 0, current_timestamp, current_timestamp, 0)
+            ) values (?, ?, ?, ?, ?, ?, 0, current_timestamp, current_timestamp, 0)
             """,
             "phase2-smoke",
             "phase2-smoke@example.com",

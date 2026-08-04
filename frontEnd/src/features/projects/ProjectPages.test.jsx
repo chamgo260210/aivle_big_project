@@ -13,7 +13,7 @@ function renderProject(element, client, path = '/app/projects') {
         <Routes>
           <Route path="/app/projects" element={element} />
           <Route path="/app/projects/new" element={element} />
-          <Route path="/app/projects/:id/get-started" element={<h1>Start this project</h1>} />
+          <Route path="/app/projects/:id" element={<h1>Project journey</h1>} />
         </Routes>
       </ApiClientProvider>
     </MemoryRouter>,
@@ -79,14 +79,14 @@ describe('project pages', () => {
     expect(input).toHaveFocus();
   });
 
-  it('creates a project and lets the user choose how to start', async () => {
+  it('creates a project and opens its journey', async () => {
     const client = { post: vi.fn(async () => ({ data: project })) };
     renderProject(<ProjectCreatePage />, client, '/app/projects/new');
     fireEvent.change(document.getElementById('project-title'), {
       target: { value: '실제 프로젝트' },
     });
     fireEvent.submit(screen.getByRole('button', { name: '프로젝트 만들기' }).closest('form'));
-    expect(await screen.findByRole('heading', { name: 'Start this project' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Project journey' })).toBeInTheDocument();
     expect(client.post).toHaveBeenCalledWith('/projects', {
       title: '실제 프로젝트',
       description: null,

@@ -25,6 +25,8 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 class OpenAiDocumentStructureAdapterTests {
+    private static final Duration LOCAL_SERVER_READ_TIMEOUT = Duration.ofSeconds(5);
+
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final BusinessPlanSectionCatalog catalog = new BusinessPlanSectionCatalog();
     private HttpServer server;
@@ -40,7 +42,7 @@ class OpenAiDocumentStructureAdapterTests {
     void parsesTypedTwelveItemResponse() throws Exception {
         start(200, Map.of(), envelope(items()));
 
-        DocumentStructureAiResponse response = adapter(Duration.ofSeconds(1))
+        DocumentStructureAiResponse response = adapter(LOCAL_SERVER_READ_TIMEOUT)
             .structureDocument(request());
 
         assertThat(response.providerRequestId()).isEqualTo("provider-request-1");
@@ -57,7 +59,7 @@ class OpenAiDocumentStructureAdapterTests {
         items.set(1, items.get(1).withStatus("PARTIAL"));
         start(200, Map.of(), envelope(items));
 
-        var result = adapter(Duration.ofSeconds(1)).structureDocument(request()).result();
+        var result = adapter(LOCAL_SERVER_READ_TIMEOUT).structureDocument(request()).result();
         assertThat(result.items().get(0).status()).isEqualTo(StructuredItemStatus.MISSING);
         assertThat(result.items().get(1).status()).isEqualTo(StructuredItemStatus.PARTIAL);
     }
@@ -97,7 +99,7 @@ class OpenAiDocumentStructureAdapterTests {
     @Test
     void unauthorizedIsNonRetryableAndDoesNotExposeSecret() throws Exception {
         start(401, Map.of(), "{}");
-        assertThatThrownBy(() -> adapter(Duration.ofSeconds(1)).structureDocument(request()))
+        assertThatThrownBy(() -> adapter(LOCAL_SERVER_READ_TIMEOUT).structureDocument(request()))
             .isInstanceOf(AiClientException.class)
             .satisfies(failure -> {
                 AiClientException exception = (AiClientException) failure;
@@ -110,7 +112,7 @@ class OpenAiDocumentStructureAdapterTests {
     @Test
     void rateLimitIsRetryableAndParsesRetryAfter() throws Exception {
         start(429, Map.of("Retry-After", "17"), "{}");
-        assertThatThrownBy(() -> adapter(Duration.ofSeconds(1)).structureDocument(request()))
+        assertThatThrownBy(() -> adapter(LOCAL_SERVER_READ_TIMEOUT).structureDocument(request()))
             .isInstanceOf(AiClientException.class)
             .satisfies(failure -> {
                 AiClientException exception = (AiClientException) failure;
@@ -122,7 +124,7 @@ class OpenAiDocumentStructureAdapterTests {
     @Test
     void serviceUnavailableIsRetryable() throws Exception {
         start(503, Map.of(), "{}");
-        assertThatThrownBy(() -> adapter(Duration.ofSeconds(1)).structureDocument(request()))
+        assertThatThrownBy(() -> adapter(LOCAL_SERVER_READ_TIMEOUT).structureDocument(request()))
             .isInstanceOf(AiClientException.class)
             .extracting("retryable")
             .isEqualTo(true);
@@ -197,7 +199,7 @@ class OpenAiDocumentStructureAdapterTests {
     }
 
     private void assertInvalidResponse() {
-        assertThatThrownBy(() -> adapter(Duration.ofSeconds(1)).structureDocument(request()))
+        assertThatThrownBy(() -> adapter(LOCAL_SERVER_READ_TIMEOUT).structureDocument(request()))
             .isInstanceOf(AiClientException.class)
             .satisfies(failure -> {
                 AiClientException exception = (AiClientException) failure;

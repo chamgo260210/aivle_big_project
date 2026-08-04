@@ -78,9 +78,9 @@ class DomainFoundationIntegrationTests {
     @Test
     void missingCurrentUserReturnsStandardErrorResponse() throws Exception {
         mockMvc.perform(get("/api/v1/projects"))
-                .andExpect(status().isForbidden())
+                .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.success").value(false))
-                .andExpect(jsonPath("$.error.code").value("ACCESS_DENIED"))
+                .andExpect(jsonPath("$.error.code").value("AUTHENTICATION_REQUIRED"))
                 .andExpect(jsonPath("$.meta.requestId").isNotEmpty());
     }
 

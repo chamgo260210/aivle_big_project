@@ -9,6 +9,7 @@ import com.aivle.backend.document.entity.StructuredPlan;
 import com.aivle.backend.document.repository.*;
 import com.aivle.backend.document.structure.*;
 import com.aivle.backend.file.storage.FileStorage;
+import com.aivle.backend.file.object.ObjectStoragePort;
 import com.aivle.backend.file.validation.BusinessPlanDocxPolicy;
 import com.aivle.backend.integration.ai.AiServiceClient;
 import com.aivle.backend.integration.ai.document.*;
@@ -71,6 +72,7 @@ class DocumentProcessingIntegrationTests {
     @Autowired StructuredPlanSectionRepository sectionRepository;
     @Autowired MissingFieldRepository missingFieldRepository;
     @Autowired FileStorage fileStorage;
+    @Autowired ObjectStoragePort objectStorage;
     @Autowired JdbcClient jdbcClient;
     @Autowired MockMvc mockMvc;
 
@@ -79,6 +81,10 @@ class DocumentProcessingIntegrationTests {
         registry.add("spring.datasource.url", () ->
             "jdbc:h2:mem:phase1c-processing;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DATABASE_TO_LOWER=TRUE");
         registry.add("app.file-storage.root", () -> STORAGE_ROOT.toString());
+        registry.add(
+            "app.object-storage.local-root",
+            () -> STORAGE_ROOT.toString()
+        );
     }
 
     @BeforeEach
@@ -145,6 +151,21 @@ class DocumentProcessingIntegrationTests {
             .contains("parserName")
             .contains("totalCharacters")
             .doesNotContain(fixture.storageKey());
+        ParserArtifactRow artifact = parserArtifact(
+            fixture.versionId()
+        );
+        assertThat(artifact.status()).isEqualTo("SUCCEEDED");
+        assertThat(artifact.schemaVersion())
+            .isEqualTo("document-blocks-v1");
+        assertThat(artifact.parserVersion())
+            .isEqualTo("spring-docx-blocks-v2");
+        assertThat(artifact.blockCount()).isPositive();
+        assertThat(artifact.checksum()).matches("[0-9a-f]{64}");
+        assertThat(artifact.storageKey())
+            .contains("/parser/spring-docx-blocks-v2/")
+            .endsWith(artifact.checksum() + ".json");
+        assertThat(objectStorage.exists(artifact.storageKey()))
+            .isTrue();
         assertThat(projectStage(fixture.projectId())).isEqualTo("STRUCTURING");
     }
 
@@ -237,7 +258,7 @@ class DocumentProcessingIntegrationTests {
     @Test
     void missingStoredFileFailsWithoutRetry() throws Exception {
         UploadFixture fixture = uploaded("missing-file.docx", VALID_DOCX);
-        fileStorage.delete(fixture.storageKey());
+        objectStorage.delete(fixture.storageKey());
         JobClaim claim = claimService.claimOne(fixture.jobId()).orElseThrow();
 
         JobProcessingException failure = catchThrowableOfType(
@@ -641,6 +662,49 @@ class DocumentProcessingIntegrationTests {
             join document_versions v on v.id = j.source_document_version_id
             where j.id = :id
             """).param("id", jobId).query(String.class).single();
+    }
+
+    private ParserArtifactRow parserArtifact(Long versionId) {
+        return jdbcClient.sql("""
+            select dv.parser_artifact_status,
+                   dv.parser_artifact_schema_version,
+                   dv.parser_version,
+                   dv.parser_block_count,
+                   dv.parser_artifact_checksum_sha256,
+                   sf.storage_key
+            from document_versions dv
+            join stored_files sf
+              on sf.id = dv.parser_artifact_stored_file_id
+            where dv.id = :versionId
+            """)
+            .param("versionId", versionId)
+            .query((resultSet, rowNumber) ->
+                new ParserArtifactRow(
+                    resultSet.getString(
+                        "parser_artifact_status"
+                    ),
+                    resultSet.getString(
+                        "parser_artifact_schema_version"
+                    ),
+                    resultSet.getString("parser_version"),
+                    resultSet.getInt("parser_block_count"),
+                    resultSet.getString(
+                        "parser_artifact_checksum_sha256"
+                    ),
+                    resultSet.getString("storage_key")
+                )
+            )
+            .single();
+    }
+
+    private record ParserArtifactRow(
+        String status,
+        String schemaVersion,
+        String parserVersion,
+        int blockCount,
+        String checksum,
+        String storageKey
+    ) {
     }
 
     private String projectStage(Long projectId) {
