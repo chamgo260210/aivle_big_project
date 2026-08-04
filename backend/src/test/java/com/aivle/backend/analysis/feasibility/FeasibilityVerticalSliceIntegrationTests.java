@@ -33,12 +33,12 @@ class FeasibilityVerticalSliceIntegrationTests {
         jdbc.sql("""
             insert into users (
               id, username, email, password_hash, name, role, status, failed_login_count,
-              created_at, updated_at, version
+              security_version, created_at, updated_at, version
             ) values
               (100, 'owneruser', 'owner@example.com', 'hash', 'owner', 'USER', 'ACTIVE', 0,
-               current_timestamp, current_timestamp, 0),
+               0, current_timestamp, current_timestamp, 0),
               (200, 'otheruser', 'other@example.com', 'hash', 'other', 'USER', 'ACTIVE', 0,
-               current_timestamp, current_timestamp, 0)
+               0, current_timestamp, current_timestamp, 0)
             """).update();
         jdbc.sql("""
             insert into projects (
@@ -56,7 +56,7 @@ class FeasibilityVerticalSliceIntegrationTests {
             ) values (
               20, 'LOCAL', 'phase9-source', 'plan.docx', 'stored.docx', 'docx',
               'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-              100, repeat('a', 64), 'ACTIVE', false,
+              100, repeat('a', 64), 'AVAILABLE', false,
               current_timestamp, current_timestamp, 0
             )
             """).update();

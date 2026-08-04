@@ -1,36 +1,55 @@
 # Current Repository Baseline
 
-- Status: CURRENT_BASELINE
-- Code Baseline Commit: e16bd316ac881f4c5fab076e65c14657f6a8c7d4
-- Document Phase: P1
-- Introduced In Commit: 1549a8efa0aeb2ca400f4795c1c44b34868e4722
-- Scope: Phase 0 code-verified implementation baseline
-- Supersedes: docs/current as-built and audit documents
+- Status: CURRENT_AS_BUILT
+- Baseline date: 2026-08-04
+- Scope: 코드로 확인한 현재 실행 기준선
 - Implementation Status: IMPLEMENTED
 
 ## Runtime and ownership
 
-현재 저장소는 Spring Boot backend, React/Vite frontend, FastAPI AI Server로 구성된다. Spring이 JPA/Flyway를 통해 RDB를 관리하며 local 또는 S3-compatible Object Storage adapter를 보유한다. Frontend는 Spring API를 호출한다.
+현재 저장소는 React/Vite Frontend, Spring Boot Backend, FastAPI AI Server, PostgreSQL, MinIO/S3-compatible Object Storage로 구성된다. Browser는 Spring API를 호출한다. Spring은 인증, Project 소유권, JPA/Flyway, Object Storage, TaskRun/TaskAttempt/TaskResult 및 AI 결과 채택을 소유한다. FastAPI는 `/internal/v1/ai/executions`에서 provider·법률 dependency 실행과 결과 생성을 담당한다.
 
-인증은 JWT access/refresh token, Spring Security, 사용자·관리자 권한을 구현한다. Project 조회와 업무 resource의 주요 경로는 owner scope를 적용하며 cross-owner 접근을 찾을 수 없음 또는 접근 거부로 처리한다.
+## Current official Journey
 
-## Current workflow
+`Idea 입력 → AI 해석 → Idea Origin Draft 및 보완 질문 → Idea Origin 확정 → Legal Precheck → Legal Guardrail → Concept 생성 → Origin Integrity → Concept Legal Validation → 적격 Concept 3개 표시`
 
-현재 구현은 다음 legacy 연쇄를 포함한다.
+현재 공식 범위는 적격 Concept 3개 표시에서 끝난다. Concept 분석·선택·Persona·Interview·Marketing·Report는 보존된 기존 MVP 실험 기능이다. 일부 Route와 API가 존재하더라도 현재 공식 Journey와 자동 연결된 단계는 아니다.
 
-`DOCX → DocumentVersion → DOCUMENT_PARSE AnalysisJob → StructuredPlan/12 sections → FILLED·WAIVED/confirm → legal review → feasibility → financial/persona → panel interview/market response → marketing → browser-composed report`
+## Internal AI contract
 
-이 흐름은 Target Workflow가 아니다. `ReportPage`는 여러 조회 API를 조립하며, V2의 Report entity와 연결된 저장 가능한 final snapshot이 아니다.
+- Contract version / task schema version: `1.0`
+- Locale / text language: `ko-KR`
+- Text content type: `TEXT`
+- TaskType: Java와 FastAPI가 동일한 13개 값
+- Spring adoption 전 공통 검증: TaskRun ID, TaskAttempt ID, taskType, taskSchemaVersion, correlationId, canonicalInputHash, resultSchemaVersion, result body
+- Domain invariant: 각 Journey Service와 Worker의 기존 결과 검증을 추가로 유지
 
-## Current AI boundary
+실행 방식은 혼합되어 있다.
 
-Spring에는 문서 구조화, 법률 검토, 타당성 분석, Persona 추천용 OpenAI 직접 adapter가 있다. 별도의 Spring→FastAPI task contract는 smoke와 marketing banner에 사용된다. FastAPI는 RDB에 접근하지 않지만 presigned URL로 Object Storage를 읽고 쓸 수 있고 mock banner를 로컬 파일로 기록하는 코드가 있다. 두 동작 모두 Target 경계에서는 허용되지 않는다.
+| 영역 | 현재 실행 방식 |
+|---|---|
+| Legal Precheck | Persistent Worker TaskRun |
+| Concept eligibility | In-memory Executor 안에서 TaskRun 실행 |
+| 일부 Idea/Persona/Marketing/Report | Service 내부 동기 claim/execute |
 
-## Current persistence and delivery
+이번 기준선은 이를 하나의 202/Polling 방식으로 통일하지 않는다.
 
-- Flyway V1~V26이 존재하며 V5와 V10은 Java migration이다.
-- `AnalysisJob`은 claim, retry, recovery, idempotency 기반을 제공한다.
-- GitHub Actions는 backend, PostgreSQL, frontend, Docker E2E, OpenAPI lint와 보안 scan을 실행한다.
-- FastAPI pytest 전용 CI job과 실제 배포 workflow는 없다.
+## Persistence and migrations
 
-자세한 legacy 제거 범위는 [CURRENT_TO_TARGET_MAPPING](migration/CURRENT_TO_TARGET_MAPPING.md)에서 관리한다.
+- PostgreSQL과 JPA/Flyway 사용
+- Object Storage는 MinIO/S3-compatible adapter 사용
+- Runtime Flyway는 PostgreSQL 최종 스키마를 직접 만드는 `V1__baseline_schema.sql` 하나
+- 과거 V1~V36과 Java Migration V5/V10의 최종 효과를 Baseline SQL에 흡수
+- 기존 DB upgrade는 지원하지 않으며 적용 전 PostgreSQL/Docker volume 초기화 필수
+- 과거 Migration 이력은 Git history에 보존
+- H2는 일부 Service 로직 테스트에만 사용하고 Migration 계약은 PostgreSQL/Testcontainers로 검증
+
+## API authority and CI
+
+현재 Public API의 As-Is 실행 권위는 실제 Spring Controller와 Frontend Client이며 `docs/contracts/PUBLIC_API_V2_CONTRACT.md`가 endpoint/status/envelope matrix를 기록한다. Journey `ApiResponse`와 TaskRun 전용 envelope가 현재 공존한다. `docs/api/openapi.yaml`은 Backend semantic test가 읽는 기존 `/api/v1` 중심 machine-consumed 계약이며 현재 Journey `/api/v2` 전체 권위가 아니다. Public `/api/v2`와 Internal `/internal/v1/ai/executions`를 구분한다.
+
+현재 작업 트리에 `.github/workflows`가 없으므로 repository-local GitHub Actions는 `NOT_PRESENT`다. 외부 CI 존재 여부와 제거 시점은 확인되지 않았다.
+
+## Known retained implementation
+
+Spring provider 직접 호출, 과거 `/api/v1`, 기존 MVP 화면과 관련 데이터 모델은 현재 참조가 남아 있어 보존한다. 제거 판단은 실제 참조가 없는 HIGH 근거 항목에만 별도 작업으로 적용한다.

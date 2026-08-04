@@ -28,7 +28,12 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import tools.jackson.databind.ObjectMapper;
 
-@SpringBootTest
+// V29 contains a PostgreSQL partial index that H2 cannot parse. Migration compatibility is
+// covered separately; this worker test needs an isolated entity schema only.
+@SpringBootTest(properties = {
+    "spring.flyway.enabled=false",
+    "spring.jpa.hibernate.ddl-auto=create-drop"
+})
 @ActiveProfiles("test")
 class TaskRunWorkerIntegrationTests {
     @Autowired TaskRunService service;

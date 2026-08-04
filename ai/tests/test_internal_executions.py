@@ -38,6 +38,14 @@ def headers():
     return {"Authorization": f"Bearer {TOKEN}", "X-Correlation-Id": "correlation-1"}
 
 
+def refresh_hash(body):
+    canonical = unicodedata.normalize("NFC", json.dumps({key: body[key] for key in
+        ("contractVersion", "taskType", "taskSchemaVersion", "locale", "input")},
+        ensure_ascii=False, sort_keys=True, separators=(",", ":")))
+    body["canonicalInputHash"] = "sha256:" + hashlib.sha256(canonical.encode()).hexdigest()
+    return body
+
+
 def test_idea_interpretation_returns_validated_echo(monkeypatch):
     monkeypatch.setenv("AI_INTERNAL_SERVICE_TOKEN", TOKEN)
     async def provider_result(task_type, text):
@@ -70,6 +78,42 @@ def test_internal_execution_requires_service_token(monkeypatch):
     response = client.post("/internal/v1/ai/executions", json=request_body())
     assert response.status_code == 401
     assert response.json()["error"]["taskRunId"] is None
+    assert response.json()["error"]["details"][0]["reason"] == "SERVICE_TOKEN_MISSING"
+
+
+def test_internal_execution_rejects_invalid_service_token(monkeypatch):
+    monkeypatch.setenv("AI_INTERNAL_SERVICE_TOKEN", TOKEN)
+    response = client.post("/internal/v1/ai/executions", json=request_body(), headers={
+        "Authorization": "Bearer wrong-token", "X-Correlation-Id": "correlation-1"})
+    assert response.status_code == 401
+    assert response.json()["error"]["details"][0]["reason"] == "SERVICE_TOKEN_INVALID"
+
+
+def test_plain_text_content_type_is_rejected(monkeypatch):
+    monkeypatch.setenv("AI_INTERNAL_SERVICE_TOKEN", TOKEN)
+    body = request_body()
+    body["input"]["textContents"][0]["contentType"] = "PLAIN_TEXT"
+    response = client.post("/internal/v1/ai/executions", json=refresh_hash(body), headers=headers())
+    assert response.status_code == 400
+    assert response.json()["error"]["details"][0]["reason"] == "FIELD_CONSTRAINT_VIOLATION"
+
+
+def test_non_korean_locale_is_rejected(monkeypatch):
+    monkeypatch.setenv("AI_INTERNAL_SERVICE_TOKEN", TOKEN)
+    body = request_body()
+    body["locale"] = "en-US"
+    response = client.post("/internal/v1/ai/executions", json=refresh_hash(body), headers=headers())
+    assert response.status_code == 400
+    assert response.json()["error"]["details"][0]["reason"] == "FIELD_CONSTRAINT_VIOLATION"
+
+
+def test_non_korean_text_language_is_rejected(monkeypatch):
+    monkeypatch.setenv("AI_INTERNAL_SERVICE_TOKEN", TOKEN)
+    body = request_body()
+    body["input"]["textContents"][0]["language"] = "en-US"
+    response = client.post("/internal/v1/ai/executions", json=refresh_hash(body), headers=headers())
+    assert response.status_code == 400
+    assert response.json()["error"]["details"][0]["reason"] == "FIELD_CONSTRAINT_VIOLATION"
 
 
 def test_hash_mismatch_is_not_retryable(monkeypatch):
@@ -147,6 +191,7 @@ def test_deadline_requires_rfc3339_utc_z(monkeypatch):
     response = client.post("/internal/v1/ai/executions", json=body, headers=headers())
     assert response.status_code == 504
     assert response.json()["error"]["details"][0]["reason"] == "REQUEST_DEADLINE_EXCEEDED"
+    assert response.json()["error"]["retryable"] is True
 
 
 def test_raw_request_over_two_mib_is_rejected_before_identity_echo(monkeypatch):

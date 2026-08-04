@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -16,7 +16,7 @@ class InternalExecutionRequestV1(StrictModel):
     correlationId: str = Field(min_length=1, max_length=128)
     deadlineAt: str
     canonicalInputHash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
-    locale: str
+    locale: Literal["ko-KR"]
     input: dict[str, Any]
 
 

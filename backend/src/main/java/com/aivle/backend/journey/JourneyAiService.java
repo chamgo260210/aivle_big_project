@@ -367,7 +367,7 @@ public class JourneyAiService {
 
     private String taskInput(String key, String text) {
         String hash = sha256(text);
-        ObjectNode content = mapper.createObjectNode(); content.put("contentKey", key); content.put("contentType", "PLAIN_TEXT");
+        ObjectNode content = mapper.createObjectNode(); content.put("contentKey", key); content.put("contentType", "TEXT");
         int totalCharacters = text.codePointCount(0, text.length());
         content.put("language", "ko-KR"); content.put("totalCharacters", totalCharacters); content.put("contentHash", hash);
         var chunks = content.putArray("chunks");

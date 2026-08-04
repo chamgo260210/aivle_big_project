@@ -66,6 +66,8 @@ def validate_text_contents(task_input: dict[str, Any]) -> str | None:
     for content in contents:
         if not isinstance(content, dict) or set(content) != {"contentKey", "contentType", "language", "totalCharacters", "contentHash", "chunks"}:
             return "UNKNOWN_FIELD"
+        if content["contentType"] != "TEXT" or content["language"] != "ko-KR":
+            return "FIELD_CONSTRAINT_VIOLATION"
         chunks = content["chunks"]
         if not isinstance(chunks, list) or not 1 <= len(chunks) <= 64:
             return "CHUNK_COUNT_EXCEEDED"
@@ -90,6 +92,8 @@ async def execute(request: Request, body: InternalExecutionRequestV1):
     correlation = request.headers.get("X-Correlation-Id") or body.correlationId
     token = os.getenv("AI_INTERNAL_SERVICE_TOKEN", "")
     authorization = request.headers.get("Authorization", "")
+    if not authorization:
+        return internal_error(correlation, "UNAUTHORIZED_INTERNAL_CALL", "SERVICE_TOKEN_MISSING", 401, False)
     if not token or authorization != f"Bearer {token}":
         return internal_error(correlation, "UNAUTHORIZED_INTERNAL_CALL", "SERVICE_TOKEN_INVALID", 401, False)
     if correlation != body.correlationId:
@@ -111,7 +115,7 @@ async def execute(request: Request, body: InternalExecutionRequestV1):
         if deadline.tzinfo is None or deadline <= datetime.now(timezone.utc):
             raise ValueError
     except ValueError:
-        return internal_error(correlation, "DEADLINE_EXCEEDED", "REQUEST_DEADLINE_EXCEEDED", 504, False,
+        return internal_error(correlation, "DEADLINE_EXCEEDED", "REQUEST_DEADLINE_EXCEEDED", 504, True,
                               body.taskRunId, body.taskAttemptId)
     try:
         calculated_hash = canonical_hash(body)

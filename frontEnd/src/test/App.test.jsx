@@ -3,9 +3,8 @@ import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 
 import App from '../app/App.jsx';
-import { AuthProvider } from '../features/auth/AuthProvider.jsx';
+import AppProviders from '../app/providers/AppProviders.jsx';
 import { AUTH_STATUS } from '../features/auth/authSession.js';
-import { ApiClientProvider } from '../shared/api/ApiClientProvider.jsx';
 
 const authenticated = {
   status: AUTH_STATUS.AUTHENTICATED,
@@ -39,11 +38,13 @@ function renderApp(
 ) {
   return render(
     <MemoryRouter initialEntries={[path]}>
-      <ApiClientProvider client={apiClient}>
-        <AuthProvider initialSnapshot={snapshot} session={session}>
-          <App />
-        </AuthProvider>
-      </ApiClientProvider>
+      <AppProviders
+        apiClient={apiClient}
+        authSession={session}
+        authProps={{ initialSnapshot: snapshot }}
+      >
+        <App />
+      </AppProviders>
     </MemoryRouter>,
   );
 }
@@ -52,7 +53,7 @@ describe('application routing', () => {
   it('renders the public route', () => {
     renderApp('/');
     expect(screen.getByRole('heading', {
-      name: '사업계획서를, 검증 가능한 다음 단계로.',
+      name: '아이디어에서, 실행 판단을 위한 보고서까지.',
     })).toBeInTheDocument();
   });
 

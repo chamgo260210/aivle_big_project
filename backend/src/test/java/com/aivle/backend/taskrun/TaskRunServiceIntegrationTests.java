@@ -131,4 +131,32 @@ class TaskRunServiceIntegrationTests {
         assertThat(exhausted.isRetryable()).isFalse();
         assertThat(exhausted.getAttemptCount()).isEqualTo(2);
     }
+
+    @Test
+    void retryableLegalFailureAutomaticallyQueuesNextAttemptUntilLimit() {
+        User owner = users.saveAndFlush(User.create("legal-auto-retry@example.com", "hash", "owner"));
+        Project project = projects.saveAndFlush(Project.create(owner, "legal auto retry", null, null));
+        String input = "{}";
+        String inputHash = hasher.hash(TaskType.IDEA_LEGAL_PRECHECK, "1.0", "ko-KR", input);
+        TaskRun run = service.create(owner.getId(), project.getId(), TaskType.IDEA_LEGAL_PRECHECK,
+            "IDEA_ORIGIN_VERSION", "1", input, inputHash, "legal-auto-retry", "legal-correlation", 2);
+
+        TaskRunService.Claim first = service.claimNext(TaskType.IDEA_LEGAL_PRECHECK,
+            "legal-worker-1", Duration.ofSeconds(30), Duration.ofMinutes(2));
+        service.startExecution(run.getId(), first.taskAttemptId(), first.claimToken());
+        service.failWithLegalAutoRetry(run.getId(), first.taskAttemptId(), first.claimToken(),
+            "DEPENDENCY_UNAVAILABLE", "MODEL_DEPENDENCY_UNAVAILABLE", true);
+        assertThat(service.getOwned(owner.getId(), project.getId(), run.getId()).getState())
+            .isEqualTo(TaskRunState.QUEUED);
+
+        TaskRunService.Claim second = service.claimNext(TaskType.IDEA_LEGAL_PRECHECK,
+            "legal-worker-2", Duration.ofSeconds(30), Duration.ofMinutes(2));
+        service.startExecution(run.getId(), second.taskAttemptId(), second.claimToken());
+        service.failWithLegalAutoRetry(run.getId(), second.taskAttemptId(), second.claimToken(),
+            "DEPENDENCY_UNAVAILABLE", "MODEL_DEPENDENCY_UNAVAILABLE", true);
+        TaskRun exhausted = service.getOwned(owner.getId(), project.getId(), run.getId());
+        assertThat(exhausted.getState()).isEqualTo(TaskRunState.FAILED);
+        assertThat(exhausted.isRetryable()).isFalse();
+        assertThat(exhausted.getAttemptCount()).isEqualTo(2);
+    }
 }

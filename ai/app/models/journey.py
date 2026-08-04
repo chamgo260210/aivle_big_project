@@ -1,6 +1,7 @@
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
+from pydantic_core import PydanticCustomError
 
 
 class StrictResult(BaseModel):
@@ -72,6 +73,40 @@ class IdeaInterpretationResult(StrictResult):
     originDraft: IdeaOriginDraft
     fieldMetadata: list[IdeaInputMetadata]
     clarificationQuestions: list[IdeaClarificationQuestion]
+
+    @model_validator(mode="after")
+    def require_questions_for_missing_origin_fields(self):
+        question_targets = {
+            question.targetField for question in self.clarificationQuestions
+        }
+        origin = self.originDraft
+        required_values = {
+            "productServiceDescription": origin.productServiceDescription,
+            "problem": origin.problem,
+            "target": origin.target,
+            "solution": origin.solution,
+            "coreValue": origin.coreValue,
+            "primaryCategory": origin.primaryCategory,
+            "targetRegion": origin.targetRegion,
+            "fixedValues": origin.fixedValues,
+        }
+        missing_fields = sorted(
+            field
+            for field, value in required_values.items()
+            if value is None
+            or (isinstance(value, str) and not value.strip())
+            or (isinstance(value, list) and not value)
+        )
+        missing_questions = [
+            field for field in missing_fields if field not in question_targets
+        ]
+        if missing_questions:
+            raise PydanticCustomError(
+                "idea_missing_clarification",
+                "Missing clarification questions for required Idea Origin fields",
+                {"fields": ",".join(missing_questions)},
+            )
+        return self
 
 
 class LegalReviewResult(StrictResult):

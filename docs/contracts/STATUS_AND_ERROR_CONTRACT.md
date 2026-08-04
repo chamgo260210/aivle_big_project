@@ -1,88 +1,107 @@
-# Workflow Status and Error Contract
+# Status and Error Contract
 
-- Status: DRAFT_CONTRACT
-- Code Baseline Commit: e16bd316ac881f4c5fab076e65c14657f6a8c7d4
-- Document Phase: P2
-- Introduced In Commit: 1549a8efa0aeb2ca400f4795c1c44b34868e4722
-- Scope: Workflow, TaskRun and error semantics
-- Supersedes: Legacy status and error contracts
-- Implementation Status: NOT_STARTED
+- Status: CURRENT_AS_BUILT
+- Baseline date: 2026-08-04
+- Scope: Public Spring API와 Internal Spring–AI 오류의 현재 경계
+- Implementation Status: IMPLEMENTED_WITH_TWO_PUBLIC_ENVELOPES
 
-Project stage, resource/run status와 capability를 분리한다. 사용자 gate와 AI 실행 capability는 별도이며 backtracking과 upstream 변경에 따른 downstream `STALE`을 지원한다. TaskRun은 업무 요청과 현재 최종 상태를, TaskAttempt는 개별 실행·retry·timeout·오류·응답을 소유한다. Spring이 모든 상태와 capability의 source of truth다.
+Public과 Internal 오류는 같은 계약이 아니다. Public As-Is는 실제 `ErrorCode`, `GlobalExceptionHandler`, `TaskRunV2ExceptionHandler`가 권위이고 Internal은 `INTERNAL_AI_API_V1_CONTRACT.md`가 권위다.
 
-계약은 payload 초과, gate/policy 차단, execution failure와 AI result validation failure를 서로 다른 오류로 표현한다. 법령 일부 출처 실패는 무조건 transport error로 바꾸지 않고 adopted legal result의 degraded source 상태로 표현할 수 있다. `EXPERT_REVIEW_REQUIRED`는 Legal business result이며 error code가 아니다. 내부 provider body와 민감정보는 public 오류에 포함하지 않는다.
+## Public status와 envelope
 
-## Independent status dimensions
+Journey Controller는 `ApiResponse`를 사용한다.
 
-- Project status와 Workflow Stage는 [Domain Overview](../domain/DOMAIN_OVERVIEW.md)의 값을 사용한다.
-- Capability는 enum stage의 동의어가 아니라 owner, policy, current exact references, lifecycle, user gate와 stale validity를 평가한 결과다.
-- TaskRun/TaskAttempt가 execution lifecycle을 가진다. Domain Run은 그 상태를 projection하고 adopted business result와 validity를 소유한다. immutable Version/Decision은 content lifecycle과 current/stale validity를 분리한다.
-- `STALE`은 terminal failure나 deletion이 아니며 history/provenance를 유지한 채 current capability 근거에서 제외된 상태다.
-- TaskAttempt response receipt, schema validation, domain adoption과 TaskRun final state를 각각 구분한다.
+- success: `{success:true,data,meta:{requestId,timestamp}}`
+- failure: `{success:false,error:{code,message,fieldErrors,retryable,...},meta:{requestId,timestamp}}`
+- validation: `VALIDATION_FAILED`/400
+- 예기치 않은 오류: `INTERNAL_SERVER_ERROR`/500, `retryable=true`
 
-Canonical 값은 다음과 같고 같은 문자열이 보여도 각 차원의 enum/field는 공유하지 않는다.
+TaskRun v2는 별도 envelope와 `X-Correlation-Id`를 사용한다.
 
-| Dimension | Values |
+- success: `{data,meta:{correlationId}}`
+- failure: `{error:{code,message,correlationId,taskRunId,details}}`
+
+두 envelope는 현재 공존하며 이번 기준선에서 통일하지 않는다.
+
+## Public HTTP status As-Is
+
+| 영역/조건 | 실제 status | 표현 |
+|---|---:|---|
+| 일반 Journey 조회·저장·동기 실행 | 200 | ApiResponse success |
+| Legal Precheck 시작 | 202 | ApiResponse success의 StartView |
+| Concept Generation 시작 | 202 | ApiResponse success의 BatchView |
+| TaskRun GET/cancel | 200 | TaskEnvelope |
+| TaskRun retry | 202 | TaskEnvelope |
+| Bean validation | 400 | `VALIDATION_FAILED` ApiResponse |
+| TaskRun header/input validation | 400 | `VALIDATION_ERROR` TaskRun error |
+| owner-scoped resource 없음 | 404 | 일반 ErrorCode 또는 `RESOURCE_NOT_FOUND` TaskRun error |
+| TaskRun capability/idempotency/active conflict | 409 | TaskRun error |
+| AI Provider 설정 오류 | 503 | `AI_CONFIGURATION_INVALID`, retryable=false |
+| AI dependency 일시 장애 | 503 | `EXTERNAL_AI_SERVICE_UNAVAILABLE`, retryable=true |
+| AI result schema/domain 오류 | 502 | `AI_RESULT_INVALID`, retryable=false |
+| maintenance/service policy | 503 | 관련 일반 ErrorCode |
+
+업무별 전체 code/status는 `backend/.../common/exception/ErrorCode.java`가 As-Is registry다. 과거 Target 문서의 `CONFLICT`, `STALE_RESOURCE`, `LEGAL_GATE_BLOCKED` 등은 실제 Controller가 그 문자열을 모두 사용한다는 뜻이 아니다.
+
+## TaskRun 상태와 오류
+
+| Dimension | 현재 값 |
 |---|---|
-| Project lifecycle | `ACTIVE`, `ON_HOLD`, `COMPLETED`, `ARCHIVED` |
-| Workflow Stage | `IDEA_INTAKE`, `LEGAL_REVIEW`, `CONCEPT_BUILDING`, `CONCEPT_ANALYSIS`, `CONCEPT_SELECTION`, `VALIDATION`, `MARKETING`, `FINAL_REPORT` |
-| Validity | `CURRENT`, `STALE` |
 | TaskRun | `QUEUED`, `READY`, `RUNNING`, `SUCCEEDED`, `FAILED`, `CANCELLED`, `TIMED_OUT` |
 | TaskAttempt | `CREATED`, `CLAIMED`, `RUNNING`, `SUCCEEDED`, `FAILED`, `TIMED_OUT`, `CANCELLED` |
 | TaskResult validation | `RECEIVED`, `VALIDATED`, `REJECTED`, `ADOPTED` |
-| Legal result | `PASS`, `PASS_WITH_CONDITIONS`, `REVISION_REQUIRED`, `PROHIBITED`, `INSUFFICIENT_INFORMATION`, `EXPERT_REVIEW_REQUIRED` |
 
-## Domain Run execution mapping
+TaskRun GET은 terminal 실패 상태도 resource 조회로 200을 반환하며 `state`, `retryable`, `errorSummary`, `resultResource`로 표현한다. retry는 같은 TaskRun의 새 Attempt이고 `Idempotency-Key`가 필수다.
 
-- TaskRun은 execution lifecycle source of truth다. Domain Run에 독립적으로 전이되는 duplicate execution status를 두지 않는다.
-- Domain Run은 exact business input, 1:1 TaskRun binding, adopted TaskResult/business result reference, domain validation, provenance와 validity를 소유한다.
-- TaskRun `SUCCEEDED`만으로 Domain Run 성공을 판단하지 않는다. exact binding/input, `ADOPTED` TaskResult와 domain validation 성공이 모두 필요하다.
-- TaskRun `FAILED`, `TIMED_OUT`, `CANCELLED`는 각각 Domain Run execution 표시로 projection되지만 `STALE`과는 별개다.
-- upstream 변경은 성공한 run도 `STALE`로 만들 수 있다. 실행 성공 history는 보존한다.
-- late, duplicate 또는 stale lease result는 기존 adopted result를 덮어쓰지 않고 `REJECTED`/non-adopted evidence로 보존할 수 있다.
+TaskRun command에서 현재 확인된 stable code/reason은 다음과 같다.
 
-## Error semantics
+| Code | 대표 reason | HTTP |
+|---|---|---:|
+| `VALIDATION_ERROR` | `IDEMPOTENCY_KEY_INVALID`, `TASK_RUN_INPUT_INVALID` | 400 |
+| `RESOURCE_NOT_FOUND` | `TASK_RUN_NOT_FOUND` | 404 |
+| `CAPABILITY_NOT_AVAILABLE` | `PROJECT_ARCHIVED`, `ATTEMPT_LIMIT_EXCEEDED`, `TASK_NOT_RETRYABLE` | 409 |
+| `IDEMPOTENCY_CONFLICT` | `REQUEST_HASH_MISMATCH`, `RETRY_KEY_CONFLICT` | 409 |
+| `TASK_ALREADY_RUNNING` | `SAME_INPUT_ACTIVE`, `TASK_NOT_CLAIMABLE` | 409 |
+| `POLICY_BLOCKED` | `MAINTENANCE_MODE` | 503 |
+| `AI_RESULT_INVALID` | 검증 실패 reason | service가 결정한 safe status |
 
-HTTP status, error envelope와 endpoint별 적용은 [Public API v2 Contract](PUBLIC_API_V2_CONTRACT.md)에서 고정한다.
+## Current Journey business 상태
 
-| Code | Meaning | Retry direction | User correction | HTTP direction |
-|---|---|---|---|---:|
-| `VALIDATION_ERROR` | command field/shape/domain validation 실패 | 동일 요청 재시도 불가 | 요청 수정 필요 | 400 |
-| `RESOURCE_NOT_FOUND` | resource 없음 또는 cross-owner concealment | 일반적으로 불가 | identifier/접근 context 확인 | 404 |
-| `CONFLICT` | 현재 revision/lifecycle과 command 충돌 | 최신 상태 조회 후 가능 | refresh 또는 command 변경 | 409 |
-| `STALE_RESOURCE` | command 대상 exact reference가 더 이상 current가 아님 | 동일 reference로 불가 | current reference 선택 또는 명시적 rerun | 409 |
-| `CAPABILITY_NOT_AVAILABLE` | 계산된 capability가 false | 조건 충족 후 가능 | missing gate/reference 확인 | 409 |
-| `POLICY_BLOCKED` | Service Policy 또는 maintenance가 명령을 차단 | policy 해제 후 가능 | 일반적으로 입력 수정 불필요 | 403; 일시 maintenance는 503 방향 |
-| `UPSTREAM_NOT_READY` | 필수 current upstream/result가 준비되지 않음 | upstream 완료 후 가능 | 선행 단계 완료 | 409 |
-| `LEGAL_GATE_BLOCKED` | current legal result가 concept generation을 허용하지 않음 | 같은 input 자동 retry 불가 | Idea correction, 정보 보강 또는 전문가 검토 | 409 |
-| `TASK_ALREADY_RUNNING` | 같은 subject/input의 conflicting active TaskRun 존재 | 기존 task 종료 후 가능 | 새 중복 command 불필요 | 409 |
-| `IDEMPOTENCY_CONFLICT` | 같은 key가 다른 canonical input과 결합됨 | 동일 key/다른 input 재시도 불가 | 새 key 또는 원래 input 사용 | 409 |
-| `PAYLOAD_TOO_LARGE` | bounded inline/chunk 계약 상한 초과 | 같은 payload로 불가 | 축소 또는 허용 chunk contract 사용 | 413 |
-| `TASK_TIMEOUT` | TaskRun timeout terminal summary 또는 public HTTP request/gateway timeout | Task retry policy에 따라 가능 | 보통 입력 수정 불필요 | TaskRun GET은 200; HTTP request 자체 timeout만 504 |
-| `AI_SERVICE_UNAVAILABLE` | Task 수락 전 required AI dependency 사용 불가 또는 accepted Task의 terminal failure summary | backoff 후 가능 | 보통 입력 수정 불필요 | 수락 전 command는 503; accepted TaskRun GET은 200 |
-| `AI_RESULT_INVALID` | accepted Task의 응답 schema/domain validation 또는 adoption 실패 summary | 정책에 따라 새 Attempt 가능 | 입력 보강이 필요할 수 있음 | accepted TaskRun GET은 200; synchronous pre-accept boundary에서만 502 방향 |
+- Idea Origin: `DRAFT`, `CONFIRMED`
+- clarification requirement: `REQUIRED_FOR_IDEA_ORIGIN`, `REQUIRED_FOR_LEGAL_PRECHECK`
+- clarification status: `MISSING`, `USER_CONFIRMED`
+- Legal Precheck result: `PASS`, `PASS_WITH_CONDITIONS`, `REVISION_REQUIRED`, `PROHIBITED`, `INSUFFICIENT_INFORMATION`, `EXPERT_REVIEW_REQUIRED`
+- Concept batch: `GENERATING`, `VALIDATING_ORIGIN`, `VALIDATING_LEGAL`, `COMPLETED`, `NEEDS_INPUT`, `FAILED`
+- Concept eligibility: draft `PENDING`/`ELIGIBLE`/`REJECTED`, published ConceptVersion `ELIGIBLE`
 
-Error code는 한 envelope에서 하나의 primary code로 사용하고 세부 field/gate/task 원인은 structured detail로 분리한다. Provider 이름, raw response/body, credential, stack trace, 내부 object key와 개인정보는 노출하지 않는다. 모든 오류는 request correlation identifier 방향을 지원하고, task가 이미 생성된 뒤 발생한 오류는 권한 확인 후 TaskRun identifier를 노출할 수 있다. TaskAttempt/provider identifier는 public 기본 응답에 노출하지 않는다.
-
-## Accepted asynchronous task semantics
-
-- Command가 TaskRun과 함께 202로 수락된 뒤의 업무 실패는 새로운 HTTP error response가 아니라 TaskRun resource state다.
-- `GET /api/v2/projects/{projectId}/task-runs/{taskRunId}`는 `FAILED`, `TIMED_OUT`, `CANCELLED` 등 terminal state에서도 200과 `TaskRunPublicView`를 반환한다.
-- `errorSummary.code`는 `TASK_TIMEOUT`, `AI_SERVICE_UNAVAILABLE`, `AI_RESULT_INVALID` 등을 가질 수 있다. GET을 502/503/504로 대체하지 않는다.
-- TaskRun 생성 전 AI dependency unavailable로 command 자체를 수락할 수 없을 때만 `AI_SERVICE_UNAVAILABLE`/503이며 `taskRunId`는 null이다.
-- `TASK_TIMEOUT`/504 HTTP response는 public HTTP request 자체가 gateway/request deadline을 넘긴 경우다. TaskRun 업무 timeout terminal state는 GET 200의 state/errorSummary로 표현한다.
-
-## Gate-specific semantics
-
-- Idea interpretation은 same-Project의 current validated extraction 하나 이상, AI policy와 bounded payload를 요구한다. Missing/unfinished extraction은 `UPSTREAM_NOT_READY`, stale extraction은 `STALE_RESOURCE`, 같은 exact input의 active Task는 `TASK_ALREADY_RUNNING`이다.
-- Legal gate는 exact current IdeaVersion의 adopted `PASS` 또는 `PASS_WITH_CONDITIONS`만 concept generation을 허용한다. 나머지 legal result는 `LEGAL_GATE_BLOCKED`다.
-- Shortlist/Selection은 USER decision이다. AI rank/recommendation 부재나 존재가 자동 결정으로 전환되지 않는다.
-- Detailed command의 ConceptVersion이 current ShortlistDecision에 없으면 `CAPABILITY_NOT_AVAILABLE` 또는 stale exact reference이면 `STALE_RESOURCE`다.
-- Persona, Marketing, Report는 exact current non-stale upstream을 요구한다. 단순히 Project Stage가 앞서 있다는 이유로 허용하지 않는다.
-- 동일 subject/input active TaskRun 충돌은 `TASK_ALREADY_RUNNING`; idempotency key/input 불일치는 `IDEMPOTENCY_CONFLICT`로 구분한다.
-
-상세 JSON error envelope, field error shape, command/query별 error subset과 response example은 [Public API v2 Contract](PUBLIC_API_V2_CONTRACT.md)를 따른다. 이 문서는 `docs/api/openapi.yaml`을 변경하거나 현재 구현 계약으로 선언하지 않는다.
+현재 공식 Journey 종료점은 적격 Concept 3개 표시다. 이후 MVP 상태는 보존 구현의 업무 상태이며 공식 Journey stage로 해석하지 않는다.
 
 ## Internal AI error mapping
 
-Spring–AI 내부 오류는 [Internal Spring–AI API v1 Contract](INTERNAL_AI_API_V1_CONTRACT.md)의 12개 provider-neutral code를 사용한다. `PAYLOAD_TOO_LARGE`는 public 동명 code, `DEADLINE_EXCEEDED`는 `TASK_TIMEOUT`, dependency/rate/transient execution 실패는 `AI_SERVICE_UNAVAILABLE`, result/unsupported contract 오류는 `AI_RESULT_INVALID`로 안전하게 정규화한다. Retryable은 stable code/reason으로 고정하고 실제 새 Attempt 생성은 Spring RetryPolicy와 attempt limit가 결정한다. 인증/parse/size pre-parse 실패는 신뢰하지 못한 task identifier를 null로 반환한다. 이미 수락된 TaskRun의 내부 HTTP 오류는 public TaskRun terminal state/errorSummary로 저장되고 조회는 계속 200이다.
+Spring–AI 내부 오류는 [Internal Spring–AI API v1 Contract](INTERNAL_AI_API_V1_CONTRACT.md)의 provider-neutral code와 stable reason registry를 사용한다. 이 절은 Internal 경계만 설명하며 Public path/status/envelope를 변경하지 않는다.
+
+| Internal condition | Stable code / reason | retryable |
+|---|---|---:|
+| request deadline 초과 | `DEADLINE_EXCEEDED / REQUEST_DEADLINE_EXCEEDED` | true |
+| service token 누락 | `UNAUTHORIZED_INTERNAL_CALL / SERVICE_TOKEN_MISSING` | false |
+| service token 불일치 | `UNAUTHORIZED_INTERNAL_CALL / SERVICE_TOKEN_INVALID` | false |
+| model dependency 일시 장애 | `DEPENDENCY_UNAVAILABLE / MODEL_DEPENDENCY_UNAVAILABLE` | true |
+| 설정 오류 | `DEPENDENCY_UNAVAILABLE / AI_CONFIGURATION_INVALID` | false |
+| 결과 schema/domain 오류 | `RESULT_SCHEMA_INVALID`과 등록된 세부 reason | false |
+
+`retryable=true`는 현재 Attempt를 재개한다는 뜻이 아니다. 현재 Attempt는 terminal로 종료되고 Spring RetryPolicy와 attempt limit가 새 Attempt 가능 여부를 결정한다. Spring은 identity/hash와 code/reason/retryable 조합을 검증한 뒤 결과를 adopt한다.
+
+Internal 오류의 Public 노출 방식은 실행 경로에 따라 일반 `ErrorCode` 또는 TaskRun terminal summary로 정규화된다. Provider raw body, prompt, credential, stack trace와 내부 object key는 Public 오류에 포함하지 않는다.
+
+### Internal failure normalization registry
+
+이 표는 Internal fixture validator가 읽는 stable TaskRun/public summary code registry다. 일반 Journey의 `ErrorCode` 문자열과 동일하다는 뜻은 아니며, 동기 경로에서는 현재 `AI_CONFIGURATION_INVALID`, `AI_RESULT_INVALID`, `EXTERNAL_AI_SERVICE_UNAVAILABLE` 등으로 변환될 수 있다.
+
+| Stable summary code | 현재 의미 |
+|---|---|
+| `AI_RESULT_INVALID` | 요청·계약·결과 검증 실패의 안전한 요약 |
+| `AI_SERVICE_UNAVAILABLE` | Provider 또는 외부 dependency 실패의 TaskRun 요약 |
+| `PAYLOAD_TOO_LARGE` | Internal request/response byte limit 초과 |
+| `TASK_TIMEOUT` | Internal request deadline 초과 |
+
+### End internal failure normalization registry

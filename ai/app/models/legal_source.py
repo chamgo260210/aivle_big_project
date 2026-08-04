@@ -43,6 +43,8 @@ class Screening(StrictModel):
 
 class ScreeningResult(StrictModel):
     screenings: list[Screening]
+    excludedCitationIds: list[str] = Field(default_factory=list)
+    coverageInferred: bool = False
 
 
 class LegalRouteResult(StrictModel):

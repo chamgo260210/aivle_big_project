@@ -1,3 +1,6 @@
+import json
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
@@ -57,3 +60,25 @@ def test_idea_origin_contract_rejects_extra_fields():
     payload["originDraft"]["unexpected"] = True
     with pytest.raises(ValidationError):
         IdeaInterpretationResult.model_validate(payload)
+
+
+def test_idea_origin_contract_rejects_missing_required_field_question():
+    payload = valid_result()
+    payload["clarificationQuestions"] = []
+    payload["openQuestions"] = []
+
+    with pytest.raises(ValidationError) as failure:
+        IdeaInterpretationResult.model_validate(payload)
+
+    assert failure.value.errors()[0]["type"] == "idea_missing_clarification"
+    assert "targetRegion" in failure.value.errors()[0]["ctx"]["fields"]
+
+
+def test_documented_idea_response_fixture_matches_production_model():
+    fixture_path = (
+        Path(__file__).resolve().parents[2]
+        / "docs/contracts/fixtures/internal-ai-v1/tasks/idea-interpretation.response.valid.json"
+    )
+    fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+
+    IdeaInterpretationResult.model_validate(fixture["result"])

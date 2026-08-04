@@ -34,8 +34,8 @@ describe('FinancialAnalysis pages and routes', () => {
     expect(screen.getByText('초안 분석')).toBeInTheDocument();
     expect(screen.getByText('완료 분석')).toBeInTheDocument();
     expect(screen.getAllByRole('link', { name: '열기' })[1])
-      .toHaveAttribute('href', '/app/projects/10/review/financial/2');
-    expect(projectRoutes.financialNew(10)).toBe('/app/projects/10/review/financial/new');
+      .toHaveAttribute('href', '/app/projects/10/journey/concept-analysis');
+    expect(projectRoutes.financialNew(10)).toBe('/app/projects/10/journey/concept-analysis');
   });
 
   it('blocks creation during maintenance while preserving result links', () => {
