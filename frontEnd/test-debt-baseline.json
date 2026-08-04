@@ -5,47 +5,11 @@
   "allowedFailures": [
     {
       "file": "src/test/App.test.jsx",
-      "name": "application routing redirects an authenticated user away from public auth routes"
-    },
-    {
-      "file": "src/test/App.test.jsx",
-      "name": "application routing renders protected content for authenticated users"
-    },
-    {
-      "file": "src/test/App.test.jsx",
       "name": "application routing supports direct project route entry"
     },
     {
       "file": "src/test/App.test.jsx",
-      "name": "application routing retains the project route parameter after rendering again"
-    },
-    {
-      "file": "src/test/App.test.jsx",
-      "name": "application routing renders the application header and main navigation"
-    },
-    {
-      "file": "src/test/App.test.jsx",
-      "name": "application routing provides a mobile navigation trigger and drawer"
-    },
-    {
-      "file": "src/test/App.test.jsx",
-      "name": "application routing provides skip navigation"
-    },
-    {
-      "file": "src/test/App.test.jsx",
       "name": "application routing renders project context navigation"
-    },
-    {
-      "file": "src/test/App.test.jsx",
-      "name": "application routing provides the main landmark"
-    },
-    {
-      "file": "src/test/App.test.jsx",
-      "name": "application routing uses a single level-one heading in a protected page"
-    },
-    {
-      "file": "src/test/App.test.jsx",
-      "name": "application routing logs out from the current user menu and returns to login"
     },
     {
       "file": "src/features/auth/AuthPages.test.jsx",
@@ -57,39 +21,7 @@
     },
     {
       "file": "src/features/auth/AuthPages.test.jsx",
-      "name": "auth pages shows a non-enumerating login error and moves focus to it"
-    },
-    {
-      "file": "src/features/auth/AuthPages.test.jsx",
-      "name": "auth pages shows the server-provided final warning without treating a 401 as a rate limit"
-    },
-    {
-      "file": "src/features/auth/AuthPages.test.jsx",
-      "name": "auth pages disables login while a server-provided retry period is active"
-    },
-    {
-      "file": "src/features/auth/AuthPages.test.jsx",
-      "name": "auth pages prevents duplicate login submission while pending"
-    },
-    {
-      "file": "src/features/auth/AuthPages.test.jsx",
-      "name": "auth pages validates an invalid username and focuses the first invalid field"
-    },
-    {
-      "file": "src/features/auth/AuthPages.test.jsx",
-      "name": "auth pages shows a caps lock hint without treating it as an error"
-    },
-    {
-      "file": "src/features/auth/AuthPages.test.jsx",
       "name": "auth pages keeps every password requirement neutral until password input exists"
-    },
-    {
-      "file": "src/features/auth/AuthPages.test.jsx",
-      "name": "auth pages makes the brand link a clear internal return to the landing page"
-    },
-    {
-      "file": "src/features/auth/AuthPages.test.jsx",
-      "name": "auth pages cycles the brand preview independently and pauses while the preview is hovered"
     },
     {
       "file": "src/features/auth/AuthPages.test.jsx",
@@ -117,27 +49,7 @@
     },
     {
       "file": "src/features/projects/ProjectPages.test.jsx",
-      "name": "project pages renders a real empty state"
-    },
-    {
-      "file": "src/features/projects/ProjectPages.test.jsx",
       "name": "project pages renders project data and user-facing state labels"
-    },
-    {
-      "file": "src/features/projects/ProjectPages.test.jsx",
-      "name": "project pages renders a retryable project load error"
-    },
-    {
-      "file": "src/features/projects/ProjectPages.test.jsx",
-      "name": "project pages validates project title before create"
-    },
-    {
-      "file": "src/features/projects/ProjectPages.test.jsx",
-      "name": "project pages keeps the project-name input focused through Korean composition"
-    },
-    {
-      "file": "src/features/projects/ProjectPages.test.jsx",
-      "name": "project pages creates a project and lets the user choose how to start"
     },
     {
       "file": "src/features/structured-plan/StructuredPlanCompletion.test.jsx",

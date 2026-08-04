@@ -1,4 +1,5 @@
 import json
+import logging
 import re
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -15,12 +16,22 @@ from app.services.journey_provider import ProviderFailure, execute_structured_pr
 ROUTING_SYSTEM = """당신은 사업 설명에서 조사할 규제 경로를 고르는 라우터다.
 법령명이나 조문을 만들지 말고 제공된 routeId만 사용한다. APPLIES/POSSIBLE 판단의 evidenceQuotes는
 입력 원문에서 글자 그대로 복사한다. 정보가 부족하면 UNKNOWN과 missingInformation을 반환한다.
+입력의 [확정 정보]에 이미 답이 있는 질문을 missingInformation으로 반복하지 말고 route 판단에 반영한다.
 JSON 외의 설명을 반환하지 않는다."""
 
 SCREENING_SYSTEM = """당신은 법제처에서 조회된 실제 조문 후보를 분류한다.
 제공된 citationId를 하나도 추가하거나 누락하지 말고 각 ID를 정확히 한 번 반환한다.
+관련 조문은 screenings에 상세 판정을 반환하고, 무관 조문은 상세 객체를 만들지 말고
+excludedCitationIds에 ID만 반환한다. 두 목록에 같은 ID를 중복하지 않는다.
 REQUIREMENT는 사업자 의무·금지, SANCTION은 제재, SCOPE는 적용 범위, SUPPORTING은 정의·보조,
 EXCLUDE는 무관 조문이다. 법령명·조문번호·의무를 새로 만들지 않는다. JSON만 반환한다."""
+logger = logging.getLogger(__name__)
+CONTRACT_REPAIR_SYSTEM = """당신은 법률 판단자가 아니라 JSON Contract 복구기다.
+invalidResult의 의미, citationId, routeId를 바꾸거나 새 법률 사실을 만들지 말고 requiredSchema와
+requiredIds에 정확히 맞는 JSON 객체 하나만 반환한다. 누락 ID는 repairContext에 포함된
+원 요청의 후보만 사용해 보완하고, 설명이나 Markdown을 출력하지 않는다."""
+SCREENING_BATCH_SIZE = 24
+MAX_SCREENING_CANDIDATES = 24
 
 
 def _normalized(value: str) -> str:
@@ -50,11 +61,18 @@ async def _route(source_text: str, registry: LegalRegistry) -> RoutingResult:
         "additionalRouteCandidates": ["string"],
         "missingInformation": [{"question": "string", "relatedRouteIds": ["string"]}],
     }}
+    prompt_json = json.dumps(prompt, ensure_ascii=False)
+    raw = await _execute_json_with_retry(ROUTING_SYSTEM, prompt_json, "LEGAL_ROUTING_JSON_INVALID")
     try:
-        raw = await execute_structured_prompt(ROUTING_SYSTEM, json.dumps(prompt, ensure_ascii=False))
         result = RoutingResult.model_validate(raw)
     except ValidationError as failure:
-        raise ProviderFailure("RESULT_SCHEMA_INVALID", "LEGAL_ROUTING_CONTRACT_INVALID", 502, False) from failure
+        repaired = await _repair_result(raw, RoutingResult, [])
+        try:
+            result = RoutingResult.model_validate(repaired)
+        except ValidationError as repair_failure:
+            logger.warning("Legal routing contract repair failed errorTypes=%s",
+                sorted({item["type"] for item in repair_failure.errors(include_input=False)}))
+            raise ProviderFailure("RESULT_SCHEMA_INVALID", "LEGAL_ROUTING_CONTRACT_INVALID", 502, False) from repair_failure
     known = set(registry.routes)
     seen: set[str] = set()
     cleaned = []
@@ -81,7 +99,7 @@ async def _route(source_text: str, registry: LegalRegistry) -> RoutingResult:
         missingInformation=missing)
 
 
-def _filter_articles(articles: list[dict[str, str]], keywords: list[str], limit: int = 12) -> list[dict[str, str]]:
+def _filter_articles(articles: list[dict[str, str]], keywords: list[str], limit: int = 4) -> list[dict[str, str]]:
     if not articles:
         return []
     ranked = []
@@ -96,25 +114,121 @@ def _filter_articles(articles: list[dict[str, str]], keywords: list[str], limit:
 
 
 async def _screen(source_text: str, candidates: list[dict[str, Any]]) -> ScreeningResult:
+    screenings = []
+    excluded = []
+    coverage_inferred = False
+    for start in range(0, len(candidates), SCREENING_BATCH_SIZE):
+        batch = candidates[start:start + SCREENING_BATCH_SIZE]
+        result = await _screen_batch(source_text, batch)
+        screenings.extend(result.screenings)
+        excluded.extend(result.excludedCitationIds)
+        coverage_inferred = coverage_inferred or result.coverageInferred
+    return ScreeningResult(screenings=screenings, excludedCitationIds=excluded,
+        coverageInferred=coverage_inferred)
+
+
+async def _screen_batch(source_text: str, candidates: list[dict[str, Any]]) -> ScreeningResult:
     payload = {"source": source_text, "candidates": [{"citationId": value["citationId"],
         "routeId": value["routeId"], "lawName": value["lawName"], "article": value["article"],
         "title": value["title"], "excerpt": value["excerpt"]} for value in candidates],
         "output": {"screenings": [{"citationId": "CIT-001",
             "role": "REQUIREMENT|SANCTION|SCOPE|SUPPORTING|EXCLUDE",
-            "plainSummary": "string", "whyRelevant": "string"}]}}
-    try:
-        raw = await execute_structured_prompt(SCREENING_SYSTEM, json.dumps(payload, ensure_ascii=False))
-        result = ScreeningResult.model_validate(raw)
-    except ValidationError as failure:
-        raise ProviderFailure("RESULT_SCHEMA_INVALID", "LEGAL_SCREENING_CONTRACT_INVALID", 502, False) from failure
+            "plainSummary": "string", "whyRelevant": "string"}],
+            "excludedCitationIds": ["CIT-002"]}}
     expected = {value["citationId"] for value in candidates}
-    actual = [value.citationId for value in result.screenings]
-    if set(actual) != expected or len(actual) != len(set(actual)):
-        raise ProviderFailure("RESULT_SCHEMA_INVALID", "LEGAL_CITATION_COVERAGE_INVALID", 502, False)
+    raw = await _execute_json_with_retry(SCREENING_SYSTEM,
+        json.dumps(payload, ensure_ascii=False), "LEGAL_SCREENING_JSON_INVALID")
+    result = _sanitize_screening_result(_screening_result(raw), expected)
+    if result is None:
+        repaired = await _repair_result(raw, ScreeningResult, sorted(expected), payload)
+        result = _sanitize_screening_result(_screening_result(repaired), expected)
+        if result is None:
+            logger.warning("Legal screening contract repair failed expectedIds=%s actualIds=%s",
+                len(expected), 0)
+            raise ProviderFailure("RESULT_SCHEMA_INVALID", "LEGAL_CITATION_COVERAGE_INVALID", 502, False)
+    result = _infer_omitted_screening_ids(result, expected)
     for value in result.screenings:
         if value.role != "EXCLUDE" and (not value.plainSummary.strip() or not value.whyRelevant.strip()):
             raise ProviderFailure("RESULT_SCHEMA_INVALID", "LEGAL_SCREENING_FIELD_INVALID", 502, False)
     return result
+
+
+async def _execute_json_with_retry(system: str, user: str, reason: str) -> dict[str, Any]:
+    try:
+        return await execute_structured_prompt(system, user)
+    except ProviderFailure as failure:
+        if failure.code != "RESULT_SCHEMA_INVALID":
+            raise
+        logger.warning("Legal provider JSON regeneration reason=%s", reason)
+        return await execute_structured_prompt(system, user)
+
+
+async def _repair_result(raw: dict[str, Any], model_type, required_ids: list[str],
+        repair_context: dict[str, Any] | None = None) -> dict[str, Any]:
+    payload = {
+        "requiredSchema": model_type.model_json_schema(),
+        "requiredIds": required_ids,
+        "invalidResult": raw,
+    }
+    if repair_context is not None:
+        payload["repairContext"] = repair_context
+    return await _execute_json_with_retry(CONTRACT_REPAIR_SYSTEM,
+        json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+        "LEGAL_CONTRACT_REPAIR_JSON_INVALID")
+
+
+def _screening_result(raw: dict[str, Any]) -> ScreeningResult | None:
+    try:
+        result = ScreeningResult.model_validate(raw)
+    except ValidationError:
+        return None
+    if any(value.role != "EXCLUDE" and
+           (not value.plainSummary.strip() or not value.whyRelevant.strip())
+           for value in result.screenings):
+        return None
+    return result
+
+
+def _screened_ids(result: ScreeningResult | None) -> list[str]:
+    if result is None:
+        return []
+    return [value.citationId for value in result.screenings] + result.excludedCitationIds
+
+
+def _sanitize_screening_result(result: ScreeningResult | None,
+        expected: set[str]) -> ScreeningResult | None:
+    if result is None:
+        return None
+    detailed = []
+    seen: set[str] = set()
+    for value in result.screenings:
+        if value.citationId not in expected or value.citationId in seen:
+            continue
+        detailed.append(value)
+        seen.add(value.citationId)
+    excluded = []
+    for citation_id in result.excludedCitationIds:
+        if citation_id not in expected or citation_id in seen:
+            continue
+        excluded.append(citation_id)
+        seen.add(citation_id)
+    return ScreeningResult(screenings=detailed, excludedCitationIds=excluded,
+        coverageInferred=result.coverageInferred)
+
+
+def _infer_omitted_screening_ids(result: ScreeningResult,
+        expected: set[str]) -> ScreeningResult:
+    present = set(_screened_ids(result))
+    missing = sorted(expected - present)
+    if not missing:
+        return result
+    logger.info("Legal screening omitted candidates recorded as unselected omittedIds=%s",
+        len(missing))
+    return ScreeningResult(
+        screenings=result.screenings,
+        excludedCitationIds=result.excludedCitationIds + missing,
+        coverageInferred=True,
+    )
 
 
 def _reasoning(category: str, label: str, route_quotes: list[str], evidence: list[dict[str, Any]]) -> dict[str, Any]:
@@ -137,10 +251,10 @@ async def execute_legal_source_pipeline(task_type: str, text: str,
     try:
         registry = LegalRegistry()
     except RegistryError as failure:
-        raise ProviderFailure("DEPENDENCY_UNAVAILABLE", str(failure), 503, False) from failure
+        raise ProviderFailure("DEPENDENCY_UNAVAILABLE", "LEGAL_CONFIGURATION_INVALID", 503, False) from failure
     requested_registry = task_input["registryVersion"]
     if requested_registry != registry.version:
-        raise ProviderFailure("INVALID_REQUEST", "LEGAL_REGISTRY_VERSION_MISMATCH", 409, False)
+        raise ProviderFailure("INVALID_REQUEST", "LEGAL_REGISTRY_VERSION_MISMATCH", 400, False)
     routing = await _route(source_text, registry)
     route_by_id = {value.routeId: value for value in routing.routes}
     active = [value for value in routing.routes if value.status in {"APPLIES", "POSSIBLE"}]
@@ -193,15 +307,19 @@ async def execute_legal_source_pipeline(task_type: str, text: str,
                     "effectiveDate": metadata.effective_date, "lawUrl": metadata.law_url})
     if not candidates and retryable_source_failure:
         raise ProviderFailure("DEPENDENCY_UNAVAILABLE", retryable_source_failure, 503, True)
-    if len(candidates) > 80:
-        candidates = candidates[:80]
+    if len(candidates) > MAX_SCREENING_CANDIDATES:
+        candidates = candidates[:MAX_SCREENING_CANDIDATES]
         warnings.append("SOURCE_CANDIDATE_LIMIT_APPLIED")
     screening = await _screen(source_text, candidates) if candidates else ScreeningResult(screenings=[])
+    if screening.coverageInferred:
+        warnings.append("SCREENING_COVERAGE_INFERRED")
     screen_by_id = {value.citationId: value for value in screening.screenings}
     verified_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     evidence: list[dict[str, Any]] = []
     for candidate in candidates:
-        screened = screen_by_id[candidate["citationId"]]
+        screened = screen_by_id.get(candidate["citationId"])
+        if screened is None:
+            continue
         if screened.role == "EXCLUDE":
             continue
         for category in candidate["categories"]:

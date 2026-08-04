@@ -9,7 +9,7 @@ const FAILURE_MESSAGES = {
 };
 
 const SOURCE_MESSAGES = {
-  SOURCE_PARTIAL: '공식 Source 일부만 확인되었습니다. 현재 결과는 참고용이며 추가 Source 또는 전문가 확인이 필요합니다.',
+  SOURCE_PARTIAL: '공식 Source 일부만 확인되었습니다. 확인된 근거를 Guardrail로 적용해 조건부 진행할 수 있으며, 누락 범위는 후속 검토가 필요합니다.',
   REGISTRY_GAP: '현재 Registry에 없는 규제 경로가 감지되었습니다. 성공으로 간주하지 않으며 Registry 보완 또는 전문가 확인이 필요합니다.',
 };
 

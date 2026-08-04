@@ -39,7 +39,7 @@ public record LegalSourcePipelineInput(
             chunks.add(new TextChunk(chunks.size(), chunkText, chunkCharacters, hash(chunkText)));
             offset = end;
         }
-        TextContent content = new TextContent(contentKey, "PLAIN_TEXT", "ko-KR", characters, hash, List.copyOf(chunks));
+        TextContent content = new TextContent(contentKey, "TEXT", "ko-KR", characters, hash, List.copyOf(chunks));
         return new LegalSourcePipelineInput(mode, List.copyOf(rerunCategories), List.copyOf(confirmedFacts),
             registryVersion, promptVersion, sourceSchemaVersion, List.of(content));
     }

@@ -7,6 +7,7 @@ import com.aivle.backend.project.repository.ProjectRepository;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.JsonNode;
@@ -143,7 +144,10 @@ public class IdeaOriginService {
             if (question.getStatus() != IdeaClarificationQuestion.Status.USER_CONFIRMED) continue;
             applyAnswer(snapshot, question.getTargetField(), question.getAnswer());
             ObjectNode confirmed = mapper.createObjectNode();
-            confirmed.put("value", question.getAnswer()); confirmed.put("source", question.getAnswerSource());
+            JsonNode structuredValue = snapshot.get(question.getTargetField());
+            if (structuredValue == null) confirmed.put("value", question.getAnswer());
+            else confirmed.set("value", structuredValue.deepCopy());
+            confirmed.put("source", question.getAnswerSource());
             confirmedValues.set(question.getTargetField(), confirmed);
         }
         confirmMetadata(metadata, snapshot, values);
@@ -216,7 +220,16 @@ public class IdeaOriginService {
     @Transactional
     public WorkspaceView acceptLegalRevision(Long ownerId, Long projectId, Long originVersionId,
             String targetField, String proposedValue) {
+        return acceptLegalRevisions(ownerId, projectId, originVersionId,
+            List.of(new LegalRevision(targetField, proposedValue)));
+    }
+
+    @Transactional
+    public WorkspaceView acceptLegalRevisions(Long ownerId, Long projectId, Long originVersionId,
+            List<LegalRevision> revisions) {
         ownedProject(ownerId, projectId);
+        if (revisions == null || revisions.isEmpty() || revisions.size() > 50)
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
         IdeaOriginVersion origin = origins.findById(originVersionId)
             .filter(value -> value.getProject().getId().equals(projectId)
                 && value.getState() == IdeaOriginVersion.State.CONFIRMED && value.getDeletedAt() == null)
@@ -225,15 +238,24 @@ public class IdeaOriginService {
             projectId, IdeaOriginVersion.State.CONFIRMED).orElseThrow(() -> new BusinessException(ErrorCode.IDEA_NOT_CONFIRMED));
         if (!current.getId().equals(origin.getId())) throw new BusinessException(ErrorCode.RESOURCE_VERSION_CONFLICT);
         ObjectNode confirmedValues = objectOrEmpty(mapper.readTree(origin.getConfirmedValuesJson()));
-        ObjectNode confirmed = mapper.createObjectNode(); confirmed.put("value", require(proposedValue, 20_000));
-        confirmed.put("source", "Legal 수정 제안 사용자 선택"); confirmedValues.set(require(targetField, 160), confirmed);
+        Set<String> targets = new java.util.HashSet<>();
+        for (LegalRevision revision : revisions) {
+            String target = require(revision.targetField(), 160);
+            if (!targets.add(target)) throw new BusinessException(ErrorCode.INVALID_REQUEST);
+            ObjectNode confirmed = mapper.createObjectNode();
+            confirmed.put("value", require(revision.proposedValue(), 20_000));
+            confirmed.put("source", "Legal 수정 계획 사용자 일괄 승인");
+            confirmedValues.set(target, confirmed);
+        }
         ObjectNode snapshot = (ObjectNode) mapper.readTree(origin.getSnapshotJson()); snapshot.set("confirmedValues", confirmedValues);
         origins.save(IdeaOriginVersion.confirmed(origin, nextVersion(projectId), snapshot.toString(), confirmedValues.toString(),
             origin.getAssumptionsJson(), "[]", origin.getMetadataJson()));
         return current(ownerId, projectId);
     }
 
-    private void applyAnswer(ObjectNode snapshot, String targetField, String answer) {
+    public record LegalRevision(String targetField, String proposedValue) {}
+
+    void applyAnswer(ObjectNode snapshot, String targetField, String answer) {
         switch (targetField) {
             case "productServiceDescription", "primaryCategory", "targetRegion", "pricingIntent",
                  "revenueModelIntent", "salesChannelIntent", "knownUnitCost", "differentiationIntent" ->
@@ -242,8 +264,18 @@ public class IdeaOriginService {
                 ArrayNode value = mapper.createArrayNode(); value.add(answer); snapshot.set(targetField, value);
             }
             case "target" -> {
-                ObjectNode target = mapper.createObjectNode(); target.putArray("customerTypes");
-                target.put("segment", answer); target.putNull("situation"); target.putArray("needs");
+                ObjectNode target = snapshot.get("target") instanceof ObjectNode existing
+                    ? existing.deepCopy() : mapper.createObjectNode();
+                ArrayNode customerTypes = target.get("customerTypes") instanceof ArrayNode existingTypes
+                    ? existingTypes : target.putArray("customerTypes");
+                boolean alreadyPresent = false;
+                for (JsonNode value : customerTypes) {
+                    if (value.isTextual() && value.asText().equals(answer)) alreadyPresent = true;
+                }
+                if (!alreadyPresent) customerTypes.add(answer);
+                if (!target.has("segment")) target.putNull("segment");
+                if (!target.has("situation")) target.putNull("situation");
+                if (!(target.get("needs") instanceof ArrayNode)) target.putArray("needs");
                 snapshot.set("target", target);
             }
             case "fixedValues" -> {

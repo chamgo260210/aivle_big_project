@@ -1,40 +1,48 @@
 # AI Server Boundary
 
-- Status: TARGET_CANONICAL
-- Code Baseline Commit: e16bd316ac881f4c5fab076e65c14657f6a8c7d4
-- Document Phase: P2
-- Introduced In Commit: 1549a8efa0aeb2ca400f4795c1c44b34868e4722
-- Scope: AI orchestration, trust boundary and failure responsibilities
-- Supersedes: Legacy AI integration documents
-- Implementation Status: NOT_STARTED
+- Status: CURRENT_AS_BUILT
+- Baseline date: 2026-08-04
+- Scope: Spring–FastAPI 내부 실행 경계와 책임
 
 ## Responsibilities
 
-AI Server는 Agent, MCP, model, prompt, AI 평가, provider client와 provider 오류 정규화를 관리한다. Korean Legal Review에서는 coordinated source adapter로 법제처 API의 공식 근거 확인과 법령 MCP의 검색·탐색을 조정한다. 법령 연동 secret은 AI Server 환경변수로만 주입하며 배포 secret mechanism을 사용하더라도 환경변수로 제공한다.
+FastAPI AI Server는 `/internal/v1/ai/executions`에서 한 TaskAttempt의 요청을 검증하고 task별 provider 또는 법률 pipeline을 실행한다. Queue, 업무 RDB, TaskRun 최종 상태와 사용자 결정을 소유하지 않는다. Spring이 실행 identity, persistence, retry policy와 결과 채택을 소유한다.
 
-[Internal Spring–AI API v1 Contract](../contracts/INTERNAL_AI_API_V1_CONTRACT.md)에 따라 AI Server는 `/internal/v1/ai/executions`에서 한 TaskAttempt를 동기 실행하는 stateless service다. 업무 queue, callback, webhook 또는 durable idempotency를 소유하지 않는다. 실행은 network ambiguity로 중복될 수 있고 Spring만 결과를 단일 채택한다.
+Internal AI v1 canonical request는 다음 값을 사용한다.
 
-Spring이 bounded inline JSON으로 전달한 task input과 추출 text/chunk만 사용하며 Project, owner, DB entity, FILE bytes 또는 Storage object를 직접 조회하지 않는다. 결과는 Spring이 검증할 수 있는 identity, contract version, provenance, warning/error 방향을 포함한다. 법률 결과는 source channel, 조회 시각, 법령 식별자, 조문, degraded 상태와 전문가 검토 필요 방향을 반환한다.
+- `contractVersion=1.0`
+- `taskSchemaVersion=1.0`
+- `locale=ko-KR`
+- `TextContent.contentType=TEXT`
+- `TextContent.language=ko-KR`
 
-## Hard prohibitions
+누락, blank, `PLAIN_TEXT`, 다른 locale/language는 `INVALID_REQUEST` 계열로 거부한다. Java `TaskType`과 FastAPI dispatcher는 동일한 13개 값을 사용하며 `IDEA_LEGAL_PRECHECK`, `CONCEPT_LEGAL_VALIDATION`을 포함한다.
 
-- RDB driver, repository, SQL, migration
-- S3/MinIO SDK, bucket credential, object key lookup
-- presigned GET/PUT 또는 임의 Storage URL
-- 업무 입력·결과의 local file persistence
-- browser가 호출하는 public endpoint
-- TaskRun 최종 상태나 사용자 결정을 자체 확정
-- 사용자 JWT/session과 Spring entity serialization 수신
-- FILE bytes/base64/binary payload 수신 또는 반환
+## Response and adoption
 
-## Trust boundary
+FastAPI success response는 TaskRun ID, TaskAttempt ID, taskType, taskSchemaVersion, correlationId, canonicalInputHash, resultSchemaVersion과 result body를 echo한다. Spring의 공통 `InternalAiExecutionClient`가 이를 검증한 뒤에만 Worker 또는 동기 Journey Service가 domain invariant를 검사하고 adopt한다.
 
-Spring 입력도 AI Server 관점에서 size/schema/task allowlist, chunk 순서와 제한을 검증한다. MCP/provider 출력은 신뢰하지 않고 parsing, citation, length와 allowed result type을 검사한다. AI Server의 결과 역시 Spring에서 다시 검증한다. P2 계약은 provider/model/SDK/library-neutral이다.
+Concept Legal Validation의 현재 공식 경로는 `GUARDRAIL_BATCH`다. 결과는 입력 candidateKey 집합과 정확히 일치해야 하며 누락·중복·알 수 없는 key와 extra field를 거부한다.
 
-## Failure isolation
+## Error semantics
 
-Provider/MCP별 timeout과 오류는 다른 TaskAttempt나 PersonaInterview로 전파하지 않는다. 법령 MCP 또는 법제처 API 한쪽 실패는 가능한 근거와 누락 source를 표시한 degraded result로 격리한다. Persona 실행은 독립 context를 사용한다. retry 권고는 반환할 수 있지만 실제 retry와 최종 상태는 Spring이 결정한다. health는 process live와 provider/MCP dependency readiness를 구분한다.
+- 요청 deadline 초과: `DEADLINE_EXCEEDED / REQUEST_DEADLINE_EXCEEDED / retryable=true`
+- Authorization 누락: `UNAUTHORIZED_INTERNAL_CALL / SERVICE_TOKEN_MISSING / retryable=false`
+- Authorization 불일치: `UNAUTHORIZED_INTERNAL_CALL / SERVICE_TOKEN_INVALID / retryable=false`
+- provider/model/legal dependency와 결과 오류: Internal contract의 stable code/reason registry로 제한
 
-## Current gap
+`retryable=true`는 현재 Attempt를 되살린다는 뜻이 아니라 Spring retry policy가 새 Attempt를 허용할 수 있다는 뜻이다.
 
-현재 FastAPI artifact service의 presigned HTTP I/O와 mock banner local outputs는 Target에서 제거 대상이다. 초기 Target payload는 bounded inline JSON/text chunk이며 streaming/binary protocol은 후속 확장이다. model/provider/library는 각 provider-dependent slice 진입 전까지 DEFERRED 상태다.
+## Execution styles
+
+FastAPI endpoint 자체는 request/response 단위로 동기 실행한다. 호출 측 Spring은 Legal persistent worker, Concept in-memory executor, 일부 Journey service 내부 동기 claim/execute를 함께 사용한다. 이번 기준선은 이들을 하나의 실행 방식으로 통일하지 않는다.
+
+## Hard boundaries
+
+- FastAPI가 Spring 업무 RDB나 JPA entity를 직접 소유하지 않는다.
+- Browser는 Internal AI endpoint를 직접 호출하지 않는다.
+- 사용자 JWT/session과 실제 secret을 payload나 오류에 포함하지 않는다.
+- FILE bytes/base64와 임의 Storage credential을 Internal execution payload로 전달하지 않는다.
+- AI 결과는 Spring 검증과 adopt 전까지 업무 사실이 아니다.
+
+기존 `/api/v1`과 artifact/banner 관련 코드는 외부 소비 여부가 확인되지 않았으므로 보존한다. 현재 공식 Journey의 Internal execution 계약과 구분한다.

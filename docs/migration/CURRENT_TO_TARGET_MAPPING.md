@@ -39,4 +39,4 @@
 | `job` / `analysis_jobs` legacy runtime | no new route | legacy `/api/v1` remains | retained unchanged through P3 | full regression retained | removal remains P12 | coexist with new `taskrun` package |
 | `taskrun` Target package | no UI in P3 | `/api/v2/projects/{projectId}/task-runs/{taskRunId}` GET/retry/cancel | V27 `task_runs`, `task_attempts`, `task_results` | domain/client/H2/PostgreSQL/concurrency direction | P2 contracts partially implemented | reusable P4-P10 execution foundation |
 
-Stable /api/v1은 유지 가능하고 신규 Workflow는 /api/v2다. compatibility endpoint/redirect를 추가하지 않는다. V1–V26은 불변이며 신규 migration으로 legacy FK/index/table을 제거한다. 데이터는 이관하지 않는다.
+Stable /api/v1은 유지 가능하고 신규 Workflow는 /api/v2다. compatibility endpoint/redirect를 추가하지 않는다. 2026-08-04 승인 결정에 따라 과거 V1~V36 upgrade chain은 통합 `V1__baseline_schema.sql`로 대체되었다. 기존 DB upgrade는 지원하지 않으며 이후 스키마 변경은 새 V2부터 추가한다. 데이터는 이관하지 않는다.

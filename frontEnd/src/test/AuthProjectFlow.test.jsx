@@ -73,9 +73,9 @@ describe('auth and project integration flow', () => {
     });
     fireEvent.submit(screen.getByRole('button', { name: '프로젝트 만들기' }).closest('form'));
 
-    expect(await screen.findByRole('heading', { name: '프로젝트가 생성되었습니다' }))
+    expect(await screen.findByRole('heading', { name: '통합 프로젝트' }))
       .toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /프로젝트만 열기/ })).toHaveAttribute('href', '/app/projects/21');
+    expect(screen.getByText('현재 재설계 범위')).toBeInTheDocument();
     expect(client.post).toHaveBeenCalledWith('/projects', expect.objectContaining({
       title: '통합 프로젝트',
     }));

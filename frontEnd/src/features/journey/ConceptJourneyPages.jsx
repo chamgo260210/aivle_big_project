@@ -39,6 +39,8 @@ export function ConceptGenerationPage() {
   const [legal, setLegal] = useState(null); const [batch, setBatch] = useState(null); const [concepts, setConcepts] = useState([]);
   const [busy, setBusy] = useState(false); const [error, setError] = useState('');
   const load = async () => { const [l,b,c]=await Promise.all([api.currentLegalPrecheck(),api.currentConceptGeneration(),api.concepts()]);setLegal(l);setBatch(b);setConcepts(c||[]); };
+  // Loading is the external synchronization performed by this effect.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { let active = true; load().catch((e) => active && setError(getUserErrorMessage(e))); return () => { active = false; }; }, [api]); // eslint-disable-line react-hooks/exhaustive-deps
   const activeBatch = ['GENERATING','VALIDATING_ORIGIN','VALIDATING_LEGAL'].includes(batch?.state);
   useEffect(() => { if(!activeBatch)return undefined;const timer=window.setInterval(()=>load().catch((e)=>setError(getUserErrorMessage(e))),2000);return()=>window.clearInterval(timer); }, [activeBatch,batch?.id]); // eslint-disable-line react-hooks/exhaustive-deps

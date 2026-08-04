@@ -19,11 +19,11 @@
 
 ## Platform
 
-Auth/owner/admin/audit가 회귀하지 않고 Spring만 RDB/Storage를 관리해야 한다. AI Server의 DB/Storage/presigned/local artifact 접근이 없어야 한다. TaskRun 상태는 Spring source of truth이며 V1–V26은 불변이어야 한다.
+Auth/owner/admin/audit가 회귀하지 않고 Spring만 RDB/Storage를 관리해야 한다. AI Server의 DB/Storage/presigned/local artifact 접근이 없어야 한다. TaskRun 상태는 Spring source of truth이며 스키마 변경은 통합 Baseline 이후 새 version으로만 추가한다.
 
 ## Migration
 
-새 migration은 fresh, V26 upgrade, validate를 통과한다. 대체 test/consumer 전에 legacy table/entity/API를 삭제하지 않는다.
+통합 Baseline은 빈 PostgreSQL에서 fresh/validate를 통과해야 한다. 기존 DB upgrade는 지원하지 않는다. 대체 test/consumer 전에 legacy table/entity/API를 삭제하지 않는다.
 
 ## Workflow and release
 

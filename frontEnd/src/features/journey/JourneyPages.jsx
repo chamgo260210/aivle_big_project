@@ -62,6 +62,8 @@ export function IdeaJourneyPage() {
 
   useEffect(() => {
     let active = true;
+    // Reset the project-scoped form before synchronizing the new project data.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setTab('text'); setTitle(''); setText(''); setFile(null);
     setSource(null); setInterpretation(null); setOrigin(null); setAnswers({}); setBusy(''); setError('');
     Promise.all([api.currentIdea(), api.currentInterpretation(), api.currentIdeaOrigin()]).then(([saved, run, workspace]) => {
@@ -223,11 +225,23 @@ export function LegalJourneyPage() {
     setAnswers(Object.fromEntries((workspace?.questions || []).filter((question) => question.requirement === 'REQUIRED_FOR_LEGAL_PRECHECK')
       .map((question) => [question.id, { answer: question.answer || '', answerSource: question.answerSource || '사용자 직접 입력' }])));
   };
+  // Loading is the external synchronization performed by this effect.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { let active = true; load().catch((failure) => active && setError(getUserErrorMessage(failure))); return () => { active = false; }; }, [api]); // eslint-disable-line react-hooks/exhaustive-deps
   const activeRun = ['QUEUED', 'RUNNING'].includes(precheck?.run?.state);
   useEffect(() => {
     if (!activeRun) return undefined;
-    const timer = window.setInterval(() => load().catch((failure) => setError(getUserErrorMessage(failure))), 2000);
+    const poll = async () => {
+      const legal = await api.currentLegalPrecheck();
+      setPrecheck(legal);
+      if (!['QUEUED', 'RUNNING'].includes(legal?.run?.state)) {
+        const workspace = await api.currentIdeaOrigin();
+        setOrigin(workspace);
+        setAnswers(Object.fromEntries((workspace?.questions || []).filter((question) => question.requirement === 'REQUIRED_FOR_LEGAL_PRECHECK')
+          .map((question) => [question.id, { answer: question.answer || '', answerSource: question.answerSource || '사용자 직접 입력' }])));
+      }
+    };
+    const timer = window.setInterval(() => poll().catch((failure) => setError(getUserErrorMessage(failure))), 2000);
     return () => window.clearInterval(timer);
   }, [activeRun, precheck?.run?.taskRunId]); // eslint-disable-line react-hooks/exhaustive-deps
   const confirmed = origin?.confirmed;
@@ -245,7 +259,7 @@ export function LegalJourneyPage() {
   }
   async function applyAnswers() {
     setBusy(true); setError('');
-    try { await api.applyLegalAnswers(confirmed.id); await load(); }
+    try { await api.applyLegalAnswersAndRestart(confirmed.id); await load(); }
     catch (failure) { setError(getUserErrorMessage(failure)); }
     finally { setBusy(false); }
   }
@@ -259,9 +273,19 @@ export function LegalJourneyPage() {
     catch (failure) { setError(getUserErrorMessage(failure)); }
     finally { setBusy(false); }
   }
-  async function acceptRevision(index) {
+  async function refreshSources() {
     setBusy(true); setError('');
-    try { await api.acceptLegalRevision(precheck.version.id, index); await load(); }
+    try { await api.refreshLegalPrecheckSources(); await load(); }
+    catch (failure) { setError(getUserErrorMessage(failure)); }
+    finally { setBusy(false); }
+  }
+  async function acceptRevisions() {
+    setBusy(true); setError('');
+    try {
+      const indexes = (precheck.version.revisionSuggestions || []).map((_, index) => index);
+      await api.acceptLegalRevisionsAndRestart(precheck.version.id, indexes);
+      await load();
+    }
     catch (failure) { setError(getUserErrorMessage(failure)); }
     finally { setBusy(false); }
   }
@@ -279,14 +303,14 @@ export function LegalJourneyPage() {
     <aside className="journey-legal-notice"><strong>사업기획 단계의 사전검토 · 공식 법률 자문 아님</strong><p>법제처 공식 Source를 사용하지만, Source가 일부이거나 Registry 밖 영역이면 전문가 검토가 필요합니다.</p></aside>
     {!confirmed ? <section className="journey-empty"><h3>확정된 Idea Origin이 필요합니다.</h3><Link className="journey-button" to={`/app/projects/${projectId}`}>Idea Origin 확정하기</Link></section> : <>
       <section className="journey-card journey-run-card"><div><h3>Idea Origin v{confirmed.versionNumber}</h3><p>{displayValue(confirmed.snapshot?.productServiceDescription)}</p>{precheck?.stale && <p className="journey-warning">Origin이 변경되어 이전 Precheck와 Guardrail은 STALE입니다. 아래 과거 결과는 현재 Guardrail로 사용되지 않습니다.</p>}</div><button className="journey-button" type="button" disabled={busy || activeRun || failedCurrentRun || (!!result && !precheck?.stale)} onClick={() => void run()}>{precheck?.stale ? '현재 Origin으로 다시 실행' : result ? '검토 완료' : failedCurrentRun ? '실패 상태 확인 필요' : 'Legal Precheck 실행'}</button></section>
-      {failedCurrentRun && <section className="journey-card journey-run-card"><div><h3>검토 실행 실패</h3><p>{journeyFailureMessage(precheck.run.errorCode)}</p><small>{precheck.run.errorCode || 'AI_SERVICE_UNAVAILABLE'}</small></div>{precheck.run.retryable ? <button className="journey-button" disabled={busy} onClick={() => void retry()}>동일 입력으로 재시도</button> : precheck.run.errorCode === 'AI_CONFIGURATION_INVALID' ? <button className="journey-button" disabled={busy} onClick={() => void run()}>설정 수정 후 새 실행</button> : <Link className="journey-button secondary" to={`/app/projects/${projectId}`}>Idea·입력 확인</Link>}</section>}
+      {failedCurrentRun && <section className="journey-card journey-run-card"><div><h3>검토 실행 실패</h3><p>{journeyFailureMessage(precheck.run.errorCode)}</p><small>{precheck.run.errorCode || 'AI_SERVICE_UNAVAILABLE'}</small></div>{precheck.run.retryable ? <button className="journey-button" disabled={busy} onClick={() => void retry()}>동일 입력으로 재시도</button> : precheck.run.errorCode === 'AI_CONFIGURATION_INVALID' ? <button className="journey-button" disabled={busy} onClick={() => void run()}>설정 수정 후 새 실행</button> : ['AI_RESULT_INVALID', 'AI_SERVICE_UNAVAILABLE'].includes(precheck.run.errorCode) ? <button className="journey-button" disabled={busy} onClick={() => void refreshSources()}>Origin 유지하고 새 Legal 검토 생성</button> : <Link className="journey-button secondary" to={`/app/projects/${projectId}`}>Idea·입력 확인</Link>}</section>}
       {!result ? <section className="journey-empty"><h3>{activeRun ? 'Legal Precheck 실행 중입니다.' : '저장된 Precheck 결과가 없습니다.'}</h3><p>완료 결과는 새로고침 후에도 복원됩니다.</p></section> : <section className="journey-card journey-result legal">
         <div className="journey-result__header"><div><span className={`journey-badge legal-${result.status?.toLowerCase()}`}>{legalLabel[result.status] || result.status}</span><h2>Legal Precheck v{result.versionNumber}</h2></div><span className={result.sourceVerified ? 'journey-verified' : 'journey-unverified'}>{result.sourceVerified ? '공식 Source 확인' : result.sourceStatus}</span></div>
-        <section className="journey-highlight"><h3>종합 결과</h3><p>{result.summary}</p>{sourceNotice && <p className="journey-warning">{sourceNotice}</p>}<p><strong>Concept Builder:</strong> {advance ? '진행 가능' : '진행 차단'}</p></section>
+        <section className="journey-highlight"><h3>종합 결과</h3><p>{result.summary}</p>{sourceNotice && <p className="journey-warning">{sourceNotice}</p>}<p><strong>Concept Builder:</strong> {advance ? '진행 가능' : '진행 차단'}</p>{result.sourceStatus !== 'SOURCE_COMPLETE' && <button className="journey-button secondary" disabled={busy || activeRun} onClick={() => void refreshSources()}>현재 Origin 유지하고 공식 Source 다시 확인</button>}</section>
         <section className="journey-result-section"><h3>Category별 Finding과 5단 Reasoning</h3><div className="legal-finding-list">{(result.findings || []).map((finding) => <article key={finding.category}><header><strong>{finding.category}</strong><span>{finding.applicability}</span></header><p>{finding.summary}</p><ol><li><b>입력 근거</b> {(finding.reasoning?.inputBasis || []).join(' · ') || '추가 확인 필요'}</li><li><b>규제 영역</b> {finding.reasoning?.regulatoryArea}</li><li><b>의무</b> {finding.reasoning?.obligation}</li><li><b>위반 결과</b> {finding.reasoning?.consequence}</li><li><b>필요 조치</b> {finding.reasoning?.requiredAction}</li></ol></article>)}</div></section>
         <section className="journey-result-section"><h3>공식 Evidence</h3><div className="legal-evidence-list">{(result.evidence || []).map((item) => <article key={item.evidenceId}><header><strong>{item.lawName} {item.article}</strong><span>{item.role}</span></header><p>{item.plainSummary}</p><small>{item.whyRelevant}</small><blockquote>{item.excerpt}</blockquote><footer><span>시행일 {item.effectiveDate || '확인 필요'} · 조회 {item.verifiedAt}</span><a href={item.lawUrl} target="_blank" rel="noreferrer">법제처 공식 원문</a></footer></article>)}</div></section>
-        {legalQuestions.length > 0 && <section className="journey-result-section"><h3>추가 확인 질문</h3>{legalQuestions.map((question) => <article className="origin-question" key={question.id}><strong>{question.question}</strong><p>{question.reason}</p><textarea rows="3" disabled={question.status === 'USER_CONFIRMED'} value={answers[question.id]?.answer || ''} onChange={(event) => setAnswers((current) => ({ ...current, [question.id]: { ...current[question.id], answer: event.target.value } }))} />{question.status === 'USER_CONFIRMED' ? <span className="journey-badge">답변 저장됨</span> : <button className="journey-button secondary" disabled={busy || !answers[question.id]?.answer?.trim()} onClick={() => void answer(question)}>답변 저장</button>}</article>)}{!unanswered.length && <button className="journey-button" disabled={busy} onClick={() => void applyAnswers()}>보완 내용 반영 후 새 Origin 만들기</button>}</section>}
-        {(result.revisionSuggestions || []).length > 0 && <section className="journey-result-section"><h3>Origin 수정 제안</h3>{result.revisionSuggestions.map((suggestion, index) => <article className="origin-question" key={`${suggestion.evidenceId}-${index}`}><strong>{suggestion.targetField}</strong><p><b>문제가 된 Origin 근거:</b> {suggestion.originEvidence}</p><p>{suggestion.reason}</p><blockquote>{suggestion.proposedValue}</blockquote><button className="journey-button secondary" disabled={busy || precheck.stale} onClick={() => void acceptRevision(index)}>이 수정안을 선택해 새 Origin 만들기</button></article>)}</section>}
+        {legalQuestions.length > 0 && <section className="journey-result-section"><h3>추가 확인 질문</h3>{legalQuestions.map((question) => <article className="origin-question" key={question.id}><strong>{question.question}</strong><p>{question.reason}</p><textarea rows="3" disabled={question.status === 'USER_CONFIRMED'} value={answers[question.id]?.answer || ''} onChange={(event) => setAnswers((current) => ({ ...current, [question.id]: { ...current[question.id], answer: event.target.value } }))} />{question.status === 'USER_CONFIRMED' ? <span className="journey-badge">답변 저장됨</span> : <button className="journey-button secondary" disabled={busy || !answers[question.id]?.answer?.trim()} onClick={() => void answer(question)}>답변 저장</button>}</article>)}{!unanswered.length && <button className="journey-button" disabled={busy} onClick={() => void applyAnswers()}>모든 답변 반영 후 자동 재검토</button>}</section>}
+        {(result.revisionSuggestions || []).length > 0 && <section className="journey-result-section"><h3>Origin 통합 수정 계획</h3><p className="journey-muted">같은 법률 Category의 근거를 하나의 변경안으로 묶었습니다. 아래 계획 전체를 한 Origin Version에 반영하고 Legal Precheck를 한 번만 다시 실행합니다.</p>{result.revisionSuggestions.map((suggestion, index) => <article className="origin-question" key={`${suggestion.category || suggestion.targetField}-${index}`}><strong>{suggestion.category || suggestion.targetField}</strong><p><b>문제가 된 Origin 근거:</b> {suggestion.originEvidence}</p><p>{suggestion.reason}</p><blockquote>{suggestion.proposedValue}</blockquote>{(suggestion.evidenceIds || []).length > 0 && <small>공식 근거 {suggestion.evidenceIds.length}건 통합</small>}</article>)}<button className="journey-button" disabled={busy || precheck.stale} onClick={() => void acceptRevisions()}>모든 수정 계획 일괄 적용 후 자동 재검토</button></section>}
         <section className="journey-result-section"><h3>최종 Legal Guardrail Set v{result.guardrails?.versionNumber}</h3><div className="journey-result-grid"><ResultList title="Hard Constraints" items={result.guardrails?.hardConstraints} /><ResultList title="Prohibited Patterns" items={result.guardrails?.prohibitedPatterns} /><ResultList title="Conditional Constraints" items={result.guardrails?.conditionalConstraints} /><ResultList title="Required Disclosures" items={result.guardrails?.requiredDisclosures} /><ResultList title="Operational Controls" items={result.guardrails?.requiredOperationalControls} /></div></section>
         <div className="journey-next"><div><strong>{advance ? '현재 Guardrail로 Concept Builder에 진입할 수 있습니다.' : '질문·수정 또는 Source 보완 전까지 Concept Builder가 차단됩니다.'}</strong><p>Registry {result.registryVersion} · {result.sourceStatus}</p></div><Link className={`journey-button ${advance ? '' : 'disabled'}`} aria-disabled={!advance} onClick={(event) => !advance && event.preventDefault()} to={advance ? `/app/projects/${projectId}/journey/concept` : '#'}>Concept Builder로</Link></div>
       </section>}

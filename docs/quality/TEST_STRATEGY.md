@@ -28,7 +28,7 @@ Legacy tests는 기능 삭제와 대체 test 존재 후 제거한다.
 | P3 | full Stable Core, TaskRun concurrency, Spring–AI, FastAPI, Flyway |
 | P4–P10 | affected Stable Core + backend/frontend/AI + owner/stale/error + E2E |
 | P11 | Admin authorization/policy/audit와 Landing frontend/accessibility |
-| P12 | replacement suite, migration fresh/upgrade/validate, legacy reference scan |
+| P12 | replacement suite, baseline fresh/validate, legacy reference scan |
 | P13 | full local suite, Docker E2E, manual testing, security, Remote CI |
 
 ## Local command set

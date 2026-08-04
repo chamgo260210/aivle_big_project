@@ -11,7 +11,7 @@
 | Gate | Command/direction | Success | Evidence |
 |---|---|---|---|
 | Backend | Windows `.\gradlew.bat test`; Linux/CI `./gradlew test` | exit 0/no failures | backend/build/test-results/test |
-| PostgreSQL/Flyway | Windows `.\gradlew.bat postgresTest`; Linux/CI `./gradlew postgresTest` | fresh/upgrade/validate pass | backend/build/test-results/postgresTest |
+| PostgreSQL/Flyway | Windows `.\gradlew.bat postgresTest`; Linux/CI `./gradlew postgresTest` | empty PostgreSQL에 Baseline fresh/validate와 JPA schema validation 통과 | backend/build/test-results/postgresTest |
 | Storage | Windows `.\gradlew.bat minioTest`; Linux/CI `./gradlew minioTest` | integrity/boundary pass | backend/build/test-results/minioTest |
 | Frontend lint | Windows `npm.cmd run lint`; Linux/CI `npm run lint` | exit 0 | local/remote log |
 | Frontend test | Windows `npm.cmd run test:baseline`; Linux/CI `npm run test:baseline` | gate pass | command log |
