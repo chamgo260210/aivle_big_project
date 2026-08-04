@@ -120,7 +120,7 @@ Runtime은 React Frontend, Spring Backend, FastAPI AI Server, PostgreSQL, MinIO/
 - 사용자가 Internal fixture validator와 관련 AI/Backend 테스트를 실행해 변경을 확인한다.
 - Public API Controller/Frontend client As-Is matrix는 `PUBLIC_API_V2_CONTRACT.md`에 반영했다.
 - 현재 Journey와 보존 MVP Route는 `ProjectLayout` 및 UIUX 문서에서 분리했다.
-- env/compose naming과 repository-local CI 부재 상태는 별도 정리 작업에서 다룬다.
+- env/compose 외부 입력 이름은 정리 작업 D에서 표준화했고 repository-local CI가 Frontend, AI, Backend의 최소 gate를 수행한다. 실제 Provider·법제처·전체 Docker E2E는 기본 CI 범위 밖이다.
 - OpenAPI 전면 통합, 보존 MVP의 공식 Journey 연결, Public envelope 통일은 별도 기능 작업이다.
 
 ## 9. 이번 버전에서 하지 않은 것

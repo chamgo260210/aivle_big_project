@@ -48,7 +48,7 @@
 
 현재 Public API의 As-Is 실행 권위는 실제 Spring Controller와 Frontend Client이며 `docs/contracts/PUBLIC_API_V2_CONTRACT.md`가 endpoint/status/envelope matrix를 기록한다. Journey `ApiResponse`와 TaskRun 전용 envelope가 현재 공존한다. `docs/api/openapi.yaml`은 Backend semantic test가 읽는 기존 `/api/v1` 중심 machine-consumed 계약이며 현재 Journey `/api/v2` 전체 권위가 아니다. Public `/api/v2`와 Internal `/internal/v1/ai/executions`를 구분한다.
 
-현재 작업 트리에 `.github/workflows`가 없으므로 repository-local GitHub Actions는 `NOT_PRESENT`다. 외부 CI 존재 여부와 제거 시점은 확인되지 않았다.
+Repository-local `.github/workflows/ci.yml`은 Frontend lint/baseline/build, AI fixture/pytest, Backend test/postgresTest를 실행한다. 실제 AI Provider·법제처·전체 Docker E2E는 기본 CI 범위 밖이며 Frontend 허용 테스트 부채는 `test-debt-baseline.json` 정책을 따른다.
 
 ## Known retained implementation
 

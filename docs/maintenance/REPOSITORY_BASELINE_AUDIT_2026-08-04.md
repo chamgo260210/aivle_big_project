@@ -443,3 +443,10 @@ Browser / React 19 + Vite
 - AI pytest는 사용자 공용 Temp 권한이나 다른 실행 주체가 만든 고정 경로에 의존하지 않도록 실행별로 고유한 저장소 내부 임시 경로를 사용한다.
 - Frontend lint를 해소하고 현재 Journey Route/UI와 달라진 테스트 기대값을 갱신했다. test-debt allowlist는 40개에서 18개로 축소했으며 새 실패를 추가하지 않았다.
 - C에서 제거한 `react.svg`, `vite.svg`, `Head.jsx`, `Head.css`는 현재/백업 전체 소스 대조에서도 유일한 차이였고 runtime/build/test 실패 원인이 아니므로 복구하지 않았다.
+
+## 기준선 마감 정리 결과
+
+- 최초 조사 당시에는 `.github/workflows`가 없었다.
+- 정리 작업 D에서 repository-local `.github/workflows/ci.yml`을 추가했다.
+- 현재 CI 상태는 최신 기준선 문서와 실제 Workflow가 우선한다.
+- 의도적으로 남긴 호환·MVP·machine-consumed 항목은 [RETAINED_LEGACY_REGISTRY](RETAINED_LEGACY_REGISTRY.md)에서 제거 조건과 함께 관리한다.

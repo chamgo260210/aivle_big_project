@@ -2,7 +2,7 @@
 
 현재 재설계 범위는 Idea 입력부터 적격 Concept 3개 표시까지다. 시장 이후 기존 MVP는 이 흐름과 연결하지 않는다.
 
-## 1. 환경 파일
+## 1. 공식 Docker Journey 환경
 
 PowerShell에서 저장소 루트를 기준으로 실행한다.
 
@@ -10,7 +10,7 @@ PowerShell에서 저장소 루트를 기준으로 실행한다.
 Copy-Item .env.example .env
 ```
 
-`.env.demo.example`을 사용하는 별도 데모 환경이라면 해당 파일을 복사할 수 있다. 실제 Secret이 들어간 `.env`는 저장소에 포함하지 않는다.
+`.env.example`은 React, Spring, FastAPI, PostgreSQL과 MinIO를 함께 실행하는 공식 로컬 환경의 권위다. 실제 Secret이 들어간 `.env`는 저장소에 포함하지 않는다.
 
 ## 2. AI와 내부 인증
 
@@ -65,4 +65,16 @@ POSTGRES_PASSWORD=replace-with-local-password
 MINIO_ROOT_PASSWORD=replace-with-local-password
 ```
 
-운영 Domain, HTTPS, Secret Manager, 운영 DB, 배포 및 CI 설정은 현재 범위에 포함하지 않는다.
+운영 Domain, HTTPS, Secret Manager와 운영 DB 설정은 현재 범위에 포함하지 않는다.
+
+## 6. Infrastructure-only 환경
+
+`.env.infrastructure.example`과 `compose.infrastructure.yaml`은 PostgreSQL과 MinIO만 실행한다. 사용자 입력 bucket 변수는 `OBJECT_STORAGE_BUCKET`이며 application AI/JWT 설정은 포함하지 않는다.
+
+## 7. Disposable E2E 환경
+
+`.env.e2e.example`은 disposable `/api/v1` Docker smoke/failure script 전용이다. `AI_INTERNAL_SERVICE_TOKEN`을 외부 입력으로 사용하고 Provider 설정은 비접속 loopback placeholder이므로 실제 Provider 호출에 사용할 수 없다. 공식 Journey 운영 설정으로 사용하지 않는다.
+
+## 8. Legacy stable-core demo
+
+`.env.demo.example`과 `scripts/demo-start.ps1`은 Backend와 Frontend만 직접 실행하고 local/H2 또는 기존 설정에 의존하는 `/api/v1` 중심 Legacy demo다. FastAPI, PostgreSQL, MinIO를 포함하지 않으며 공식 Idea–Legal–Concept Journey 검증이 아니다. 공식 로컬 실행은 `.env.example`과 `docker compose`를 사용한다.

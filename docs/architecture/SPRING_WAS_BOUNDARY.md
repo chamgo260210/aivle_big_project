@@ -1,14 +1,28 @@
 # Spring WAS Boundary
 
 - Status: TARGET_CANONICAL
-- Code Baseline Commit: e16bd316ac881f4c5fab076e65c14657f6a8c7d4
+- Reviewed Against Current Baseline: 3aeff219d72e1be502ba4ad1cade7f7aca83d10e
 - Document Phase: P2
 - Introduced In Commit: 1549a8efa0aeb2ca400f4795c1c44b34868e4722
 - Scope: Spring responsibilities, flows and TaskRun ownership
 - Supersedes: Legacy backend architecture documents
-- Implementation Status: PARTIAL
+- Implementation Status: PARTIALLY_IMPLEMENTED_TARGET
 
-P3 implementation note: Spring owns the Target TaskRun/TaskAttempt/TaskResult persistence lifecycle and calls `/internal/v1/ai/executions` only after the claim transaction completes. P4+ aggregates remain unimplemented.
+## Currently implemented
+
+- Spring owns TaskRun/TaskAttempt/TaskResult persistence and result adoption.
+- Spring–FastAPI Internal v1 uses `/internal/v1/ai/executions` and shared identity/hash validation.
+- PostgreSQL starts from the single Baseline V1; Object Storage uses the S3-compatible boundary.
+
+## Retained compatibility
+
+- Public `/api/v1`, AnalysisJob and direct provider adapters remain referenced compatibility paths.
+- Preserved MVP services and routes remain available but are not the official Journey continuation.
+
+## Remaining target direction
+
+- Unified durable execution, production circuit breaker, full observability and deployment automation remain target work.
+- Compatibility paths are not treated as already migrated merely because TaskRun exists.
 
 ## Owned responsibilities
 
@@ -36,4 +50,4 @@ AI JSON 작업은 Spring이 특정 input version을 snapshot/reference하여 bou
 
 ## Current gap
 
-현재 AnalysisJob과 provider 직접 adapter는 Target TaskRun/Spring–AI boundary가 아니다. 기존 기반을 compatibility layer로 확장하지 않고 후속 Phase에서 교체한다.
+현재 AnalysisJob과 provider 직접 adapter는 Target TaskRun/Spring–AI boundary가 아니다. 외부 소비와 보존 MVP를 확인한 뒤 별도 전환해야 한다.

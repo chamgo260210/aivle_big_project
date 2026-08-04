@@ -33,7 +33,7 @@ AI 실행 방식은 현재 하나로 통일되어 있지 않다.
 
 Flyway Runtime Migration은 PostgreSQL 최종 스키마를 직접 생성하는 `V1__baseline_schema.sql` 하나다. 과거 V1~V36과 Java Migration V5/V10의 최종 효과는 이 SQL에 흡수되었으며 기존 DB upgrade는 지원하지 않는다. 적용 전 기존 PostgreSQL과 Docker volume을 반드시 초기화해야 한다. 과거 이력은 Git history에 남는다.
 
-현재 작업 트리에는 `.github/workflows`가 없어 repository-local GitHub Actions는 `NOT_PRESENT`다. 외부 CI의 존재 여부나 과거 workflow 제거 시점은 이 사실만으로 단정하지 않는다.
+Repository-local GitHub Actions `CI` workflow가 Frontend lint/baseline/build, AI fixture/pytest, Backend test/postgresTest를 실행한다. 실제 Provider·법제처 호출과 전체 Docker E2E는 기본 CI 범위 밖이다. Frontend의 허용 테스트 부채는 `test-debt-baseline.json` 정책을 따른다.
 
 ## Documentation
 
@@ -44,6 +44,8 @@ Flyway Runtime Migration은 PostgreSQL 최종 스키마를 직접 생성하는 `
 - Public API v2 As-Is: [PUBLIC_API_V2_CONTRACT](docs/contracts/PUBLIC_API_V2_CONTRACT.md)
 - 저장소 감사: [REPOSITORY_BASELINE_AUDIT](docs/maintenance/REPOSITORY_BASELINE_AUDIT_2026-08-04.md)
 - Migration Baseline cutover: [MIGRATION_BASELINE_CUTOVER](docs/maintenance/MIGRATION_BASELINE_CUTOVER_2026-08-04.md)
+- 저장소 구조 안내: [REPOSITORY_STRUCTURE_GUIDE](docs/REPOSITORY_STRUCTURE_GUIDE.md)
+- 보존 Legacy Registry: [RETAINED_LEGACY_REGISTRY](docs/maintenance/RETAINED_LEGACY_REGISTRY.md)
 
 현재 Public API의 실행 권위는 실제 Spring Controller와 Frontend Client이며 `PUBLIC_API_V2_CONTRACT.md`가 현재 endpoint/status/envelope를 기록한다. `docs/api/openapi.yaml`은 기존 `/api/v1` 중심 machine-consumed 계약이며 현재 Journey `/api/v2` 전체 권위가 아니다. Public `/api/v2`와 Internal `/internal/v1/ai/executions`는 별도 경계다.
 
