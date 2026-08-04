@@ -17,15 +17,19 @@ public class IdeaInterpretationPersistenceService {
     private final TaskRunRepository taskRuns;
     private final ProjectRepository projects;
     private final IdeaSourceRepository sources;
+    private final IdeaOriginService origins;
+    private final tools.jackson.databind.ObjectMapper mapper;
 
     public IdeaInterpretationPersistenceService(IdeaInterpretationRunRepository runs,
             IdeaVersionRepository versions, TaskRunRepository taskRuns, ProjectRepository projects,
-            IdeaSourceRepository sources) {
+            IdeaSourceRepository sources, IdeaOriginService origins, tools.jackson.databind.ObjectMapper mapper) {
         this.runs = runs;
         this.versions = versions;
         this.taskRuns = taskRuns;
         this.projects = projects;
         this.sources = sources;
+        this.origins = origins;
+        this.mapper = mapper;
     }
 
     @Transactional
@@ -68,6 +72,7 @@ public class IdeaInterpretationPersistenceService {
         if (!version.getSource().getId().equals(run.getSource().getId())) {
             throw new BusinessException(ErrorCode.RESOURCE_VERSION_CONFLICT);
         }
+        origins.createDraft(run.getProject(), run.getSource(), version, mapper.readTree(result.resultJson()));
         run.succeed(result.resultJson());
     }
 

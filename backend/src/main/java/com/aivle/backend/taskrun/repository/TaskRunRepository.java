@@ -29,6 +29,11 @@ public interface TaskRunRepository extends JpaRepository<TaskRun, String> {
     @Query("select r from TaskRun r join fetch r.project where r.state in :states order by r.createdAt, r.id")
     List<TaskRun> findClaimable(@Param("states") List<TaskRunState> states, Pageable pageable);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select r from TaskRun r join fetch r.project where r.taskType=:taskType and r.state in :states order by r.createdAt, r.id")
+    List<TaskRun> findClaimableByType(@Param("taskType") com.aivle.backend.taskrun.domain.TaskType taskType,
+        @Param("states") List<TaskRunState> states, Pageable pageable);
+
     @Query("select r from TaskRun r where r.state=:state and r.updatedAt<:cutoff")
     List<TaskRun> findStale(@Param("state") TaskRunState state, @Param("cutoff") LocalDateTime cutoff);
 

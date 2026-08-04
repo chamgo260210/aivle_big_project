@@ -81,15 +81,34 @@ public class TaskRunService {
     }
 
     @Transactional
+    public Claim claimNext(TaskType taskType, String workerId, Duration lease, Duration timeout) {
+        List<TaskRun> candidates = runs.findClaimableByType(taskType,
+            List.of(TaskRunState.QUEUED, TaskRunState.READY), PageRequest.of(0, 1));
+        if (candidates.isEmpty()) return null;
+        TaskRun run = candidates.get(0); LocalDateTime now = LocalDateTime.now(clock);
+        if (run.getAttemptCount() >= run.getMaxAttempts()) { run.fail("ATTEMPT_LIMIT_EXCEEDED", false, now); return null; }
+        TaskAttempt attempt = run.getCurrentAttemptId() == null ? null : attempts.findById(run.getCurrentAttemptId()).orElse(null);
+        if (attempt != null && attempt.getState() == TaskAttemptState.CREATED) attempt.claim(workerId, now, now.plus(lease));
+        else { attempt = TaskAttempt.claim(run, workerId, now, now.plus(lease), now.plus(timeout)); attempts.save(attempt); }
+        return new Claim(run.getId(), attempt.getId(), attempt.getClaimToken());
+    }
+
+    @Transactional
     public Claim claim(String runId, String workerId, Duration lease, Duration timeout) {
         TaskRun run = runs.findLocked(runId).orElseThrow(this::notFound);
         if (run.getState() != TaskRunState.QUEUED && run.getState() != TaskRunState.READY)
             throw new TaskRunFailure("TASK_ALREADY_RUNNING", "TASK_NOT_CLAIMABLE", HttpStatus.CONFLICT, false);
-        if (run.getAttemptCount() >= run.getMaxAttempts())
-            throw new TaskRunFailure("CAPABILITY_NOT_AVAILABLE", "ATTEMPT_LIMIT_EXCEEDED", HttpStatus.CONFLICT, false);
         LocalDateTime now = LocalDateTime.now(clock);
-        TaskAttempt attempt = TaskAttempt.claim(run, workerId, now, now.plus(lease), now.plus(timeout));
-        attempts.save(attempt);
+        TaskAttempt attempt = run.getCurrentAttemptId() == null ? null
+            : attempts.findById(run.getCurrentAttemptId()).orElse(null);
+        if (attempt != null && attempt.getState() == TaskAttemptState.CREATED) {
+            attempt.claim(workerId, now, now.plus(lease));
+        } else {
+            if (run.getAttemptCount() >= run.getMaxAttempts())
+                throw new TaskRunFailure("CAPABILITY_NOT_AVAILABLE", "ATTEMPT_LIMIT_EXCEEDED", HttpStatus.CONFLICT, false);
+            attempt = TaskAttempt.claim(run, workerId, now, now.plus(lease), now.plus(timeout));
+            attempts.save(attempt);
+        }
         return new Claim(run.getId(), attempt.getId(), attempt.getClaimToken());
     }
 
@@ -123,7 +142,7 @@ public class TaskRunService {
     public void fail(String runId, String attemptId, String claimToken, String code, String reason, boolean retryable) {
         TaskRun run = runs.findLocked(runId).orElseThrow(this::notFound); TaskAttempt attempt = attempts.findByIdAndTaskRunId(attemptId, runId).orElseThrow(this::notFound);
         if (run.terminal()) return;
-        LocalDateTime now = LocalDateTime.now(clock); attempt.fail(claimToken, code, reason, retryable, now); run.fail(mapPublic(code), retryable, now);
+        LocalDateTime now = LocalDateTime.now(clock); attempt.fail(claimToken, code, reason, retryable, now); run.fail(mapPublic(code, reason), retryable, now);
     }
 
     @Transactional
@@ -171,7 +190,7 @@ public class TaskRunService {
         return recovered;
     }
 
-    private String mapPublic(String internal) { return switch (internal) {
+    private String mapPublic(String internal, String reason) { if ("AI_CONFIGURATION_INVALID".equals(reason)) return "AI_CONFIGURATION_INVALID"; return switch (internal) {
         case "PAYLOAD_TOO_LARGE" -> "PAYLOAD_TOO_LARGE";
         case "DEADLINE_EXCEEDED" -> "TASK_TIMEOUT";
         case "INVALID_REQUEST", "UNSUPPORTED_CONTRACT_VERSION", "UNSUPPORTED_TASK_TYPE",

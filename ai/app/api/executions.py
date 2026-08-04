@@ -19,6 +19,7 @@ TASK_TYPES = {
     "DETAILED_ANALYSIS", "PERSONA_CARD_GENERATION", "PERSONA_INTERVIEW",
     "INTERVIEW_SYNTHESIS", "MARKETING_GENERATION", "MARKETING_COMPARISON",
     "FINAL_REPORT_GENERATION",
+    "IDEA_LEGAL_PRECHECK", "CONCEPT_LEGAL_VALIDATION",
 }
 
 
@@ -125,6 +126,7 @@ async def execute(request: Request, body: InternalExecutionRequestV1):
         "QUICK_ASSESSMENT", "DETAILED_ANALYSIS", "PERSONA_CARD_GENERATION",
         "PERSONA_INTERVIEW", "INTERVIEW_SYNTHESIS",
         "MARKETING_GENERATION", "MARKETING_COMPARISON", "FINAL_REPORT_GENERATION",
+        "IDEA_LEGAL_PRECHECK", "CONCEPT_LEGAL_VALIDATION",
     }:
         return internal_error(correlation, "DEPENDENCY_UNAVAILABLE", "MODEL_DEPENDENCY_UNAVAILABLE", 503, True,
                               body.taskRunId, body.taskAttemptId)
@@ -137,7 +139,17 @@ async def execute(request: Request, body: InternalExecutionRequestV1):
     provenance = {"category": "AI_PROPOSAL", "statementKey": "interpretation-1", "sourceKeys": source_keys,
                   "externalSourceReferences": [], "generatedAt": generated_at, "verificationNeeded": True}
     try:
-        result = await execute_journey_task(body.taskType, text)
+        if body.taskType == "CONCEPT_LEGAL_VALIDATION" and body.input.get("validationMode") == "GUARDRAIL_BATCH":
+            from app.legal.concept_validation import execute_concept_legal_validation_batch
+            result = await execute_concept_legal_validation_batch(body.input, text)
+        elif body.taskType == "CONCEPT_LEGAL_VALIDATION" and body.input.get("validationMode") == "GUARDRAIL":
+            from app.legal.concept_validation import execute_concept_legal_validation
+            result = await execute_concept_legal_validation(body.input, text)
+        elif body.taskType in {"IDEA_LEGAL_PRECHECK", "CONCEPT_LEGAL_VALIDATION"}:
+            from app.legal.pipeline import execute_legal_source_pipeline
+            result = await execute_legal_source_pipeline(body.taskType, text, body.input)
+        else:
+            result = await execute_journey_task(body.taskType, text)
     except ProviderFailure as failure:
         return internal_error(correlation, failure.code, failure.reason, failure.status_code, failure.retryable,
                               body.taskRunId, body.taskAttemptId)

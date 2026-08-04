@@ -29,6 +29,7 @@ public class IdeaInterpretationRun extends BaseEntity {
         value.state = State.PENDING; return value;
     }
     public void start(TaskRun taskRun) { this.taskRun = taskRun; this.state = State.RUNNING; }
+    public void retrying() { this.state = State.RUNNING; this.error = null; this.completedAt = null; }
     public void succeed(String result) { this.resultJson = result; this.state = State.SUCCEEDED; this.completedAt = LocalDateTime.now(); }
     public void fail(String code) { this.error = code; this.state = State.FAILED; this.completedAt = LocalDateTime.now(); }
 }

@@ -113,6 +113,12 @@ const USER_MESSAGE_BY_CODE = {
   MISSING_FIELD_NOT_FOUND: '보완 항목을 찾을 수 없습니다. 최신 내용을 다시 불러와 주세요.',
   STRUCTURED_PLAN_NOT_FOUND: '최신 구조화 결과를 찾을 수 없습니다.',
   PROJECT_STAGE_INVALID: '현재 프로젝트 단계에서는 이 작업을 진행할 수 없습니다.',
+  ANALYSIS_ALREADY_RUNNING: '동일한 AI 작업이 이미 진행 중입니다. 새 요청을 보내지 말고 현재 상태를 확인해 주세요.',
+  AI_CONFIGURATION_INVALID: 'AI Provider, 모델 또는 API Key 설정을 확인해 주세요.',
+  AI_RESULT_INVALID: 'AI 응답이 현재 Contract를 충족하지 못했습니다. 입력과 서버 로그를 확인해 주세요.',
+  EXTERNAL_AI_SERVICE_UNAVAILABLE: 'AI 서비스에 일시적으로 연결할 수 없습니다. 재시도 가능 여부를 확인해 주세요.',
+  AI_SERVICE_UNAVAILABLE: 'AI 서비스에 일시적으로 연결할 수 없습니다. 재시도 가능 여부를 확인해 주세요.',
+  TASK_TIMEOUT: 'AI 작업이 제한 시간을 초과했습니다. 현재 실행 상태를 확인해 주세요.',
   NETWORK_ERROR: '네트워크 연결을 확인한 뒤 다시 시도해 주세요.',
   REQUEST_ABORTED: '요청이 취소되었습니다. 다시 시도해 주세요.',
 };

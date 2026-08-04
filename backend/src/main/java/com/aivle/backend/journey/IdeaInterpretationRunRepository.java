@@ -1,6 +1,7 @@
 package com.aivle.backend.journey;
 
 import java.util.Optional;
+import com.aivle.backend.taskrun.domain.TaskRunState;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
@@ -19,6 +20,10 @@ public interface IdeaInterpretationRunRepository extends JpaRepository<IdeaInter
     @EntityGraph(attributePaths = {"project", "source", "taskRun"})
     Optional<IdeaInterpretationRun> findTopByProjectIdAndSourceIdAndStateAndDeletedAtIsNullOrderByCreatedAtDescIdDesc(
         Long projectId, Long sourceId, IdeaInterpretationRun.State state);
+
+    @EntityGraph(attributePaths = {"project", "source", "taskRun"})
+    Optional<IdeaInterpretationRun> findTopByTaskRunStateAndTaskRunLastRetryIdempotencyKeyIsNotNullAndDeletedAtIsNullOrderByCreatedAtAscIdAsc(
+        TaskRunState taskRunState);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @EntityGraph(attributePaths = {"project", "source", "taskRun"})

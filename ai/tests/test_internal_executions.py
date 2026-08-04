@@ -43,7 +43,16 @@ def test_idea_interpretation_returns_validated_echo(monkeypatch):
     async def provider_result(task_type, text):
         return {"originalSourceSummary": text, "normalizedDescription": text,
             "facts": [], "assumptions": [], "constraints": [], "openQuestions": [],
-            "readiness": "APPROPRIATE", "warnings": [], "evidenceNeeds": []}
+            "readiness": "APPROPRIATE", "warnings": [], "evidenceNeeds": [],
+            "originDraft": {"productServiceDescription": text, "problem": [text],
+                "target": {"customerTypes": [], "segment": text, "situation": None, "needs": []},
+                "solution": [text], "coreValue": [text], "primaryCategory": "기타",
+                "targetRegion": "KR", "fixedValues": [{"field": "origin", "value": text}],
+                "confirmedValues": {}, "assumptions": [], "pricingIntent": None,
+                "revenueModelIntent": None, "salesChannelIntent": None, "knownUnitCost": None,
+                "alternatives": [], "knownCompetitors": [], "differentiationIntent": None,
+                "internalConstraints": []},
+            "fieldMetadata": [], "clarificationQuestions": []}
     monkeypatch.setattr("app.api.executions.execute_journey_task", provider_result)
     body = request_body()
     response = client.post("/internal/v1/ai/executions", json=body, headers=headers())
@@ -81,6 +90,29 @@ def test_legal_review_uses_provider_and_keeps_source_unverified(monkeypatch):
     response = client.post("/internal/v1/ai/executions", json=request_body("LEGAL_REVIEW"), headers=headers())
     assert response.status_code == 200
     assert response.json()["result"]["sourceVerified"] is False
+
+
+def test_legal_source_task_forwards_incremental_contract(monkeypatch):
+    monkeypatch.setenv("AI_INTERNAL_SERVICE_TOKEN", TOKEN)
+    async def legal_result(task_type, text, task_input):
+        assert task_input["mode"] == "INCREMENTAL"
+        assert task_input["rerunCategories"] == ["PRIVACY_AND_DATA"]
+        assert task_input["confirmedFacts"] == [{"key": "data", "value": "email"}]
+        return {"taskType": task_type, "sourceStatus": "SOURCE_COMPLETE",
+            "registryVersion": "legal-registry-v1", "routes": [], "findings": [],
+            "evidence": [], "requiredUserInputs": [], "sourceWarnings": []}
+    monkeypatch.setattr("app.legal.pipeline.execute_legal_source_pipeline", legal_result)
+    body = request_body("IDEA_LEGAL_PRECHECK")
+    body["input"].update({"mode": "INCREMENTAL", "rerunCategories": ["PRIVACY_AND_DATA"],
+        "confirmedFacts": [{"key": "data", "value": "email"}],
+        "registryVersion": "legal-registry-v1"})
+    canonical = unicodedata.normalize("NFC", json.dumps({key: body[key] for key in
+        ("contractVersion", "taskType", "taskSchemaVersion", "locale", "input")},
+        ensure_ascii=False, sort_keys=True, separators=(",", ":")))
+    body["canonicalInputHash"] = "sha256:" + hashlib.sha256(canonical.encode()).hexdigest()
+    response = client.post("/internal/v1/ai/executions", json=body, headers=headers())
+    assert response.status_code == 200
+    assert response.json()["result"]["taskType"] == "IDEA_LEGAL_PRECHECK"
 
 
 def test_unknown_field_rejected(monkeypatch):

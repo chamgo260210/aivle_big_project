@@ -47,6 +47,24 @@ public class ConceptJourneyPersistenceService {
     }
 
     @Transactional
+    public void publishEligible(ConceptEligibilityBatch batch, ConceptGenerationRun run, List<ConceptDraft> drafts) {
+        if (!conceptVersions.findByEligibilityBatchIdAndEligibilityStatusAndDeletedAtIsNullOrderByConceptDisplayOrder(
+            batch.getId(), "ELIGIBLE").isEmpty()) return;
+        int order=1;
+        for (ConceptDraft draft : drafts.stream().filter(value -> value.getEligibilityStatus() == ConceptDraft.EligibilityStatus.ELIGIBLE).limit(batch.getTargetEligibleCount()).toList()) {
+            JsonNode item=mapper.readTree(draft.getDraftJson());
+            Concept concept=concepts.save(Concept.create(batch.getProject(), batch.getIdeaOriginVersion().getSourceIdeaVersion(), run, order++));
+            conceptVersions.save(ConceptVersion.eligible(batch.getProject(), batch.getIdeaOriginVersion().getSourceIdeaVersion(), concept, batch,
+                text(item,"conceptName"), item.get("targetSegment").toString(), text(item,"positioning"),
+                item.get("featureSet").toString(), item.get("pricing").toString(), item.get("revenueModel").toString(),
+                item.get("channels").toString(), item.get("operatingModel").toString(), item.get("newAssumptions").toString(),
+                item.get("newBusinessActivities").toString(), item.get("originTrace").toString(), item.get("legalTrace").toString()));
+        }
+        run.succeed(mapper.createObjectNode().put("batchId",batch.getId()).put("eligibleCount",batch.getTargetEligibleCount()).toString());
+        generationRuns.save(run);
+    }
+
+    @Transactional
     public void completeQuick(Long runId, JsonNode result) {
         QuickAssessmentRun run=quickRuns.findById(runId).orElseThrow(this::notFound);
         if (run.getState()==ConceptAiRunBase.State.SUCCEEDED) return;

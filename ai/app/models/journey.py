@@ -10,6 +10,55 @@ class StrictResult(BaseModel):
 NonBlankMarketingText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
 
+class IdeaOriginTarget(StrictResult):
+    customerTypes: list[str]
+    segment: str | None = None
+    situation: str | None = None
+    needs: list[str]
+
+
+class IdeaOriginFixedValue(StrictResult):
+    field: str
+    value: str
+
+
+class IdeaOriginDraft(StrictResult):
+    productServiceDescription: str | None = None
+    problem: list[str]
+    target: IdeaOriginTarget | None = None
+    solution: list[str]
+    coreValue: list[str]
+    primaryCategory: str | None = None
+    targetRegion: str | None = None
+    fixedValues: list[IdeaOriginFixedValue]
+    confirmedValues: dict[str, Any]
+    assumptions: list[str]
+    pricingIntent: str | None = None
+    revenueModelIntent: str | None = None
+    salesChannelIntent: str | None = None
+    knownUnitCost: str | None = None
+    alternatives: list[str]
+    knownCompetitors: list[str]
+    differentiationIntent: str | None = None
+    internalConstraints: list[str]
+
+
+class IdeaInputMetadata(StrictResult):
+    key: str
+    sourceType: Literal["USER_CONFIRMED", "AI_PROPOSED"]
+    requiredForStages: list[Literal["IDEA_ORIGIN", "LEGAL_PRECHECK", "CONCEPT_BUILD"]]
+    status: Literal["MISSING", "AI_PROPOSED", "USER_CONFIRMED"]
+    locked: bool
+    fallbackPolicy: Literal["NO_FALLBACK", "AI_MAY_PROPOSE", "BLOCK_STAGE"]
+
+
+class IdeaClarificationQuestion(StrictResult):
+    targetField: str
+    requirement: Literal["REQUIRED_FOR_IDEA_ORIGIN", "REQUIRED_FOR_LEGAL_PRECHECK"]
+    question: str
+    reason: str
+
+
 class IdeaInterpretationResult(StrictResult):
     originalSourceSummary: str
     normalizedDescription: str
@@ -20,6 +69,9 @@ class IdeaInterpretationResult(StrictResult):
     readiness: Literal["UNDER_SPECIFIED", "APPROPRIATE", "OVER_SPECIFIED"]
     warnings: list[str]
     evidenceNeeds: list[str]
+    originDraft: IdeaOriginDraft
+    fieldMetadata: list[IdeaInputMetadata]
+    clarificationQuestions: list[IdeaClarificationQuestion]
 
 
 class LegalReviewResult(StrictResult):
@@ -36,22 +88,78 @@ class LegalReviewResult(StrictResult):
     disclaimer: str
 
 
+class ConceptOriginTrace(StrictResult):
+    structureKey: str
+    sourceValue: Any
+    conceptValue: Any
+
+
+class ConceptLegalTrace(StrictResult):
+    guardrailType: str
+    constraint: str
+    implementation: str
+
+
 class ConceptCandidate(StrictResult):
-    name: str
-    oneLineSummary: str
-    targetCustomer: str
-    problem: str
-    solution: str
-    valueProposition: str
-    revenueModel: str
-    keyFeatures: list[str]
-    differentiators: list[str]
-    assumptions: list[str]
-    risks: list[str]
+    conceptName: str
+    targetSegment: dict
+    positioning: str
+    featureSet: list[str]
+    pricing: dict
+    revenueModel: dict
+    channels: list[str]
+    operatingModel: dict
+    newAssumptions: list[str]
+    newBusinessActivities: list[str]
+    originTrace: list[ConceptOriginTrace]
+    legalTrace: list[ConceptLegalTrace]
 
 
 class ConceptGenerationResult(StrictResult):
     concepts: list[ConceptCandidate]
+
+
+class ConceptLegalValidationResult(StrictResult):
+    status: Literal["PASS", "FAIL_LEGAL"]
+    reasons: list[str]
+    violatedStructureKeys: list[str]
+    legalTrace: list[ConceptLegalTrace]
+
+
+class ConceptLegalGuardrails(StrictResult):
+    hardConstraints: list[Any]
+    prohibitedPatterns: list[Any]
+    conditionalConstraints: list[Any]
+    requiredDisclosures: list[Any]
+    requiredOperationalControls: list[Any]
+
+
+class ConceptLegalValidationDraft(ConceptCandidate):
+    candidateKey: NonBlankMarketingText
+
+
+class ConceptLegalValidationBatchInput(StrictResult):
+    guardrails: ConceptLegalGuardrails
+    lockedValues: dict[str, Any]
+    conceptDrafts: list[ConceptLegalValidationDraft] = Field(min_length=1)
+
+
+class ConceptLegalValidationTrace(StrictResult):
+    guardrailType: NonBlankMarketingText
+    constraint: NonBlankMarketingText
+    implementation: NonBlankMarketingText
+
+
+class ConceptLegalValidationItem(StrictResult):
+    candidateKey: NonBlankMarketingText
+    status: Literal["PASS", "FAIL_LEGAL"]
+    reasons: list[NonBlankMarketingText]
+    violatedStructureKeys: list[NonBlankMarketingText]
+    legalTrace: list[ConceptLegalValidationTrace]
+
+
+class ConceptLegalValidationBatchResult(StrictResult):
+    validations: list[ConceptLegalValidationItem] = Field(min_length=1)
 
 
 class QuickAssessmentItem(StrictResult):

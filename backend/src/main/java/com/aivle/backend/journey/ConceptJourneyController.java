@@ -7,6 +7,7 @@ import jakarta.validation.Valid;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.http.*;
 
 @RestController
 @RequestMapping("/api/v2/projects/{projectId}")
@@ -16,8 +17,12 @@ public class ConceptJourneyController {
     private final CurrentUserProvider currentUser;
 
     @PostMapping("/concept-generations")
-    public ApiResponse<List<ConceptJourneyService.ConceptView>> generate(@PathVariable Long projectId, HttpServletRequest request) {
-        return ApiResponse.success(concepts.generate(user(),projectId),id(request));
+    public ResponseEntity<ApiResponse<ConceptJourneyService.BatchView>> generate(@PathVariable Long projectId, HttpServletRequest request) {
+        return ResponseEntity.status(HttpStatus.ACCEPTED).body(ApiResponse.success(concepts.generate(user(),projectId),id(request)));
+    }
+    @GetMapping("/concept-generations/current")
+    public ApiResponse<ConceptJourneyService.BatchView> currentGeneration(@PathVariable Long projectId,HttpServletRequest request){
+        return ApiResponse.success(concepts.currentBatch(user(),projectId),id(request));
     }
     @GetMapping("/concepts")
     public ApiResponse<List<ConceptJourneyService.ConceptView>> concepts(@PathVariable Long projectId, HttpServletRequest request) {

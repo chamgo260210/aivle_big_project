@@ -21,17 +21,29 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
+import lombok.extern.slf4j.Slf4j;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ObjectNode;
 
 @Service
+@Slf4j
 public class JourneyAiService {
     private static final Set<String> READINESS = Set.of("UNDER_SPECIFIED", "APPROPRIATE", "OVER_SPECIFIED");
+    private static final Set<String> IDEA_RESULT_FIELDS = Set.of("originalSourceSummary", "normalizedDescription",
+        "facts", "assumptions", "constraints", "openQuestions", "readiness", "warnings", "evidenceNeeds",
+        "originDraft", "fieldMetadata", "clarificationQuestions");
+    private static final Set<String> ORIGIN_DRAFT_FIELDS = Set.of("productServiceDescription", "problem", "target",
+        "solution", "coreValue", "primaryCategory", "targetRegion", "fixedValues", "confirmedValues", "assumptions",
+        "pricingIntent", "revenueModelIntent", "salesChannelIntent", "knownUnitCost", "alternatives",
+        "knownCompetitors", "differentiationIntent", "internalConstraints");
+    private static final Set<String> ORIGIN_REQUIRED_FIELDS = Set.of("productServiceDescription", "problem", "target",
+        "solution", "coreValue", "primaryCategory", "targetRegion", "fixedValues");
     private static final Set<String> LEGAL_STATUSES = Set.of("PASS", "PASS_WITH_CONDITIONS", "REVISION_REQUIRED", "PROHIBITED", "INSUFFICIENT_INFORMATION", "EXPERT_REVIEW_REQUIRED");
     private final ProjectRepository projects;
     private final IdeaSourceRepository sources;
@@ -41,6 +53,7 @@ public class JourneyAiService {
     private final TaskRunService taskRuns;
     private final TaskResultRepository taskResults;
     private final IdeaInterpretationPersistenceService interpretationPersistence;
+    private final IdeaOriginService ideaOrigins;
     private final JourneyLegalReviewPersistenceService legalPersistence;
     private final InternalAiExecutionClient ai;
     private final CanonicalInputHasher hasher;
@@ -52,12 +65,12 @@ public class JourneyAiService {
                             TaskRunService taskRuns, InternalAiExecutionClient ai, CanonicalInputHasher hasher,
                             ObjectMapper mapper, DocumentParser documentParser, TaskResultRepository taskResults,
                             IdeaInterpretationPersistenceService interpretationPersistence,
-                            JourneyLegalReviewPersistenceService legalPersistence) {
+                            JourneyLegalReviewPersistenceService legalPersistence, IdeaOriginService ideaOrigins) {
         this.projects = projects; this.sources = sources; this.versions = versions;
         this.interpretationRuns = interpretationRuns; this.legalRuns = legalRuns; this.taskRuns = taskRuns;
         this.ai = ai; this.hasher = hasher; this.mapper = mapper; this.documentParser = documentParser;
         this.taskResults = taskResults; this.interpretationPersistence = interpretationPersistence;
-        this.legalPersistence = legalPersistence;
+        this.legalPersistence = legalPersistence; this.ideaOrigins = ideaOrigins;
     }
 
     public IdeaSourceView saveText(Long ownerId, Long projectId, String title, String text) {
@@ -99,13 +112,19 @@ public class JourneyAiService {
             .findTopByProjectIdAndSourceIdAndStateAndDeletedAtIsNullOrderByCreatedAtDescIdDesc(
                 projectId, source.getId(), IdeaInterpretationRun.State.SUCCEEDED)
             .orElse(null);
-        if (successful != null && successful.getResultJson() != null) return interpretationView(successful);
+        if (successful != null && successful.getResultJson() != null && hasOriginContract(successful.getResultJson())) {
+            ensureOriginDraft(successful);
+            return interpretationView(successful);
+        }
         IdeaInterpretationRun current = interpretationRuns.findCurrent(projectId).orElse(null);
         if (current != null && current.getSource().getId().equals(source.getId())) {
-            if (current.getState() == IdeaInterpretationRun.State.SUCCEEDED && current.getResultJson() != null) {
+            if (current.getState() == IdeaInterpretationRun.State.SUCCEEDED && current.getResultJson() != null
+                && hasOriginContract(current.getResultJson())) {
+                ensureOriginDraft(current);
                 return interpretationView(current);
             }
-            InterpretationView recovered = recoverAdoptedResult(ownerId, projectId, current);
+            InterpretationView recovered = current.getState() == IdeaInterpretationRun.State.SUCCEEDED ? null
+                : recoverAdoptedResult(ownerId, projectId, current);
             if (recovered != null) return recovered;
             if (current.getState() == IdeaInterpretationRun.State.PENDING
                 || current.getState() == IdeaInterpretationRun.State.RUNNING) {
@@ -116,9 +135,49 @@ public class JourneyAiService {
         return executeInterpretation(ownerId, project, source, domainRun.getId());
     }
 
+    @org.springframework.transaction.annotation.Transactional
     public InterpretationView currentInterpretation(Long ownerId, Long projectId) {
         ownedProject(ownerId, projectId);
-        return interpretationRuns.findCurrent(projectId).map(this::interpretationView).orElse(null);
+        IdeaSource source = sources.findCurrent(projectId).orElse(null);
+        if (source == null) return null;
+        IdeaInterpretationRun run = interpretationRuns.findCurrent(projectId)
+            .filter(value -> value.getSource().getId().equals(source.getId())).orElse(null);
+        if (run == null) return null;
+        TaskRun task = run.getTaskRun();
+        if (run.getState() != IdeaInterpretationRun.State.SUCCEEDED && task != null) {
+            if (task.getState() == TaskRunState.SUCCEEDED) {
+                InterpretationView recovered = recoverAdoptedResult(ownerId, projectId, run);
+                if (recovered != null) return recovered;
+            } else if (task.getState() == TaskRunState.QUEUED || task.getState() == TaskRunState.READY || task.getState() == TaskRunState.RUNNING) {
+                run.retrying(); interpretationRuns.save(run);
+            } else if (task.getState() == TaskRunState.FAILED || task.getState() == TaskRunState.TIMED_OUT || task.getState() == TaskRunState.CANCELLED) {
+                if (run.getState() != IdeaInterpretationRun.State.FAILED) { run.fail(task.getLastErrorCode()); interpretationRuns.save(run); }
+            }
+        }
+        return interpretationView(run);
+    }
+
+    public boolean executeNextInterpretationRetry() {
+        IdeaInterpretationRun domainRun = interpretationRuns
+            .findTopByTaskRunStateAndTaskRunLastRetryIdempotencyKeyIsNotNullAndDeletedAtIsNullOrderByCreatedAtAscIdAsc(
+                TaskRunState.QUEUED)
+            .orElse(null);
+        if (domainRun == null) return false;
+        TaskRun taskRun = taskRuns.getOwnedForWorker(domainRun.getTaskRun().getId());
+        try {
+            JsonNode result = execute(taskRun, this::validateIdea);
+            interpretationPersistence.complete(domainRun.getId(), parsedIdeaResult(result));
+        } catch (ExecutionFailure failure) {
+            interpretationPersistence.fail(domainRun.getId(), journeyFailureCode(failure));
+            log.warn("Idea interpretation retry failed projectId={} sourceId={} runId={} providerCode={} reason={} retryable={}",
+                domainRun.getProject().getId(), domainRun.getSource().getId(), domainRun.getId(),
+                failure.code(), failure.reason(), failure.retryable());
+        } catch (RuntimeException failure) {
+            interpretationPersistence.fail(domainRun.getId(), "AI_RESULT_INVALID");
+            log.warn("Idea interpretation retry contract failure projectId={} sourceId={} runId={} code=AI_RESULT_INVALID",
+                domainRun.getProject().getId(), domainRun.getSource().getId(), domainRun.getId(), failure);
+        }
+        return true;
     }
 
     public IdeaVersionView confirm(Long ownerId, Long projectId, Long versionId) {
@@ -176,7 +235,8 @@ public class JourneyAiService {
             interpretationPersistence.complete(domainRunId, parsedIdeaResult(result));
             return currentInterpretation(ownerId, project.getId());
         } catch (ExecutionFailure failure) {
-            interpretationPersistence.fail(domainRunId, failure.reason());
+            interpretationPersistence.fail(domainRunId, journeyFailureCode(failure));
+            log.warn("Idea interpretation provider failure projectId={} sourceId={} runId={} providerCode={} reason={} retryable={}",project.getId(),source.getId(),domainRunId,failure.code(),failure.reason(),failure.retryable());
             throw publicAiFailure(failure);
         } catch (RuntimeException invalid) {
             if (invalid instanceof BusinessException business
@@ -188,6 +248,7 @@ public class JourneyAiService {
                 throw business;
             }
             interpretationPersistence.fail(domainRunId, "AI_RESULT_INVALID");
+            log.warn("Idea interpretation contract failure projectId={} sourceId={} runId={} code=AI_RESULT_INVALID",project.getId(),source.getId(),domainRunId,invalid);
             throw invalid instanceof BusinessException business ? business : new BusinessException(ErrorCode.AI_RESULT_INVALID);
         }
     }
@@ -209,6 +270,19 @@ public class JourneyAiService {
             json(result, "assumptions"), json(result, "constraints"), json(result, "openQuestions"),
             IdeaVersion.Readiness.valueOf(result.get("readiness").asText())
         );
+    }
+
+    private void ensureOriginDraft(IdeaInterpretationRun run) {
+        IdeaVersion version = versions.findTopBySourceIdAndDeletedAtIsNullOrderByVersionNumberDesc(run.getSource().getId())
+            .orElseThrow(() -> new BusinessException(ErrorCode.IDEA_NOT_FOUND));
+        JsonNode result = parse(run.getResultJson());
+        validateIdea(result);
+        ideaOrigins.createDraft(run.getProject(), run.getSource(), version, result);
+    }
+
+    private boolean hasOriginContract(String resultJson) {
+        JsonNode result = parse(resultJson);
+        return result != null && result.get("originDraft") != null;
     }
 
     private LegalView executeLegal(Long ownerId, Project project, IdeaVersion version, Long domainRunId) {
@@ -255,8 +329,9 @@ public class JourneyAiService {
     private TaskRun createTask(Long ownerId, Project project, TaskType type, String subjectType, String subjectId, String input) {
         String nonce = UUID.randomUUID().toString();
         return taskRuns.create(ownerId, project.getId(), type, subjectType, subjectId, input,
-            hasher.hash(type, "1.0", "ko-KR", input), nonce, nonce, 1);
+            hasher.hash(type, "1.0", "ko-KR", input), nonce, nonce, 3);
     }
+    private String journeyFailureCode(ExecutionFailure failure) { if ("AI_CONFIGURATION_INVALID".equals(failure.reason())) return "AI_CONFIGURATION_INVALID"; return switch (failure.code()) { case "DEADLINE_EXCEEDED" -> "TASK_TIMEOUT"; case "INVALID_REQUEST", "UNSUPPORTED_CONTRACT_VERSION", "UNSUPPORTED_TASK_TYPE", "UNSUPPORTED_TASK_SCHEMA_VERSION", "RESULT_SCHEMA_INVALID" -> "AI_RESULT_INVALID"; default -> "AI_SERVICE_UNAVAILABLE"; }; }
 
     private JsonNode execute(TaskRun run, java.util.function.Consumer<JsonNode> validator) {
         TaskRunService.Claim claim = taskRuns.claim(run.getId(), "journey-sync", Duration.ofMinutes(2), Duration.ofMinutes(2));
@@ -326,10 +401,69 @@ public class JourneyAiService {
     }
 
     private void validateIdea(JsonNode result) {
+        if (result == null || !result.isObject() || !Set.copyOf(result.propertyNames()).equals(IDEA_RESULT_FIELDS)) {
+            throw new BusinessException(ErrorCode.AI_RESULT_INVALID);
+        }
         requiredText(result, "originalSourceSummary"); requiredText(result, "normalizedDescription");
         requiredArray(result, "facts"); requiredArray(result, "assumptions"); requiredArray(result, "constraints");
         requiredArray(result, "openQuestions"); requiredArray(result, "warnings"); requiredArray(result, "evidenceNeeds");
         if (!READINESS.contains(requiredText(result, "readiness"))) throw new BusinessException(ErrorCode.AI_RESULT_INVALID);
+        JsonNode origin = result.get("originDraft");
+        if (origin == null || !origin.isObject() || !Set.copyOf(origin.propertyNames()).equals(ORIGIN_DRAFT_FIELDS)) {
+            throw new BusinessException(ErrorCode.AI_RESULT_INVALID);
+        }
+        for (String field : List.of("problem", "solution", "coreValue", "fixedValues", "assumptions",
+                "alternatives", "knownCompetitors", "internalConstraints")) requiredArray(origin, field);
+        for (String field : List.of("problem", "solution", "coreValue", "assumptions", "alternatives",
+                "knownCompetitors", "internalConstraints")) validateStringArray(origin.get(field));
+        for (String field : List.of("productServiceDescription", "primaryCategory", "targetRegion", "pricingIntent",
+                "revenueModelIntent", "salesChannelIntent", "knownUnitCost", "differentiationIntent")) validateNullableText(origin.get(field));
+        for (JsonNode fixed : origin.get("fixedValues")) {
+            if (!fixed.isObject() || !Set.copyOf(fixed.propertyNames()).equals(Set.of("field", "value"))) throw new BusinessException(ErrorCode.AI_RESULT_INVALID);
+            requiredText(fixed, "field"); requiredText(fixed, "value");
+        }
+        if (origin.get("confirmedValues") == null || !origin.get("confirmedValues").isObject()) {
+            throw new BusinessException(ErrorCode.AI_RESULT_INVALID);
+        }
+        JsonNode target = origin.get("target");
+        if (target != null && !target.isNull()
+            && (!target.isObject() || !Set.copyOf(target.propertyNames()).equals(Set.of("customerTypes", "segment", "situation", "needs")))) {
+            throw new BusinessException(ErrorCode.AI_RESULT_INVALID);
+        }
+        if (target != null && !target.isNull()) {
+            requiredArray(target, "customerTypes"); requiredArray(target, "needs");
+            validateStringArray(target.get("customerTypes")); validateStringArray(target.get("needs"));
+            validateNullableText(target.get("segment")); validateNullableText(target.get("situation"));
+        }
+        requiredArray(result, "fieldMetadata"); requiredArray(result, "clarificationQuestions");
+        for (JsonNode metadata : result.get("fieldMetadata")) {
+            if (!metadata.isObject() || !Set.copyOf(metadata.propertyNames()).equals(Set.of(
+                    "key", "sourceType", "requiredForStages", "status", "locked", "fallbackPolicy"))) {
+                throw new BusinessException(ErrorCode.AI_RESULT_INVALID);
+            }
+            requiredText(metadata, "key");
+            if (!Set.of("USER_CONFIRMED", "AI_PROPOSED").contains(requiredText(metadata, "sourceType"))) throw new BusinessException(ErrorCode.AI_RESULT_INVALID);
+            requiredArray(metadata, "requiredForStages");
+            for (JsonNode stage : metadata.get("requiredForStages")) if (!stage.isTextual()
+                || !Set.of("IDEA_ORIGIN", "LEGAL_PRECHECK", "CONCEPT_BUILD").contains(stage.asText())) throw new BusinessException(ErrorCode.AI_RESULT_INVALID);
+            if (!Set.of("MISSING", "AI_PROPOSED", "USER_CONFIRMED").contains(requiredText(metadata, "status"))) throw new BusinessException(ErrorCode.AI_RESULT_INVALID);
+            if (!Set.of("NO_FALLBACK", "AI_MAY_PROPOSE", "BLOCK_STAGE").contains(requiredText(metadata, "fallbackPolicy"))) throw new BusinessException(ErrorCode.AI_RESULT_INVALID);
+            if (metadata.get("locked") == null || !metadata.get("locked").isBoolean()) throw new BusinessException(ErrorCode.AI_RESULT_INVALID);
+        }
+        Set<String> questionTargets = new java.util.HashSet<>();
+        for (JsonNode question : result.get("clarificationQuestions")) {
+            if (!question.isObject() || !Set.copyOf(question.propertyNames()).equals(Set.of(
+                    "targetField", "requirement", "question", "reason"))) throw new BusinessException(ErrorCode.AI_RESULT_INVALID);
+            questionTargets.add(requiredText(question, "targetField"));
+            if (!Set.of("REQUIRED_FOR_IDEA_ORIGIN", "REQUIRED_FOR_LEGAL_PRECHECK").contains(requiredText(question, "requirement"))) throw new BusinessException(ErrorCode.AI_RESULT_INVALID);
+            requiredText(question, "question"); requiredText(question, "reason");
+        }
+        for (String field : ORIGIN_REQUIRED_FIELDS) {
+            JsonNode value = origin.get(field);
+            boolean missing = value == null || value.isNull() || (value.isTextual() && value.asText().isBlank())
+                || (value.isArray() && value.isEmpty());
+            if (missing && !questionTargets.contains(field)) throw new BusinessException(ErrorCode.AI_RESULT_INVALID);
+        }
     }
     private void validateLegal(JsonNode result) {
         if (!LEGAL_STATUSES.contains(requiredText(result, "status"))) throw new BusinessException(ErrorCode.AI_RESULT_INVALID);
@@ -345,6 +479,13 @@ public class JourneyAiService {
     }
     private void requiredArray(JsonNode value, String field) {
         if (value == null || value.get(field) == null || !value.get(field).isArray()) throw new BusinessException(ErrorCode.AI_RESULT_INVALID);
+    }
+    private void validateNullableText(JsonNode value) {
+        if (value != null && !value.isNull() && !value.isTextual()) throw new BusinessException(ErrorCode.AI_RESULT_INVALID);
+    }
+    private void validateStringArray(JsonNode values) {
+        if (values == null || !values.isArray()) throw new BusinessException(ErrorCode.AI_RESULT_INVALID);
+        for (JsonNode value : values) if (!value.isTextual() || value.asText().isBlank()) throw new BusinessException(ErrorCode.AI_RESULT_INVALID);
     }
     private String json(JsonNode value, String field) { return value.get(field).toString(); }
     private JsonNode parse(String value) { return value == null ? null : mapper.readTree(value); }
@@ -363,11 +504,11 @@ public class JourneyAiService {
             : null;
         return interpretationView(run, version);
     }
-    private InterpretationView interpretationView(IdeaInterpretationRun run, IdeaVersion version) { return new InterpretationView(run.getId(), run.getSource().getId(), run.getState().name(), run.getTaskRun() == null ? null : run.getTaskRun().getId(), parse(run.getResultJson()), run.getError(), version == null ? null : versionView(version), run.getCreatedAt(), run.getCompletedAt()); }
+    private InterpretationView interpretationView(IdeaInterpretationRun run, IdeaVersion version) { return new InterpretationView(run.getId(), run.getSource().getId(), run.getState().name(), run.getTaskRun() == null ? null : run.getTaskRun().getId(), run.getTaskRun() != null && run.getTaskRun().isRetryable(), parse(run.getResultJson()), run.getError(), version == null ? null : versionView(version), run.getCreatedAt(), run.getCompletedAt()); }
     private LegalView legalView(LegalReviewRun run) { return new LegalView(run.getId(), run.getState().name(), run.getTaskRun() == null ? null : run.getTaskRun().getId(), run.getLegalStatus() == null ? null : run.getLegalStatus().name(), parse(run.getResultJson()), false, run.getIdeaVersion().getId(), run.getCreatedAt(), run.getCompletedAt()); }
 
     public record IdeaSourceView(Long id, String title, String sourceType, String originalText, String originalFileReference, LocalDateTime createdAt) { }
     public record IdeaVersionView(Long id, int versionNumber, String normalizedDescription, JsonNode facts, JsonNode assumptions, JsonNode constraints, JsonNode openQuestions, String readiness, boolean confirmed, LocalDateTime createdAt) { }
-    public record InterpretationView(Long id, Long ideaSourceId, String state, String taskRunId, JsonNode result, String error, IdeaVersionView ideaVersion, LocalDateTime createdAt, LocalDateTime completedAt) { }
+    public record InterpretationView(Long id, Long ideaSourceId, String state, String taskRunId, boolean retryable, JsonNode result, String error, IdeaVersionView ideaVersion, LocalDateTime createdAt, LocalDateTime completedAt) { }
     public record LegalView(Long id, String state, String taskRunId, String legalStatus, JsonNode result, boolean sourceVerified, Long ideaVersionId, LocalDateTime createdAt, LocalDateTime completedAt) { }
 }

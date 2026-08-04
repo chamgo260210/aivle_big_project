@@ -14,7 +14,12 @@ public class TaskRunWorker {
     private final TaskRunService service; private final InternalAiExecutionClient client; private final ObjectMapper mapper;
     public TaskRunWorker(TaskRunService service, InternalAiExecutionClient client, ObjectMapper mapper) { this.service = service; this.client = client; this.mapper = mapper; }
     public boolean executeOne(String workerId) {
-        TaskRunService.Claim claim = service.claimNext(workerId, Duration.ofSeconds(30), Duration.ofMinutes(2));
+        return execute(service.claimNext(workerId, Duration.ofSeconds(30), Duration.ofMinutes(2)));
+    }
+    public boolean executeOne(com.aivle.backend.taskrun.domain.TaskType taskType, String workerId) {
+        return execute(service.claimNext(taskType, workerId, Duration.ofMinutes(3), Duration.ofMinutes(2)));
+    }
+    private boolean execute(TaskRunService.Claim claim) {
         if (claim == null) return false;
         service.startExecution(claim.taskRunId(), claim.taskAttemptId(), claim.claimToken());
         if (TransactionSynchronizationManager.isActualTransactionActive()) throw new IllegalStateException("AI call must run outside a DB transaction");
@@ -48,6 +53,12 @@ public class TaskRunWorker {
     }
 
     private void validateResult(TaskRun run, tools.jackson.databind.JsonNode result) {
+        if (run.getTaskType() == com.aivle.backend.taskrun.domain.TaskType.IDEA_LEGAL_PRECHECK
+            || run.getTaskType() == com.aivle.backend.taskrun.domain.TaskType.CONCEPT_LEGAL_VALIDATION) {
+            com.aivle.backend.taskrun.contract.LegalSourcePipelineContract.validate(result, run.getTaskType().name());
+            rejectForbiddenFields(result);
+            return;
+        }
         if (run.getTaskType() != com.aivle.backend.taskrun.domain.TaskType.IDEA_INTERPRETATION)
             throw new ExecutionFailure("RESULT_SCHEMA_INVALID", "RESULT_DOMAIN_INVARIANT_VIOLATION", false);
         java.util.Set<String> expected = java.util.Set.of("originalSourceSummary", "normalizedDescription",

@@ -24,11 +24,10 @@ function GettingStartedRail({ projects, newest, location, writeRestriction }) {
     { label: '프로젝트 만들기', done: projects.length > 0, route: appRoutes.newProject },
     { label: '아이디어 입력과 확정', done: newest?.stage && !['DOCUMENT', 'STRUCTURING'].includes(newest.stage), route: newest ? projectRoutes.overview(newest.projectId) : null },
     { label: '법률 사전 검토', done: newest?.stage && !['DOCUMENT', 'STRUCTURING', 'LEGAL_REVIEW'].includes(newest.stage), route: newest ? projectRoutes.legal(newest.projectId) : null },
-    { label: 'Concept와 Persona 검토', done: newest?.stage && ['MARKETING', 'REPORT', 'COMPLETED'].includes(newest.stage), route: newest ? `${projectRoutes.base(newest.projectId)}/journey/concept` : null },
-    { label: 'Marketing과 보고서', done: newest?.stage === 'COMPLETED', route: newest ? `${projectRoutes.base(newest.projectId)}/journey/marketing` : null },
+    { label: '적격 Concept 3개 확인', done: newest?.stage && ['MARKETING', 'REPORT', 'COMPLETED'].includes(newest.stage), route: newest ? `${projectRoutes.base(newest.projectId)}/journey/concept` : null },
   ];
   const current = steps.findIndex((step) => !step.done);
-  return <aside className="getting-started-rail" aria-labelledby="workspace-getting-started-title"><p>Getting started</p><h2 id="workspace-getting-started-title">사업 검증 시작 순서</h2><ol>{steps.map((step, index) => {
+  return <aside className="getting-started-rail" aria-labelledby="workspace-getting-started-title"><p>Current Journey</p><h2 id="workspace-getting-started-title">Idea → Legal → Concept 범위</h2><ol>{steps.map((step, index) => {
     const className = step.done ? 'is-done' : index === current ? 'is-current' : '';
     const content = <><span>{step.done ? '✓' : index + 1}</span><strong>{step.label}</strong></>;
     const blocked = step.route === appRoutes.newProject && writeRestriction.blocked;
