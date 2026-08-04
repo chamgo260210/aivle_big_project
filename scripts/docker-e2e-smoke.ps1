@@ -122,6 +122,7 @@ function Protect-DiagnosticText {
         "JWT_SECRET",
         "MINIO_ROOT_PASSWORD",
         "OBJECT_STORAGE_SECRET_KEY",
+        "AI_INTERNAL_SERVICE_TOKEN",
         "AI_SERVER_INTERNAL_API_KEY"
     )) {
         $value = [Environment]::GetEnvironmentVariable($name)
