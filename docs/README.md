@@ -30,6 +30,8 @@
 - 시스템 경계: [SYSTEM_ARCHITECTURE](architecture/SYSTEM_ARCHITECTURE.md), [AI_SERVER_BOUNDARY](architecture/AI_SERVER_BOUNDARY.md), [SPRING_WAS_BOUNDARY](architecture/SPRING_WAS_BOUNDARY.md)
 - 감사 기준: [REPOSITORY_BASELINE_AUDIT](maintenance/REPOSITORY_BASELINE_AUDIT_2026-08-04.md)
 - Migration Baseline 전환: [MIGRATION_BASELINE_CUTOVER](maintenance/MIGRATION_BASELINE_CUTOVER_2026-08-04.md)
+- 저장소 구조 안내: [REPOSITORY_STRUCTURE_GUIDE](REPOSITORY_STRUCTURE_GUIDE.md)
+- 보존 Legacy Registry: [RETAINED_LEGACY_REGISTRY](maintenance/RETAINED_LEGACY_REGISTRY.md)
 
 이전 redesign draft와 완료된 실행계획은 필요한 결정·결과를 v0.4와 현재 기준선에 반영한 뒤 제거했으며 Git history로 보존한다. v0.4가 현재 redesign의 유일한 문서 권위다.
 
@@ -43,3 +45,5 @@
 현재 Public API 실행 권위는 Controller와 Frontend Client이며 `PUBLIC_API_V2_CONTRACT.md`가 이를 문서화한다. `docs/api/openapi.yaml`은 Backend test가 읽는 기존 `/api/v1` 중심 machine-consumed 계약으로 유지하며 `/api/v2` 전체 권위로 사용하지 않는다.
 
 `docs/api/openapi.yaml`, `docs/guide/`, `docs/example/`, fixture의 소비 여부와 보존 근거는 감사 보고서의 machine-consumed 조사 결과를 따른다. 파일 이름이나 작성일만으로 제거하지 않는다.
+
+Repository-local GitHub Actions `CI`는 Frontend lint/baseline/build, AI fixture/pytest, Backend test/postgresTest를 수행한다. 실제 Provider·법제처·전체 Docker E2E는 기본 CI 범위 밖이다.

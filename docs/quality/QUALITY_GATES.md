@@ -1,7 +1,7 @@
 # Quality Gates
 
 - Status: TARGET_CANONICAL
-- Code Baseline Commit: e16bd316ac881f4c5fab076e65c14657f6a8c7d4
+- Reviewed Against Current Baseline: 3aeff219d72e1be502ba4ad1cade7f7aca83d10e
 - Document Phase: P1
 - Introduced In Commit: 1549a8efa0aeb2ca400f4795c1c44b34868e4722
 - Scope: Commands, success criteria, evidence and drift gates
@@ -22,6 +22,16 @@
 | Docker E2E | smoke script | critical flow/recovery pass | log/artifact |
 | Security | gitleaks/Trivy/dependency | configured gate pass | remote jobs |
 | Docs | diff/links/metadata/tables | zero failures | governance evidence |
+
+## Repository-local CI
+
+`.github/workflows/ci.yml`은 push/PR에서 다음 gate를 자동화한다.
+
+- Frontend: `npm ci`, lint, `test:baseline`, build. 허용 부채는 `test-debt-baseline.json`을 초과할 수 없다.
+- AI: Internal fixture validator와 `ai/tests` pytest.
+- Backend: 일반 test와 PostgreSQL/Testcontainers `postgresTest`.
+
+실제 AI Provider, 법제처, `minioTest`, 전체 Docker E2E, Public OpenAPI 전면 drift 검사는 기본 CI 범위 밖이며 별도 명시적 검증으로 남는다.
 
 Public controller, frontend client, legacy OpenAPI와 Target contract의 상태를 구분한다. P2 이후 반복 가능한 drift 검사를 마련한다.
 
