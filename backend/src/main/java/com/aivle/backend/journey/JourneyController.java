@@ -16,6 +16,7 @@ import org.springframework.web.multipart.MultipartFile;
 @RequiredArgsConstructor
 public class JourneyController {
     private final JourneyAiService journey;
+    private final IdeaOriginService ideaOrigins;
     private final CurrentUserProvider currentUser;
 
     @PostMapping(value = "/ideas", consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -45,6 +46,27 @@ public class JourneyController {
         return ApiResponse.success(journey.currentInterpretation(currentUser.currentUserId(), projectId), id(request));
     }
 
+    @GetMapping("/idea-origin")
+    public ApiResponse<IdeaOriginService.WorkspaceView> currentIdeaOrigin(@PathVariable Long projectId,
+            HttpServletRequest request) {
+        return ApiResponse.success(ideaOrigins.current(currentUser.currentUserId(), projectId), id(request));
+    }
+
+    @PutMapping("/idea-origin/questions/{questionId}")
+    public ApiResponse<IdeaOriginService.QuestionView> answerIdeaOriginQuestion(@PathVariable Long projectId,
+            @PathVariable Long questionId, @Valid @RequestBody ClarificationAnswerRequest body,
+            HttpServletRequest request) {
+        return ApiResponse.success(ideaOrigins.answer(currentUser.currentUserId(), projectId, questionId,
+            body.answer(), body.answerSource()), id(request));
+    }
+
+    @PostMapping("/idea-origin/apply")
+    public ApiResponse<IdeaOriginService.WorkspaceView> applyIdeaOrigin(@PathVariable Long projectId,
+            @Valid @RequestBody ApplyOriginRequest body, HttpServletRequest request) {
+        return ApiResponse.success(ideaOrigins.apply(currentUser.currentUserId(), projectId,
+            body.draftVersionId()), id(request));
+    }
+
     @PostMapping("/idea-versions/{ideaVersionId}/confirm")
     public ApiResponse<JourneyAiService.IdeaVersionView> confirm(@PathVariable Long projectId,
             @PathVariable Long ideaVersionId, HttpServletRequest request) {
@@ -63,4 +85,7 @@ public class JourneyController {
 
     private String id(HttpServletRequest request) { return request.getHeader("X-Request-Id"); }
     public record TextIdeaRequest(@Size(max = 200) String title, @NotBlank @Size(max = 200000) String text) { }
+    public record ClarificationAnswerRequest(@NotBlank @Size(max = 20000) String answer,
+        @NotBlank @Size(max = 300) String answerSource) { }
+    public record ApplyOriginRequest(@jakarta.validation.constraints.NotNull Long draftVersionId) { }
 }

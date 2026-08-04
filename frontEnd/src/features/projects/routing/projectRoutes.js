@@ -25,7 +25,7 @@ export const projectRoutes = Object.freeze({
   validate: (projectId) => `${projectBase(projectId)}/journey/persona`,
   personas: (projectId) => `${projectBase(projectId)}/journey/persona`,
   interview: (projectId) => `${projectBase(projectId)}/journey/interview`,
-  interviewDetail: (projectId, interviewId) =>
+  interviewDetail: (projectId) =>
     `${projectBase(projectId)}/journey/interview`,
   marketResponse: (projectId) => `${projectBase(projectId)}/journey/interview`,
   marketResponseDetail: (projectId) => `${projectBase(projectId)}/journey/interview`,

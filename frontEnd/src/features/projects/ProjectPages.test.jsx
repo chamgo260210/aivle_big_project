@@ -6,6 +6,14 @@ import { ApiError } from '../../shared/api/apiError.js';
 import { ApiClientProvider } from '../../shared/api/ApiClientProvider.jsx';
 import { ProjectCreatePage, ProjectListPage } from './ProjectPages.jsx';
 
+vi.mock('../service-policy/useServicePolicy.js', () => ({
+  useServicePolicy: () => ({
+    loading: false,
+    policy: { maintenanceMode: false, registrationEnabled: true },
+    error: null,
+  }),
+}));
+
 function renderProject(element, client, path = '/app/projects') {
   return render(
     <MemoryRouter initialEntries={[path]}>

@@ -86,4 +86,83 @@ class InternalAiExecutionClientTests {
             server.stop(0);
         }
     }
+
+    @Test
+    void rejectsMismatchedResponseIdentity() throws Exception {
+        assertResponseIdentityRejected("other-attempt", "sha256:" + "a".repeat(64));
+    }
+
+    @Test
+    void rejectsMismatchedCanonicalInputHash() throws Exception {
+        assertResponseIdentityRejected("attempt-1", "sha256:" + "b".repeat(64));
+    }
+
+    @Test
+    void rejectsDeadlineErrorWithNonCanonicalRetryability() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/internal/v1/ai/executions", exchange -> {
+            byte[] bytes = """
+                {"error":{"code":"DEADLINE_EXCEEDED","message":"deadline","correlationId":"correlation-1",
+                "taskRunId":"task-run","taskAttemptId":"attempt-1","retryable":false,
+                "details":[{"reason":"REQUEST_DEADLINE_EXCEEDED"}]}}
+                """.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            exchange.sendResponseHeaders(504, bytes.length);
+            exchange.getResponseBody().write(bytes);
+            exchange.close();
+        });
+        server.start();
+        try {
+            AiServerProperties properties = new AiServerProperties("http://127.0.0.1:" + server.getAddress().getPort(),
+                Duration.ofSeconds(1), Duration.ofSeconds(2), "test-token");
+            InternalAiExecutionClient client = new InternalAiExecutionClient(
+                RestClient.builder().baseUrl(properties.baseUrl()).build(), properties, new ObjectMapper());
+            TaskRun run = TaskRun.create(null, TaskType.IDEA_INTERPRETATION, "IDEA_INTERPRETATION_RUN", "subject-1",
+                "{}", "sha256:" + "a".repeat(64), "key", "correlation-1", 3);
+
+            assertThatThrownBy(() -> client.execute(run, "attempt-1", LocalDateTime.of(2035, 1, 1, 0, 0)))
+                .isInstanceOfSatisfying(ExecutionFailure.class, failure -> {
+                    assertThat(failure.code()).isEqualTo("RESULT_SCHEMA_INVALID");
+                    assertThat(failure.reason()).isEqualTo("RESULT_DOMAIN_INVARIANT_VIOLATION");
+                });
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    private void assertResponseIdentityRejected(String responseAttemptId, String responseHash) throws Exception {
+        AtomicReference<String> runId = new AtomicReference<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/internal/v1/ai/executions", exchange -> {
+            String response = """
+                {"contractVersion":"1.0","taskType":"IDEA_INTERPRETATION","taskSchemaVersion":"1.0",
+                "taskRunId":"%s","taskAttemptId":"%s","correlationId":"correlation-1",
+                "canonicalInputHash":"%s","resultSchemaVersion":"1.0","result":{"readiness":"APPROPRIATE"},
+                "warnings":[],"provenance":[],"usage":null}
+                """.formatted(runId.get(), responseAttemptId, responseHash);
+            byte[] bytes = response.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, bytes.length);
+            exchange.getResponseBody().write(bytes);
+            exchange.close();
+        });
+        server.start();
+        try {
+            AiServerProperties properties = new AiServerProperties("http://127.0.0.1:" + server.getAddress().getPort(),
+                Duration.ofSeconds(1), Duration.ofSeconds(2), "test-token");
+            InternalAiExecutionClient client = new InternalAiExecutionClient(
+                RestClient.builder().baseUrl(properties.baseUrl()).build(), properties, new ObjectMapper());
+            TaskRun run = TaskRun.create(null, TaskType.IDEA_INTERPRETATION, "IDEA_INTERPRETATION_RUN", "subject-1",
+                "{}", "sha256:" + "a".repeat(64), "key", "correlation-1", 3);
+            runId.set(run.getId());
+
+            assertThatThrownBy(() -> client.execute(run, "attempt-1", LocalDateTime.of(2035, 1, 1, 0, 0)))
+                .isInstanceOfSatisfying(ExecutionFailure.class, failure -> {
+                    assertThat(failure.code()).isEqualTo("RESULT_SCHEMA_INVALID");
+                    assertThat(failure.reason()).isEqualTo("RESULT_DOMAIN_INVARIANT_VIOLATION");
+                });
+        } finally {
+            server.stop(0);
+        }
+    }
 }

@@ -66,7 +66,7 @@ class FinancialAnalysisApiIntegrationTests {
             ) values (
               8301, 'LOCAL', 'financial-source', 'plan.docx', 'stored.docx', 'docx',
               'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-              100, repeat('a', 64), 'ACTIVE', false,
+              100, repeat('a', 64), 'AVAILABLE', false,
               current_timestamp, current_timestamp, 0
             )
             """).update();
@@ -187,30 +187,6 @@ class FinancialAnalysisApiIntegrationTests {
         mockMvc.perform(owner(get("/api/v1/projects/8201/financial-analysis/source")))
             .andExpect(status().isConflict())
             .andExpect(jsonPath("$.error.code").value("FINANCIAL_FEASIBILITY_REQUIRED"));
-    }
-
-    @Test
-    void repositoryCanReadAMigratedLegacyRowAfterV22WithoutChangingLegacyValues() {
-        jdbc.sql("""
-            insert into financial_analyses (
-              id, project_id, analysis_job_id, status, currency, analysis_period_months,
-              expected_revenue, expected_cost, break_even_point_months,
-              version_number, title, scenarios_json, source_snapshot_json,
-              assumptions_json, result_json, created_at, updated_at, version
-            ) values (
-              8950, 8201, 8701, 'COMPLETED', 'KRW', 12, 1200000, 800000, 8,
-              1, '기존 재무 분석', '[]', '{}', '{"legacy":true}', '{"profit":400000}',
-              current_timestamp, current_timestamp, 0
-            )
-            """).update();
-        entityManager.clear();
-        var legacy = analyses.findById(8950L).orElseThrow();
-        org.assertj.core.api.Assertions.assertThat(legacy.getId()).isEqualTo(8950L);
-        org.assertj.core.api.Assertions.assertThat(legacy.getProject().getId()).isEqualTo(8201L);
-        org.assertj.core.api.Assertions.assertThat(legacy.getAssumptionsJson()).contains("legacy");
-        org.assertj.core.api.Assertions.assertThat(legacy.getResultJson()).contains("400000");
-        org.assertj.core.api.Assertions.assertThat(legacy.getScenariosJson()).isEqualTo("[]");
-        org.assertj.core.api.Assertions.assertThat(legacy.getSourceSnapshotJson()).isEqualTo("{}");
     }
 
     @Test

@@ -4,6 +4,7 @@ import { Link, useParams } from 'react-router-dom';
 import { useApiClient } from '../../shared/api/ApiClientProvider.jsx';
 import { getUserErrorMessage } from '../../shared/api/apiError.js';
 import { createJourneyApi } from './journeyApi.js';
+import { journeyFailureMessage } from './journeyFailure.js';
 import './journey.css';
 
 function useConceptApi() {
@@ -23,28 +24,40 @@ function List({ items }) {
 }
 
 function ConceptCard({ concept, selected, onSelect }) {
+  const [details, setDetails] = useState(false);
   return <article className={`journey-card concept-card ${selected ? 'is-selected' : ''}`}>
     {onSelect && <label className="concept-check"><input type="checkbox" checked={selected} onChange={() => onSelect(concept.id)} /> Shortlist</label>}
     <span className="journey-badge">후보 {concept.displayOrder}</span><h3>{concept.name}</h3><p className="concept-summary">{concept.oneLineSummary}</p>
     <dl><div><dt>대상 고객</dt><dd>{concept.targetCustomer}</dd></div><div><dt>핵심 가치</dt><dd>{concept.valueProposition}</dd></div><div><dt>수익 모델</dt><dd>{concept.revenueModel}</dd></div></dl>
     <section><strong>주요 위험</strong><List items={concept.risks} /></section>
+    {concept.eligibilityStatus === 'ELIGIBLE' && <><button className="journey-button secondary" type="button" onClick={() => setDetails((value) => !value)}>{details ? '검증 내역 닫기' : 'Origin·Guardrail 반영 내역'}</button>{details && <div className="concept-trace"><section><strong>Origin 보존</strong>{(concept.originTrace || []).map((trace, index) => <p key={`origin-${index}`}><b>{trace.structureKey}</b> · {JSON.stringify(trace.conceptValue)}</p>)}</section><section><strong>Legal Guardrail 반영</strong>{(concept.legalTrace || []).map((trace, index) => <p key={`legal-${index}`}><b>{trace.guardrailType}</b> · {trace.constraint}<br />{trace.implementation}</p>)}</section><section><strong>새 사업 활동</strong><List items={concept.newBusinessActivities} /></section></div>}</>}
   </article>;
 }
 
 export function ConceptGenerationPage() {
   const { projectId, api } = useConceptApi();
-  const [legal, setLegal] = useState(null); const [concepts, setConcepts] = useState([]);
+  const [legal, setLegal] = useState(null); const [batch, setBatch] = useState(null); const [concepts, setConcepts] = useState([]);
   const [busy, setBusy] = useState(false); const [error, setError] = useState('');
-  useEffect(() => { let active = true; Promise.all([api.currentLegal(), api.concepts()]).then(([l, c]) => { if (active) { setLegal(l); setConcepts(c || []); } }).catch((e) => active && setError(getUserErrorMessage(e))); return () => { active = false; }; }, [api]);
-  const allowed = ['PASS', 'PASS_WITH_CONDITIONS'].includes(legal?.legalStatus);
-  async function generate() { setBusy(true); setError(''); try { setConcepts(await api.generateConcepts()); } catch (e) { setError(getUserErrorMessage(e)); } finally { setBusy(false); } }
+  const load = async () => { const [l,b,c]=await Promise.all([api.currentLegalPrecheck(),api.currentConceptGeneration(),api.concepts()]);setLegal(l);setBatch(b);setConcepts(c||[]); };
+  // Loading is the external synchronization performed by this effect.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { let active = true; load().catch((e) => active && setError(getUserErrorMessage(e))); return () => { active = false; }; }, [api]); // eslint-disable-line react-hooks/exhaustive-deps
+  const activeBatch = ['GENERATING','VALIDATING_ORIGIN','VALIDATING_LEGAL'].includes(batch?.state);
+  useEffect(() => { if(!activeBatch)return undefined;const timer=window.setInterval(()=>load().catch((e)=>setError(getUserErrorMessage(e))),2000);return()=>window.clearInterval(timer); }, [activeBatch,batch?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const allowed = !!legal?.version?.conceptBuilderAllowed && !legal?.stale;
+  const failedBatch = batch?.state === 'FAILED' && !batch?.stale;
+  const canGenerate = !batch || batch.stale;
+  async function generate() { setBusy(true); setError(''); try { const created=await api.generateConcepts();setBatch(created);setConcepts(created?.concepts || []); } catch (e) { setError(getUserErrorMessage(e)); } finally { setBusy(false); } }
   return <div className="journey-page concept-page">
-    {busy && <Busy>실제 AI가 콘셉트 후보 3개를 생성하고 있습니다.</Busy>}
-    <header className="journey-page__heading"><div><span>3단계 · 콘셉트 생성</span><h2>확정 아이디어를 세 가지 사업 방향으로 구체화하세요</h2><p>법률 사전 검토를 통과한 정확한 아이디어 버전을 기준으로 생성하고 자동 저장합니다.</p></div><span className={`journey-save-state ${concepts.length ? 'is-saved' : ''}`}>{concepts.length ? '저장됨' : '생성 전'}</span></header>
+    {(busy || activeBatch) && <Busy>초안 생성 → Origin 검증 → 법률 검증 → 필요한 대체 후보 생성을 진행합니다.</Busy>}
+    <header className="journey-page__heading"><div><span>3단계 · Concept Eligibility</span><h2>Origin과 Legal Guardrail을 통과한 Concept만 확인하세요</h2><p>실패 Draft는 내부 검증 기록으로만 보관하며 후보 카드로 노출하지 않습니다.</p></div><span className={`journey-save-state ${batch?.state === 'COMPLETED' ? 'is-saved' : ''}`}>{batch?.stale ? 'STALE' : batch?.state || '생성 전'}</span></header>
     <ErrorBanner error={error} />
     {!allowed ? <section className="journey-empty"><h3>법률 검토 통과가 필요합니다.</h3><p>PASS 또는 PASS_WITH_CONDITIONS 결과에서만 콘셉트를 생성할 수 있습니다.</p><Link className="journey-button" to={`/app/projects/${projectId}/legal`}>법률 검토로 이동</Link></section>
-      : <section className="journey-card journey-run-card"><div><h3>실제 AI Concept Generation</h3><p>후보는 대상 고객, 가치 제안, 수익 모델과 위험이 서로 구별되도록 생성됩니다.</p></div><button className="journey-button" disabled={busy || concepts.length > 0} onClick={() => void generate()}>{concepts.length ? '생성 완료' : '콘셉트 3개 생성'}</button></section>}
-    {concepts.length ? <><div className="concept-grid">{concepts.map((c) => <ConceptCard key={c.id} concept={c} />)}</div><div className="journey-next"><div><strong>후보 비교 준비가 완료되었습니다.</strong><p>Quick Assessment로 후보별 강점과 약점을 비교하세요.</p></div><Link className="journey-button" to={`/app/projects/${projectId}/journey/concept-analysis`}>콘셉트 분석</Link></div></> : allowed && <section className="journey-empty"><h3>아직 생성된 후보가 없습니다.</h3><p>생성 버튼을 누르면 실제 AI 응답을 검증한 뒤 DB에 저장합니다.</p></section>}
+      : <section className="journey-card journey-run-card"><div><h3>적격 Concept 3개 확보</h3><p>최초 3개를 검사하고 실패한 수만큼 최대 2라운드·전체 9개 범위에서 대체합니다.</p></div><button className="journey-button" disabled={busy || activeBatch || !canGenerate} onClick={() => void generate()}>{batch?.stale ? '현재 입력으로 다시 생성' : failedBatch ? '아래 실패 상태 확인' : batch ? '생성 완료' : 'Concept 3개 생성'}</button></section>}
+    {batch && <section className="journey-card"><h3>Eligibility 진행 상태</h3><p>Round {batch.currentRound} · 검사 {batch.inspectedCandidates}/{batch.maxInspectedCandidates} · 적격 {batch.eligibleCandidates}/{batch.targetEligibleCount}</p>{batch.stale && <p className="journey-warning">Origin 또는 Guardrail이 변경되어 이 Batch는 STALE입니다. 이전 후보는 current 결과로 표시하지 않습니다.</p>}</section>}
+    {failedBatch && <section className="journey-card journey-run-card"><div><h3>Concept Batch 실행 실패</h3><p>{journeyFailureMessage(batch.errorCode)}</p><small>{batch.errorCode || 'AI_SERVICE_UNAVAILABLE'}</small></div>{batch.retryable ? <button className="journey-button" disabled={busy} onClick={() => void generate()}>동일 입력으로 재시도</button> : batch.errorCode === 'AI_CONFIGURATION_INVALID' ? <button className="journey-button" disabled={busy} onClick={() => void generate()}>설정 수정 후 새 Batch 실행</button> : <Link className="journey-button secondary" to={`/app/projects/${projectId}/legal`}>Origin·Legal 확인</Link>}</section>}
+    {batch?.state === 'NEEDS_INPUT' && <section className="journey-empty"><h3>적격 Concept 3개를 확보하지 못했습니다.</h3><p>실패 후보는 표시하지 않습니다. 아래 Origin 또는 Legal 조건을 보완한 뒤 다시 실행하세요.</p><List items={batch.needsInput} /><Link className="journey-button" to={`/app/projects/${projectId}/legal`}>Origin·Legal 보완</Link></section>}
+    {concepts.length === 3 ? <><div className="concept-grid">{concepts.map((c) => <ConceptCard key={c.id} concept={c} />)}</div><div className="journey-next"><div><strong>ELIGIBLE Concept 3개가 동결·저장되었습니다.</strong><p>현재 구축 범위는 여기까지이며 후속 분석으로 자동 이동하지 않습니다.</p></div></div></> : allowed && !batch && <section className="journey-empty"><h3>아직 생성된 후보가 없습니다.</h3><p>생성 버튼을 누르면 내부 검증을 통과한 후보만 한 번에 표시합니다.</p></section>}
   </div>;
 }
 

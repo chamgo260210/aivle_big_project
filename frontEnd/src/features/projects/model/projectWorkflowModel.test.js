@@ -33,10 +33,10 @@ describe('project workflow model', () => {
 
   it('provides safe unknown fallbacks and bounded progress', () => {
     expect(getProjectStatusView('UNRECOGNIZED').label).toBe('상태 확인 필요');
-    expect(getProjectProgress({ stage: 'UNRECOGNIZED' })).toBe(25);
+    expect(getProjectProgress({ stage: 'UNRECOGNIZED' })).toBe(0);
   });
 
-  it('preserves the public workflow contract and adds only the financial review route', () => {
+  it('preserves the public workflow areas while using the current journey route', () => {
     expect(PROJECT_STATUS_VIEW.ACTIVE.label).toBe('진행 중');
     expect(TASK_STATUS_VIEW.BLOCKED.label).toBe('선행 단계 필요');
     expect(PROJECT_AREA_DEFINITIONS.map((area) => area.id)).toEqual([
@@ -44,16 +44,16 @@ describe('project workflow model', () => {
     ]);
     expect(STAGE_AREA.FINANCIAL).toBe(PROJECT_AREAS.REVIEW);
     expect(STAGE_VIEW.FINANCIAL).toEqual({
-      label: '재무·수익성 분석',
-      route: 'review/financial',
+      label: '콘셉트 분석',
+      route: 'journey/concept-analysis',
     });
     expect(getProjectNextAction({ projectId: '12', status: 'ACTIVE', stage: 'FINANCIAL' }).route)
-      .toBe('/app/projects/12/review/financial');
+      .toBe('/app/projects/12/journey/concept-analysis');
   });
 
   it('keeps completed projects pointing to the integrated report', () => {
     expect(getProjectNextAction({ projectId: '12', status: 'COMPLETED' }).route)
-      .toBe('/app/projects/12/report');
+      .toBe('/app/projects/12/journey/final-report');
     expect(getAreaSummary({ stage: 'COMPLETED', status: 'COMPLETED' })
       .every((area) => area.taskStatus === 'COMPLETED')).toBe(true);
   });

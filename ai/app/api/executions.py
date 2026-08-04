@@ -19,6 +19,7 @@ TASK_TYPES = {
     "DETAILED_ANALYSIS", "PERSONA_CARD_GENERATION", "PERSONA_INTERVIEW",
     "INTERVIEW_SYNTHESIS", "MARKETING_GENERATION", "MARKETING_COMPARISON",
     "FINAL_REPORT_GENERATION",
+    "IDEA_LEGAL_PRECHECK", "CONCEPT_LEGAL_VALIDATION",
 }
 
 
@@ -65,6 +66,8 @@ def validate_text_contents(task_input: dict[str, Any]) -> str | None:
     for content in contents:
         if not isinstance(content, dict) or set(content) != {"contentKey", "contentType", "language", "totalCharacters", "contentHash", "chunks"}:
             return "UNKNOWN_FIELD"
+        if content["contentType"] != "TEXT" or content["language"] != "ko-KR":
+            return "FIELD_CONSTRAINT_VIOLATION"
         chunks = content["chunks"]
         if not isinstance(chunks, list) or not 1 <= len(chunks) <= 64:
             return "CHUNK_COUNT_EXCEEDED"
@@ -89,6 +92,8 @@ async def execute(request: Request, body: InternalExecutionRequestV1):
     correlation = request.headers.get("X-Correlation-Id") or body.correlationId
     token = os.getenv("AI_INTERNAL_SERVICE_TOKEN", "")
     authorization = request.headers.get("Authorization", "")
+    if not authorization:
+        return internal_error(correlation, "UNAUTHORIZED_INTERNAL_CALL", "SERVICE_TOKEN_MISSING", 401, False)
     if not token or authorization != f"Bearer {token}":
         return internal_error(correlation, "UNAUTHORIZED_INTERNAL_CALL", "SERVICE_TOKEN_INVALID", 401, False)
     if correlation != body.correlationId:
@@ -110,7 +115,7 @@ async def execute(request: Request, body: InternalExecutionRequestV1):
         if deadline.tzinfo is None or deadline <= datetime.now(timezone.utc):
             raise ValueError
     except ValueError:
-        return internal_error(correlation, "DEADLINE_EXCEEDED", "REQUEST_DEADLINE_EXCEEDED", 504, False,
+        return internal_error(correlation, "DEADLINE_EXCEEDED", "REQUEST_DEADLINE_EXCEEDED", 504, True,
                               body.taskRunId, body.taskAttemptId)
     try:
         calculated_hash = canonical_hash(body)
@@ -125,6 +130,7 @@ async def execute(request: Request, body: InternalExecutionRequestV1):
         "QUICK_ASSESSMENT", "DETAILED_ANALYSIS", "PERSONA_CARD_GENERATION",
         "PERSONA_INTERVIEW", "INTERVIEW_SYNTHESIS",
         "MARKETING_GENERATION", "MARKETING_COMPARISON", "FINAL_REPORT_GENERATION",
+        "IDEA_LEGAL_PRECHECK", "CONCEPT_LEGAL_VALIDATION",
     }:
         return internal_error(correlation, "DEPENDENCY_UNAVAILABLE", "MODEL_DEPENDENCY_UNAVAILABLE", 503, True,
                               body.taskRunId, body.taskAttemptId)
@@ -137,7 +143,17 @@ async def execute(request: Request, body: InternalExecutionRequestV1):
     provenance = {"category": "AI_PROPOSAL", "statementKey": "interpretation-1", "sourceKeys": source_keys,
                   "externalSourceReferences": [], "generatedAt": generated_at, "verificationNeeded": True}
     try:
-        result = await execute_journey_task(body.taskType, text)
+        if body.taskType == "CONCEPT_LEGAL_VALIDATION" and body.input.get("validationMode") == "GUARDRAIL_BATCH":
+            from app.legal.concept_validation import execute_concept_legal_validation_batch
+            result = await execute_concept_legal_validation_batch(body.input, text)
+        elif body.taskType == "CONCEPT_LEGAL_VALIDATION" and body.input.get("validationMode") == "GUARDRAIL":
+            from app.legal.concept_validation import execute_concept_legal_validation
+            result = await execute_concept_legal_validation(body.input, text)
+        elif body.taskType in {"IDEA_LEGAL_PRECHECK", "CONCEPT_LEGAL_VALIDATION"}:
+            from app.legal.pipeline import execute_legal_source_pipeline
+            result = await execute_legal_source_pipeline(body.taskType, text, body.input)
+        else:
+            result = await execute_journey_task(body.taskType, text)
     except ProviderFailure as failure:
         return internal_error(correlation, failure.code, failure.reason, failure.status_code, failure.retryable,
                               body.taskRunId, body.taskAttemptId)
