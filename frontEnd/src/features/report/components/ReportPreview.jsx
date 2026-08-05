@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import './ReportPreview.css'; // Auto-fit 스타일링
 
 export const ReportPreview = ({ reportData }) => {
