@@ -7,6 +7,10 @@ import java.util.UUID;
 
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record ApiResponse<T>(boolean success, T data, ApiError error, Meta meta) {
+    public static <T> ApiResponse<T> success(T data) {
+        return new ApiResponse<>(true, data, null, Meta.create(null));
+    }
+
     public static <T> ApiResponse<T> success(T data, String requestId) {
         return new ApiResponse<>(true, data, null, Meta.create(requestId));
     }

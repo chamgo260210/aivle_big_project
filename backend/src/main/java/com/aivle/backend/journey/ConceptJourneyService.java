@@ -40,6 +40,7 @@ public class ConceptJourneyService {
     @Value("${app.journey.concept.target-count:3}") private int targetEligibleCount;
     @Value("${app.journey.concept.max-replacement-rounds:2}") private int maxReplacementRounds;
     @Value("${app.journey.concept.max-inspected-candidates:9}") private int maxInspectedCandidates;
+    @Value("${app.journey.concept.stalled-timeout:10m}") private Duration stalledTimeout;
 
     public ConceptJourneyService(ProjectRepository projects, IdeaVersionRepository ideaVersions,
             IdeaOriginVersionRepository ideaOrigins, LegalPrecheckVersionRepository legalPrechecks,
@@ -64,10 +65,22 @@ public class ConceptJourneyService {
     public BatchView generate(Long ownerId, Long projectId) {
         Context context=context(ownerId,projectId,true); String snapshotHash=eligibilityInputHash(context);
         ConceptEligibilityBatch existing=eligibilityBatches.findTopByProjectIdAndInputSnapshotHashAndDeletedAtIsNullOrderByCreatedAtDescIdDesc(projectId,snapshotHash).orElse(null);
+        recoverIfStalled(existing);
         if(existing!=null&&existing.getState()!=ConceptEligibilityBatch.State.FAILED)return batchView(existing,false);
         if(existing!=null&&!existing.isRetryable()&&!"AI_CONFIGURATION_INVALID".equals(existing.getErrorCode()))return batchView(existing,false);
         ConceptEligibilityBatch batch=eligibilityBatches.save(ConceptEligibilityBatch.create(context.project(),context.origin(),context.guardrail(),snapshotHash,"concept-eligibility-v1","1.0",targetEligibleCount,maxReplacementRounds,maxInspectedCandidates));
         conceptEligibilityExecutor.execute(()->runEligibility(ownerId,projectId,batch.getId()));
+        return batchView(batch,false);
+    }
+
+    public BatchView cancel(Long ownerId, Long projectId) {
+        context(ownerId,projectId,false);
+        ConceptEligibilityBatch batch=eligibilityBatches.findTopByProjectIdAndDeletedAtIsNullOrderByCreatedAtDescIdDesc(projectId).orElseThrow(()->new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+        if (isActive(batch.getState())) {
+            batch.fail("USER_CANCELLED",true);
+            eligibilityBatches.save(batch);
+            log.info("Concept eligibility batch cancelled projectId={} batchId={} stage={}",projectId,batch.getId(),batch.getState());
+        }
         return batchView(batch,false);
     }
 
@@ -81,11 +94,13 @@ public class ConceptJourneyService {
             List<ConceptDraft> accepted=new ArrayList<>(); List<String> negatives=new ArrayList<>(); int sequence=0;
             for(int round=0;round<=batch.getMaxReplacementRounds()&&accepted.size()<batch.getTargetEligibleCount()&&sequence<batch.getMaxInspectedCandidates();round++){
                 int desired=Math.min(batch.getTargetEligibleCount()-accepted.size(),batch.getMaxInspectedCandidates()-sequence);
+                if (!isBatchActive(batchId)) { failCancelledRun(run); return; }
                 batch.stage(ConceptEligibilityBatch.State.GENERATING,round);eligibilityBatches.save(batch);
                 String generationInput=conceptGenerationInput(context,desired,round,negatives,accepted);
                 TaskRun generationTask=createTask(ownerId,context.project(),TaskType.CONCEPT_GENERATION,"CONCEPT_BATCH",batch.getId().toString(),generationInput);
                 if(round==0){run.start(generationTask);generationRuns.save(run);}
                 JsonNode generated=execute(generationTask,value->validateConceptGeneration(value,desired));
+                if (!isBatchActive(batchId)) { failCancelledRun(run); return; }
                 List<LegalCandidate> legalCandidates=new ArrayList<>();
                 for(JsonNode candidate:generated.get("concepts")){
                     if(sequence>=batch.getMaxInspectedCandidates())break; sequence++;
@@ -97,11 +112,13 @@ public class ConceptJourneyService {
                     legalCandidates.add(new LegalCandidate("candidate-"+draft.getId(),draft,(ObjectNode)candidate));
                 }
                 if(!legalCandidates.isEmpty()){
+                    if (!isBatchActive(batchId)) { failCancelledRun(run); return; }
                     batch.stage(ConceptEligibilityBatch.State.VALIDATING_LEGAL,round);eligibilityBatches.save(batch);
                     Set<String> expectedKeys=legalCandidates.stream().map(LegalCandidate::candidateKey).collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
                     String legalInput=conceptLegalBatchInput(context,legalCandidates);
                     TaskRun legalTask=createTask(ownerId,context.project(),TaskType.CONCEPT_LEGAL_VALIDATION,"CONCEPT_ELIGIBILITY_ROUND",batch.getId()+":"+round,legalInput);
                     JsonNode legalBatch=execute(legalTask,value->validateConceptLegalBatch(value,expectedKeys));
+                    if (!isBatchActive(batchId)) { failCancelledRun(run); return; }
                     Map<String,JsonNode> validations=new HashMap<>();
                     legalBatch.get("validations").forEach(value->validations.put(value.get("candidateKey").asText(),value));
                     for(LegalCandidate value:legalCandidates){
@@ -112,6 +129,7 @@ public class ConceptJourneyService {
                     }
                 }
             }
+            if (!isBatchActive(batchId)) { failCancelledRun(run); return; }
             if(accepted.size()==batch.getTargetEligibleCount()){persistence.publishEligible(batch,run,accepted);batch.complete();}
             else{ArrayNode needs=mapper.createArrayNode();new LinkedHashSet<>(negatives).forEach(needs::add);batch.needsInput(needs.toString());run.fail("CONCEPT_ELIGIBLE_COUNT_NOT_REACHED");}
             eligibilityBatches.save(batch);
@@ -125,7 +143,21 @@ public class ConceptJourneyService {
         return concepts.findByEligibilityBatchIdAndEligibilityStatusAndDeletedAtIsNullOrderByConceptDisplayOrder(batch.getId(),"ELIGIBLE").stream().map(this::conceptView).toList();
     }
 
-    public BatchView currentBatch(Long ownerId,Long projectId){Context context=context(ownerId,projectId,false);ConceptEligibilityBatch batch=eligibilityBatches.findTopByProjectIdAndDeletedAtIsNullOrderByCreatedAtDescIdDesc(projectId).orElse(null);if(batch==null)return null;boolean stale=context.origin()==null||context.guardrail()==null||!batch.getInputSnapshotHash().equals(eligibilityInputHash(context));return batchView(batch,stale);}
+    public BatchView currentBatch(Long ownerId,Long projectId){Context context=context(ownerId,projectId,false);ConceptEligibilityBatch batch=eligibilityBatches.findTopByProjectIdAndDeletedAtIsNullOrderByCreatedAtDescIdDesc(projectId).orElse(null);if(batch==null)return null;recoverIfStalled(batch);boolean stale=context.origin()==null||context.guardrail()==null||!batch.getInputSnapshotHash().equals(eligibilityInputHash(context));return batchView(batch,stale);}
+
+    private void recoverIfStalled(ConceptEligibilityBatch batch) {
+        if (batch == null || !Set.of(ConceptEligibilityBatch.State.GENERATING, ConceptEligibilityBatch.State.VALIDATING_ORIGIN, ConceptEligibilityBatch.State.VALIDATING_LEGAL).contains(batch.getState())) return;
+        LocalDateTime lastUpdate=batch.getUpdatedAt()==null?batch.getCreatedAt():batch.getUpdatedAt();
+        if (lastUpdate != null && !lastUpdate.plus(stalledTimeout).isAfter(LocalDateTime.now())) {
+            ConceptEligibilityBatch.State stalledStage=batch.getState();
+            batch.timeout(stalledStage); eligibilityBatches.save(batch);
+            log.warn("Concept eligibility batch timed out projectId={} batchId={} stage={} timeout={}",batch.getProject().getId(),batch.getId(),stalledStage,stalledTimeout);
+        }
+    }
+
+    private boolean isBatchActive(Long batchId) { return eligibilityBatches.findById(batchId).map(value -> isActive(value.getState())).orElse(false); }
+    private boolean isActive(ConceptEligibilityBatch.State state) { return Set.of(ConceptEligibilityBatch.State.GENERATING, ConceptEligibilityBatch.State.VALIDATING_ORIGIN, ConceptEligibilityBatch.State.VALIDATING_LEGAL).contains(state); }
+    private void failCancelledRun(ConceptGenerationRun run) { if(run!=null) persistence.failGeneration(run.getId(),"USER_CANCELLED"); }
 
     public QuickView quick(Long ownerId,Long projectId) {
         Context context=context(ownerId,projectId,true); List<ConceptVersion> candidates=requireConcepts(context);
@@ -258,7 +290,7 @@ public class ConceptJourneyService {
 
     private ConceptView conceptView(ConceptVersion v){return new ConceptView(v.getId(),v.getConcept().getId(),v.getConcept().getDisplayOrder(),v.getName(),v.getOneLineSummary(),v.getTargetCustomer(),v.getProblem(),v.getSolution(),v.getValueProposition(),v.getRevenueModel(),parse(v.getKeyFeaturesJson()),parse(v.getDifferentiatorsJson()),parse(v.getAssumptionsJson()),parse(v.getRisksJson()),v.getIdeaVersion().getId(),v.getEligibilityStatus(),parse(v.getTargetSegmentJson()),v.getPositioning(),parse(v.getPricingJson()),parse(v.getChannelsJson()),parse(v.getOperatingModelJson()),parse(v.getNewBusinessActivitiesJson()),parse(v.getOriginTraceJson()),parse(v.getLegalTraceJson()));}
     private String conceptFailureCode(ExecutionFailure failure){if("AI_CONFIGURATION_INVALID".equals(failure.reason()))return "AI_CONFIGURATION_INVALID";return switch(failure.code()){case "DEADLINE_EXCEEDED"->"TASK_TIMEOUT";case "INVALID_REQUEST","UNSUPPORTED_CONTRACT_VERSION","UNSUPPORTED_TASK_TYPE","UNSUPPORTED_TASK_SCHEMA_VERSION","RESULT_SCHEMA_INVALID"->"AI_RESULT_INVALID";default->"AI_SERVICE_UNAVAILABLE";};}
-    private BatchView batchView(ConceptEligibilityBatch b,boolean stale){List<ConceptView> eligible=!stale&&b.getState()==ConceptEligibilityBatch.State.COMPLETED?concepts.findByEligibilityBatchIdAndEligibilityStatusAndDeletedAtIsNullOrderByConceptDisplayOrder(b.getId(),"ELIGIBLE").stream().map(this::conceptView).toList():List.of();return new BatchView(b.getId(),b.getState().name(),b.getCurrentRound(),b.getInspectedCandidates(),b.getEligibleCandidates(),b.getTargetEligibleCount(),b.getMaxReplacementRounds(),b.getMaxInspectedCandidates(),parse(b.getNeedsInputJson()),b.getErrorCode(),b.isRetryable(),stale,b.getIdeaOriginVersion().getId(),b.getLegalGuardrailSet().getId(),b.getInputSnapshotHash(),eligible);}
+    private BatchView batchView(ConceptEligibilityBatch b,boolean stale){List<ConceptView> eligible=!stale&&b.getState()==ConceptEligibilityBatch.State.COMPLETED?concepts.findByEligibilityBatchIdAndEligibilityStatusAndDeletedAtIsNullOrderByConceptDisplayOrder(b.getId(),"ELIGIBLE").stream().map(this::conceptView).toList():List.of();return new BatchView(b.getId(),b.getState().name(),b.getCurrentRound(),b.getInspectedCandidates(),b.getEligibleCandidates(),b.getTargetEligibleCount(),b.getMaxReplacementRounds(),b.getMaxInspectedCandidates(),parse(b.getNeedsInputJson()),b.getErrorCode(),b.isRetryable(),stale,b.getIdeaOriginVersion().getId(),b.getLegalGuardrailSet().getId(),b.getInputSnapshotHash(),b.getCreatedAt(),eligible);}
     private QuickView quickView(QuickAssessmentRun run){List<QuickAssessmentView> values=quickAssessments.findByRunIdAndDeletedAtIsNullOrderByOverallScoreDesc(run.getId()).stream().map(a->new QuickAssessmentView(a.getConceptVersion().getId(),a.getConceptVersion().getName(),a.getMarketScore(),a.getCustomerValueScore(),a.getFeasibilityScore(),a.getDifferentiationScore(),a.getRevenuePotentialScore(),a.getLegalRiskScore(),a.getOverallScore(),a.getSummary(),parse(a.getStrengthsJson()),parse(a.getWeaknessesJson()))).toList();return new QuickView(run.getId(),run.getState().name(),run.getIdeaVersion().getId(),values,run.getError(),run.getCompletedAt());}
     private ShortlistView shortlistView(ShortlistDecision s){return new ShortlistView(s.getId(),s.getIdeaVersion().getId(),idList(s.getSelectedConceptVersionIdsJson()),s.getReason(),s.getCreatedAt());}
     private DetailedView detailedView(DetailedAnalysisRun run){List<DetailedItemView> items=detailedAnalyses.findByRunIdAndDeletedAtIsNullOrderById(run.getId()).stream().map(a->new DetailedItemView(a.getConceptVersion().getId(),a.getConceptVersion().getName(),a.getMarketAnalysis(),a.getCustomerAnalysis(),a.getBusinessModelAnalysis(),a.getOperationAnalysis(),a.getRiskAnalysis(),a.getRecommendation(),parse(a.getAssumptionsJson()),parse(a.getResearchNeedsJson()))).toList();Map<Long,FinancialView> finance=new HashMap<>();financials.findByProjectIdAndIdeaVersionIdAndDeletedAtIsNullOrderById(run.getProject().getId(),run.getIdeaVersion().getId()).forEach(f->finance.put(f.getConceptVersion().getId(),financialView(f)));return new DetailedView(run.getId(),run.getState().name(),run.getIdeaVersion().getId(),items,finance,run.getError(),run.getCompletedAt());}
@@ -273,7 +305,7 @@ public class ConceptJourneyService {
     public record DetailedRequest(List<FinancialInput> financials){}
     public record SelectionRequest(Long conceptVersionId,String reason){}
     public record ConceptView(Long id,Long conceptId,int displayOrder,String name,String oneLineSummary,String targetCustomer,String problem,String solution,String valueProposition,String revenueModel,JsonNode keyFeatures,JsonNode differentiators,JsonNode assumptions,JsonNode risks,Long ideaVersionId,String eligibilityStatus,JsonNode targetSegment,String positioning,JsonNode pricing,JsonNode channels,JsonNode operatingModel,JsonNode newBusinessActivities,JsonNode originTrace,JsonNode legalTrace){}
-    public record BatchView(Long id,String state,int currentRound,int inspectedCandidates,int eligibleCandidates,int targetEligibleCount,int maxReplacementRounds,int maxInspectedCandidates,JsonNode needsInput,String errorCode,boolean retryable,boolean stale,Long ideaOriginVersionId,Long legalGuardrailSetId,String inputSnapshotHash,List<ConceptView> concepts){}
+    public record BatchView(Long id,String state,int currentRound,int inspectedCandidates,int eligibleCandidates,int targetEligibleCount,int maxReplacementRounds,int maxInspectedCandidates,JsonNode needsInput,String errorCode,boolean retryable,boolean stale,Long ideaOriginVersionId,Long legalGuardrailSetId,String inputSnapshotHash,LocalDateTime createdAt,List<ConceptView> concepts){}
     public record QuickAssessmentView(Long conceptVersionId,String conceptName,int market,int customerValue,int feasibility,int differentiation,int revenuePotential,int legalRisk,BigDecimal overallScore,String summary,JsonNode strengths,JsonNode weaknesses){}
     public record QuickView(Long id,String state,Long ideaVersionId,List<QuickAssessmentView> assessments,String error,LocalDateTime completedAt){}
     public record ShortlistView(Long id,Long ideaVersionId,List<Long> conceptVersionIds,String reason,LocalDateTime createdAt){}

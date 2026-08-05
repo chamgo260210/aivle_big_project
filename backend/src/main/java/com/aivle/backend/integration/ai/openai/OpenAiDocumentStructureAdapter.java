@@ -7,6 +7,7 @@ import com.aivle.backend.integration.ai.document.*;
 import com.aivle.backend.integration.ai.dto.AiJobAcceptedResponse;
 import com.aivle.backend.integration.ai.dto.AiJobRequest;
 import com.aivle.backend.integration.ai.dto.AiJobStatusResponse;
+import com.aivle.backend.report.dto.InterimReportResponse;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatusCode;
@@ -117,6 +118,26 @@ public class OpenAiDocumentStructureAdapter implements AiServiceClient {
         } catch (JacksonException | IllegalArgumentException exception) {
             throw invalidResponse(exception);
         }
+    }
+
+    @Override
+    public InterimReportResponse.TableRowDto compareMarket(String initialMarketJson, String aiMarketJson) {
+        throw new UnsupportedOperationException("Interim report generation is not supported by this adapter.");
+    }
+
+    @Override
+    public InterimReportResponse.TableRowDto compareBm(String initialBmJson, String aiBmJson) {
+        throw new UnsupportedOperationException("Interim report generation is not supported by this adapter.");
+    }
+
+    @Override
+    public InterimReportResponse.TableRowDto compareFinancial(String initialFinancialJson, String aiFinancialJson) {
+        throw new UnsupportedOperationException("Interim report generation is not supported by this adapter.");
+    }
+
+    @Override
+    public List<InterimReportResponse.KpiItemDto> generateSummaryKpis(String initialPlanJson, String aiAnalysisJson) {
+        throw new UnsupportedOperationException("Interim report generation is not supported by this adapter.");
     }
 
     private String serializeInput(DocumentStructureAiRequest request) throws JacksonException {

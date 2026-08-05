@@ -37,6 +37,7 @@ public class SecurityConfiguration {
                 .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(authorize -> authorize
                 .requestMatchers(HttpMethod.GET, "/api/v1/service-policy").permitAll()
+                .requestMatchers("/api/jaemu/**").permitAll()
                 .requestMatchers(
                     "/api/v1/auth/signup",
                     "/api/v1/auth/login",
@@ -95,6 +96,7 @@ public class SecurityConfiguration {
                 .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(authorize -> authorize
                 .requestMatchers(HttpMethod.GET, "/api/v1/service-policy").permitAll()
+                .requestMatchers("/api/jaemu/**").permitAll()
                 .requestMatchers(
                     "/api/v1/auth/signup",
                     "/api/v1/auth/login",
@@ -126,6 +128,7 @@ public class SecurityConfiguration {
                 .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(authorize -> authorize
                 .requestMatchers(HttpMethod.GET, "/api/v1/service-policy").permitAll()
+                .requestMatchers("/api/jaemu/**").permitAll()
                 .requestMatchers(
                     "/api/v1/auth/signup",
                     "/api/v1/auth/login",

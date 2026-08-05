@@ -104,11 +104,17 @@ services:
       CONCEPT_MAX_REPLACEMENT_ROUNDS: ${CONCEPT_MAX_REPLACEMENT_ROUNDS:-2}
       CONCEPT_MAX_INSPECTED_CANDIDATES: ${CONCEPT_MAX_INSPECTED_CANDIDATES:-9}
       SPRING_PROFILES_ACTIVE: postgres
+      SPRING_FLYWAY_VALIDATE_ON_MIGRATE: ${SPRING_FLYWAY_VALIDATE_ON_MIGRATE:-false}
       DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-aivle}
       DB_USERNAME: ${POSTGRES_USER:-aivle}
       DB_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       APP_ENVIRONMENT: ${APP_ENVIRONMENT:-LOCAL}
+      AI_API_KEY: ${AI_API_KEY:-}
+      AI_MODEL: ${AI_MODEL:-gpt-4o-mini}
+      AI_BASE_URL: ${AI_BASE_URL:-https://api.openai.com/v1/chat/completions}
+      Tavily_KEY: ${Tavily_KEY:-}
+      TAVILY_KEY: ${TAVILY_KEY:-}
       AI_SERVER_BASE_URL: http://ai-server:8000
       AI_SERVER_INTERNAL_API_KEY: ${AI_INTERNAL_SERVICE_TOKEN:?AI_INTERNAL_SERVICE_TOKEN is required}
       AI_SERVER_CONNECT_TIMEOUT: ${AI_SERVER_CONNECT_TIMEOUT:-3s}
@@ -125,7 +131,7 @@ services:
       OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:-aivle-ai-artifacts}
       OBJECT_STORAGE_ACCESS_KEY: ${MINIO_ROOT_USER:-aivle-e2e}
       OBJECT_STORAGE_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is required}
-      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000},http://localhost:3001
       BOOTSTRAP_ADMIN_ENABLED: ${BOOTSTRAP_ADMIN_ENABLED:-false}
       BOOTSTRAP_ADMIN_USERNAME: ${BOOTSTRAP_ADMIN_USERNAME:-}
       BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
@@ -172,6 +178,18 @@ services:
       timeout: 3s
       retries: 20
       start_period: 5s
+    networks:
+      - app-network
+
+  jaemu:
+    build:
+      context: .
+      dockerfile: jaemu/Dockerfile
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${JAEMU_PORT:-3001}:8080"
     networks:
       - app-network
 
