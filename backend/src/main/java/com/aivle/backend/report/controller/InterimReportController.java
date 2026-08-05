@@ -4,6 +4,7 @@ import com.aivle.backend.common.response.ApiResponse;
 import com.aivle.backend.report.dto.InterimReportResponse;
 import com.aivle.backend.report.service.InterimReportService;
 import lombok.RequiredArgsConstructor;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -16,9 +17,10 @@ public class InterimReportController {
 
     @GetMapping("/{projectId}/reports/interim")
     public ResponseEntity<ApiResponse<InterimReportResponse>> getInterimReport(
-            @PathVariable Long projectId) {
+            @PathVariable Long projectId,
+            HttpServletRequest request) {
 
         InterimReportResponse response = interimReportService.generateInterimReport(projectId);
-        return ResponseEntity.ok(ApiResponse.success(response));
+        return ResponseEntity.ok(ApiResponse.success(response, request.getHeader("X-Request-Id")));
     }
 }
