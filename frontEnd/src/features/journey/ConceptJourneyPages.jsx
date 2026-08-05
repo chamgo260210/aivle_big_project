@@ -15,9 +15,13 @@ function useConceptApi() {
 
 function ErrorBanner({ error }) { return error ? <div className="journey-error" role="alert"><strong>요청을 완료하지 못했습니다.</strong><span>{error}</span><button type="button" onClick={() => window.location.reload()}>현재 단계 다시 불러오기</button></div> : null; }
 
-function Busy({ children }) {
-  return <div className="journey-overlay" role="status"><span className="journey-spinner" /><strong>{children}</strong></div>;
+function Busy({ children, onCancel }) {
+  return <div className="journey-overlay" role="status"><span className="journey-spinner" /><strong>{children}</strong>{onCancel && <button className="journey-button secondary" type="button" onClick={onCancel}>작업 중지</button>}</div>;
 }
+
+const BATCH_STAGE_LABEL = { GENERATING: '초안 생성', VALIDATING_ORIGIN: 'Origin 검증', VALIDATING_LEGAL: '법률 검증' };
+function stalledStage(batch) { return (batch?.needsInput || []).find((value) => typeof value === 'string' && value.startsWith('STALLED_AT:'))?.replace('STALLED_AT:', ''); }
+function elapsedText(seconds) { return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`; }
 
 function List({ items }) {
   return items?.length ? <ul>{items.map((item, index) => <li key={index}>{item}</li>)}</ul> : <p className="journey-muted">등록된 항목이 없습니다.</p>;
@@ -38,20 +42,25 @@ export function ConceptGenerationPage() {
   const { projectId, api } = useConceptApi();
   const [legal, setLegal] = useState(null); const [batch, setBatch] = useState(null); const [concepts, setConcepts] = useState([]);
   const [busy, setBusy] = useState(false); const [error, setError] = useState('');
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const load = async () => { const [l,b,c]=await Promise.all([api.currentLegalPrecheck(),api.currentConceptGeneration(),api.concepts()]);setLegal(l);setBatch(b);setConcepts(c||[]); };
   // Loading is the external synchronization performed by this effect.
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { let active = true; load().catch((e) => active && setError(getUserErrorMessage(e))); return () => { active = false; }; }, [api]); // eslint-disable-line react-hooks/exhaustive-deps
   const activeBatch = ['GENERATING','VALIDATING_ORIGIN','VALIDATING_LEGAL'].includes(batch?.state);
   useEffect(() => { if(!activeBatch)return undefined;const timer=window.setInterval(()=>load().catch((e)=>setError(getUserErrorMessage(e))),2000);return()=>window.clearInterval(timer); }, [activeBatch,batch?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (!activeBatch || !batch?.createdAt) { setElapsedSeconds(0); return undefined; } const update = () => setElapsedSeconds(Math.max(0, Math.floor((Date.now() - new Date(batch.createdAt).getTime()) / 1000))); update(); const timer = window.setInterval(update, 1000); return () => window.clearInterval(timer); }, [activeBatch, batch?.createdAt]);
   const allowed = !!legal?.version?.conceptBuilderAllowed && !legal?.stale;
   const failedBatch = batch?.state === 'FAILED' && !batch?.stale;
   const canGenerate = !batch || batch.stale;
   async function generate() { setBusy(true); setError(''); try { const created=await api.generateConcepts();setBatch(created);setConcepts(created?.concepts || []); } catch (e) { setError(getUserErrorMessage(e)); } finally { setBusy(false); } }
+  async function cancel() { setBusy(true); setError(''); try { setBatch(await api.cancelConceptGeneration()); } catch (e) { setError(getUserErrorMessage(e)); } finally { setBusy(false); } }
   return <div className="journey-page concept-page">
-    {(busy || activeBatch) && <Busy>초안 생성 → Origin 검증 → 법률 검증 → 필요한 대체 후보 생성을 진행합니다.</Busy>}
+    {(busy || activeBatch) && <Busy onCancel={activeBatch && !busy ? () => void cancel() : undefined}><span>초안 생성 → Origin 검증 → 법률 검증 → 필요한 대체 후보 생성을 진행합니다.</span>{activeBatch && <small>현재: {BATCH_STAGE_LABEL[batch.state] || batch.state} · 경과 {elapsedText(elapsedSeconds)}</small>}</Busy>}
     <header className="journey-page__heading"><div><span>3단계 · Concept Eligibility</span><h2>Origin과 Legal Guardrail을 통과한 Concept만 확인하세요</h2><p>실패 Draft는 내부 검증 기록으로만 보관하며 후보 카드로 노출하지 않습니다.</p></div><span className={`journey-save-state ${batch?.state === 'COMPLETED' ? 'is-saved' : ''}`}>{batch?.stale ? 'STALE' : batch?.state || '생성 전'}</span></header>
     <ErrorBanner error={error} />
+    {activeBatch && <section className="journey-card"><h3>현재 실행 단계</h3><p><strong>{BATCH_STAGE_LABEL[batch.state] || batch.state}</strong> · Round {batch.currentRound + 1} · 검사 {batch.inspectedCandidates}/{batch.maxInspectedCandidates}</p><p className="journey-muted">10분 동안 단계 갱신이 없으면 자동으로 중단하고 재시도를 안내합니다.</p></section>}
+    {failedBatch && batch.errorCode === 'TASK_TIMEOUT' && <section className="journey-card journey-warning"><h3>실행 시간 초과</h3><p>마지막 확인 단계: <strong>{BATCH_STAGE_LABEL[stalledStage(batch)] || '알 수 없음'}</strong></p><p>AI 응답 또는 이 검증 단계가 10분 안에 끝나지 않았습니다. 아래의 재시도 버튼으로 동일 입력을 새 배치에서 다시 실행할 수 있습니다.</p></section>}
     {!allowed ? <section className="journey-empty"><h3>법률 검토 통과가 필요합니다.</h3><p>PASS 또는 PASS_WITH_CONDITIONS 결과에서만 콘셉트를 생성할 수 있습니다.</p><Link className="journey-button" to={`/app/projects/${projectId}/legal`}>법률 검토로 이동</Link></section>
       : <section className="journey-card journey-run-card"><div><h3>적격 Concept 3개 확보</h3><p>최초 3개를 검사하고 실패한 수만큼 최대 2라운드·전체 9개 범위에서 대체합니다.</p></div><button className="journey-button" disabled={busy || activeBatch || !canGenerate} onClick={() => void generate()}>{batch?.stale ? '현재 입력으로 다시 생성' : failedBatch ? '아래 실패 상태 확인' : batch ? '생성 완료' : 'Concept 3개 생성'}</button></section>}
     {batch && <section className="journey-card"><h3>Eligibility 진행 상태</h3><p>Round {batch.currentRound} · 검사 {batch.inspectedCandidates}/{batch.maxInspectedCandidates} · 적격 {batch.eligibleCandidates}/{batch.targetEligibleCount}</p>{batch.stale && <p className="journey-warning">Origin 또는 Guardrail이 변경되어 이 Batch는 STALE입니다. 이전 후보는 current 결과로 표시하지 않습니다.</p>}</section>}

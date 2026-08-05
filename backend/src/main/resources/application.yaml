@@ -108,6 +108,7 @@ app:
         max-paragraph-characters: 50000
   journey:
     concept:
+      stalled-timeout: ${CONCEPT_STALLED_TIMEOUT:10m}
       target-count: ${CONCEPT_TARGET_ELIGIBLE_COUNT:3}
       max-replacement-rounds: ${CONCEPT_MAX_REPLACEMENT_ROUNDS:2}
       max-inspected-candidates: ${CONCEPT_MAX_INSPECTED_CANDIDATES:9}

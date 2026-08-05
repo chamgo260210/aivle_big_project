@@ -27,6 +27,7 @@ export function createJourneyApi(client, projectId) {
     async concepts() { return (await client.get(`${root}/concepts`)).data; },
     async currentConceptGeneration() { return (await client.get(`${root}/concept-generations/current`)).data; },
     async generateConcepts() { return (await client.post(`${root}/concept-generations`, undefined, { timeoutMs: 120000 })).data; },
+    async cancelConceptGeneration() { return (await client.post(`${root}/concept-generations/current/cancel`)).data; },
     async currentQuick() { return (await client.get(`${root}/quick-assessments/current`)).data; },
     async quickAssessment() { return (await client.post(`${root}/quick-assessments`, undefined, { timeoutMs: 120000 })).data; },
     async currentShortlist() { return (await client.get(`${root}/shortlist`)).data; },
