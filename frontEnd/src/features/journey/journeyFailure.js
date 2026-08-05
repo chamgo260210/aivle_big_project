@@ -1,7 +1,6 @@
 const FAILURE_MESSAGES = {
   AI_SERVICE_UNAVAILABLE: 'AI Provider 또는 내부 AI 서비스에 연결하지 못했습니다. 서비스와 인증 설정을 확인한 뒤 재시도할 수 있습니다.',
   TASK_TIMEOUT: 'AI 작업이 제한 시간을 초과했습니다. Provider 상태를 확인한 뒤 재시도할 수 있습니다.',
-  USER_CANCELLED: '사용자가 작업을 중지했습니다. 동일 입력으로 다시 시도할 수 있습니다.',
   AI_RESULT_INVALID: 'AI 응답이 현재 Contract를 충족하지 못했습니다. 자동 재시도하지 않고 입력과 Contract 로그를 확인해야 합니다.',
   PAYLOAD_TOO_LARGE: '입력 크기가 허용 범위를 초과했습니다. Idea Origin의 입력 범위를 줄여야 합니다.',
   AI_CONFIGURATION_INVALID: 'AI Provider, 모델 또는 API Key 설정이 유효하지 않습니다. 설정을 수정하기 전에는 재시도하지 않습니다.',

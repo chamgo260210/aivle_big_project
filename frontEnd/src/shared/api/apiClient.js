@@ -152,3 +152,5 @@ export function createApiClient({
     upload: (path, formData, options) => request(path, { ...options, method: 'POST', body: formData }),
   };
 }
+
+export const apiClient = createApiClient();

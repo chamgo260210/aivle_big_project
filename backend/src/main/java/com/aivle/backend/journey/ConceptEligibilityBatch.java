@@ -31,5 +31,4 @@ public class ConceptEligibilityBatch extends BaseEntity {
     public void complete(){state=State.COMPLETED;retryable=false;completedAt=LocalDateTime.now();}
     public void needsInput(String json){state=State.NEEDS_INPUT;retryable=false;needsInputJson=json;completedAt=LocalDateTime.now();}
     public void fail(String code,boolean canRetry){state=State.FAILED;errorCode=code;retryable=canRetry;completedAt=LocalDateTime.now();}
-    public void timeout(State stalledStage){needsInputJson="[\"STALLED_AT:"+stalledStage.name()+"\"]";fail("TASK_TIMEOUT",true);}
 }

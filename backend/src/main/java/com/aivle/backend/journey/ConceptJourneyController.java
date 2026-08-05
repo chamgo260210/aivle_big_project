@@ -20,10 +20,6 @@ public class ConceptJourneyController {
     public ResponseEntity<ApiResponse<ConceptJourneyService.BatchView>> generate(@PathVariable Long projectId, HttpServletRequest request) {
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(ApiResponse.success(concepts.generate(user(),projectId),id(request)));
     }
-    @PostMapping("/concept-generations/current/cancel")
-    public ApiResponse<ConceptJourneyService.BatchView> cancel(@PathVariable Long projectId, HttpServletRequest request) {
-        return ApiResponse.success(concepts.cancel(user(),projectId),id(request));
-    }
     @GetMapping("/concept-generations/current")
     public ApiResponse<ConceptJourneyService.BatchView> currentGeneration(@PathVariable Long projectId,HttpServletRequest request){
         return ApiResponse.success(concepts.currentBatch(user(),projectId),id(request));
