@@ -17,7 +17,7 @@
 | Project CRUD | create/list/detail/update/delete | owner data only |
 | Owner scope | every child query/mutation | cross-owner non-disclosing 404 |
 | Storage | key/checksum/type/size/missing/orphan | unsafe/corrupt rejected |
-| Flyway | fresh, V26 upgrade, validate, clean disabled | validation succeeds |
+| Flyway | empty PostgreSQL Baseline fresh, validate, clean disabled | V1 적용과 validation 성공 |
 | Common error | correlation, validation/conflict/internal | safe envelope |
 | Audit | success/failure admin/security, redaction | event without secrets |
 

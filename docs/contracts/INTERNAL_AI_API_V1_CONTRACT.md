@@ -1,16 +1,16 @@
 # Internal Spring–AI API v1 Contract
 
-- Status: DRAFT_CONTRACT
+- Status: CURRENT_CANONICAL
 - Code Baseline Commit: e16bd316ac881f4c5fab076e65c14657f6a8c7d4
 - Document Phase: P2
 - Introduced In Commit: ca22117fd9da65f1b232b9aa34e9d6e085e7ee06
 - Scope: Provider-neutral synchronous TaskAttempt execution contract between Spring WAS and AI Server
 - Supersedes: Legacy direct-provider, artifact-service and presigned transfer contracts
-- Implementation Status: PARTIAL
+- Implementation Status: IMPLEMENTED_FOR_13_TASK_REGISTRY
 
-P3 implementation note: the provider-neutral Spring client, FastAPI `/internal/v1/ai/executions` envelope, service-token authentication, raw 2 MiB request guard and deterministic `IDEA_INTERPRETATION` walking skeleton are implemented. Other task handlers and provider selection are not implemented.
+현재 구현은 provider-neutral Spring client, FastAPI `/internal/v1/ai/executions` envelope, service-token authentication, raw 2 MiB request/response guard, 13개 TaskType dispatcher와 현재 Journey의 Idea·Legal·Concept handler를 포함한다. 보존된 MVP task도 registry에 남아 있으며 task별 provider/domain 결과 검증 수준은 각 production handler가 정의한다.
 
-이 문서는 구현 전 Target 계약이다. 실제 Spring client, FastAPI route, DTO/Pydantic model, OpenAPI 또는 provider 선택을 의미하지 않는다.
+이 문서는 Internal Spring–AI v1의 현재 canonical 계약이다. Public API Controller/path/status/envelope의 권위는 아니며 provider 또는 model 선택을 고정하지 않는다.
 
 ## 1. Boundary and execution model
 
@@ -138,6 +138,8 @@ Internal request bug의 raw detail은 public에 숨긴다. 이미 public command
 |---|---|---|---|---|---|---|---|---|
 | `IDEA_INTERPRETATION` | interpretation command / IdeaInterpretationRun | `IdeaInterpretationInputV1` | `IdeaInterpretationResultV1` | source, statement | text limits; options allowlist | model / no | auto IdeaVersion or user decision | facts/assumptions separation and adopted exact input |
 | `LEGAL_REVIEW` | legal command / LegalReviewRun | `LegalReviewInputV1` | `LegalReviewResultV1` | idea item | findings/sources bounded | MOLEG_API, LEGAL_MCP / yes | legal advice claim | source identity/currentness and legal enum valid |
+| `IDEA_LEGAL_PRECHECK` | Journey legal precheck / TaskRun | `LegalSourcePipelineInputV1` | `LegalSourcePipelineResultV1` | content, route, evidence | text/source limits | model, MOLEG_API / partial source allowed | invented statute or citation | exact task identity, registry and evidence references |
+| `CONCEPT_LEGAL_VALIDATION` | Concept eligibility legal gate / TaskRun | `ConceptLegalValidationBatchInputV1` | `ConceptLegalValidationBatchResultV1` | content, candidate | candidate batch bounded by execution payload | model / no | unknown, duplicate or omitted candidate | exact candidateKey set and strict result fields |
 | `CONCEPT_GENERATION` | generation command / ConceptGenerationRun | `ConceptGenerationInputV1` | `ConceptGenerationResultV1` | idea item, concept | candidateCount 1–10 | model / no | user selection | requested bounds and passing legal input |
 | `QUICK_ASSESSMENT` | quick command / QuickAssessmentRun | `QuickAssessmentInputV1` | `QuickAssessmentResultV1` | concept, evidence | one concept; dimensions bounded | model / no | shortlist decision | exact concept and proposal disclosure |
 | `DETAILED_ANALYSIS` | detailed command / DetailedAnalysisRun | `DetailedAnalysisInputV1` | `DetailedAnalysisResultV1` | concept, evidence | one type; arrays bounded | model; task-specific sources / optional warnings | deterministic overwrite | shortlist/type/schema and calculation boundary |
@@ -158,6 +160,8 @@ Internal request bug의 raw detail은 public에 숨긴다. 이미 public command
 |---|---|
 | `IDEA_INTERPRETATION` | TextContent 64, statement items per category 200, warnings/evidence needs 100 |
 | `LEGAL_REVIEW` | findings 100, source references 200, conditions/warnings/expert reasons 100 |
+| `IDEA_LEGAL_PRECHECK` | TextContent 64, routes/evidence/findings 200, required inputs/warnings 100 |
+| `CONCEPT_LEGAL_VALIDATION` | TextContent 64; candidate set is the exact set encoded by the canonical batch content |
 | `CONCEPT_GENERATION` | concepts 10, list fields per concept 50 |
 | `QUICK_ASSESSMENT` | dimensions 20, evidence/assumptions/uncertainties/warnings 100 each |
 | `DETAILED_ANALYSIS` | findings 200, evidence/assumptions/uncertainties/warnings 200 each |
@@ -172,13 +176,17 @@ Internal request bug의 raw detail은 public에 숨긴다. 이미 public command
 
 ### IDEA_INTERPRETATION
 
-`IdeaInterpretationInputV1`은 하나 이상의 verified `TextContent`, source-safe label, source statement keys, readiness/normalization options, locale와 limit profile을 가진다. `IdeaInterpretationResultV1`은 `originalSourceSummary`, `normalizedDescription`, structured `facts`, `assumptions`, `constraints`, `openQuestions`, `readiness`, `warnings`, `evidenceNeeds`, `provenance`를 가진다. Statement item은 stable local key, text, provenance category, source keys, confidence/uncertainty, verificationNeeded를 구분한다. 불확실성을 fact로 승격하거나 사용자 constraint를 삭제하거나 IdeaVersion/User Decision을 자동 생성하지 않는다.
+`IdeaInterpretationInputV1`은 하나 이상의 verified `TextContent`, source-safe label, source statement keys, readiness/normalization options, locale와 limit profile을 가진다. 현재 Production `IdeaInterpretationResultV1`은 `originalSourceSummary`, `normalizedDescription`, 문자열 배열인 `facts`, `assumptions`, `constraints`, `openQuestions`, `readiness`, `warnings`, `evidenceNeeds`와 Idea Origin용 `originDraft`, `fieldMetadata`, `clarificationQuestions`를 가진다. 불확실성을 fact로 승격하거나 사용자 constraint를 삭제하거나 IdeaVersion/User Decision을 자동 생성하지 않는다. Provenance는 execution response envelope에 유지하며 현재 result body에는 중복 저장하지 않는다.
 
 ### LEGAL_REVIEW
 
 `LegalReviewInputV1`은 exact confirmed IdeaVersion snapshot, normalized description, facts/assumptions/constraints, `jurisdiction=KR`, bounded options와 idea item keys를 가진다. AI Server는 `MOLEG_API`를 법령 identifier·원문·조문·현재성의 authoritative source로, `LEGAL_MCP`를 검색·탐색·연관 법령 발견에 사용한다. Secret은 AI Server 환경변수/deployment Secret이며 Spring payload에 없다.
 
 `LegalReviewResultV1`은 legalResult, findings, sourceReferences, sourceCoverage, conditions, warnings, expertReviewReasons, provenance를 가진다. Legal result는 `PASS`, `PASS_WITH_CONDITIONS`, `REVISION_REQUIRED`, `PROHIBITED`, `INSUFFICIENT_INFORMATION`, `EXPERT_REVIEW_REQUIRED` 중 하나다. Source reference는 sourceChannel, lawIdentifier, lawName, article, observedAt, currentness, authoritative, degraded와 optional officialSourceUrl을 가진다. 한 source 실패는 missing channel/degraded를 명시한 success가 될 수 있다. 법률 자문이나 확정적 전문가 판단으로 표현하지 않는다.
+
+### IDEA_LEGAL_PRECHECK and CONCEPT_LEGAL_VALIDATION
+
+`IDEA_LEGAL_PRECHECK`는 `LegalSourcePipelineInputV1`과 `LegalSourcePipelineResultV1`을 사용한다. `CONCEPT_LEGAL_VALIDATION`의 현재 공식 Journey 경로는 `validationMode=GUARDRAIL_BATCH`인 `ConceptLegalValidationBatchInputV1`과 `ConceptLegalValidationBatchResultV1`을 사용한다. Batch 응답은 입력의 candidateKey를 정확히 한 번씩 반환해야 하며 누락, 중복, 알 수 없는 key와 extra field를 거부한다. 과거 단건 `GUARDRAIL` 및 source-pipeline 호환 분기는 유지되지만 현재 Concept eligibility producer의 canonical 경로는 Batch다.
 
 ### CONCEPT_GENERATION and QUICK_ASSESSMENT
 
@@ -242,7 +250,9 @@ Fixture case manifest는 다음 범위를 포함한다.
 
 - common execution request success와 common internal error
 - chunk order/hash success, chunk gap failure, canonical input hash fixture
-- 11개 task 각각의 minimum valid request와 valid result
+- 13개 task 각각의 minimum valid request와 valid result
+- `IDEA_LEGAL_PRECHECK`, `CONCEPT_LEGAL_VALIDATION`의 valid request/result와 required-field negative
+- `TEXT` 수락, `PLAIN_TEXT` 및 잘못된 locale/language 거부
 - legal degraded source result
 - financial deterministic/result와 AI explanation boundary
 - persona isolation과 synthetic disclosure
@@ -251,7 +261,7 @@ Fixture case manifest는 다음 범위를 포함한다.
 - unsupported contract/task schema version, deadline exceeded, result schema invalid
 - unknown request-local reference rejection
 
-Fixture는 이 문서의 65개 field table을 제한된 Markdown parser로 읽어 exact field, presence, nullability, type, bounds/enum과 named nested schema를 재귀 검증한다. Negative도 positive와 동일한 validator 경로에서 manifest의 단일 expected rule로 실패해야 한다. Actual object에 존재하는 named schema instance만 coverage로 인정하며 manifest 선언과 exact equality를 검사하고, negative validation 실행 중 방문한 schema 집합도 65/65여야 한다. Bounds cell은 지원 분류나 실행 handler가 없으면 `UNSUPPORTED_BOUND_SPEC`으로 실패한다. 일반 string의 단일 literal Bounds는 exact equality로 검증하며 불일치는 `STRING_LITERAL_MISMATCH`다. Public P2.4 contract와는 동명 consistency registry의 exact set/value equality, error mapping과 Financial/Persona/Marketing invariant equality를 검사한다.
+Fixture는 이 문서의 77개 field table을 제한된 Markdown parser로 읽어 exact field, presence, nullability, type, bounds/enum과 named nested schema를 재귀 검증한다. Negative도 positive와 동일한 validator 경로에서 manifest의 단일 expected rule로 실패해야 한다. Actual object에 존재하는 named schema instance만 coverage로 인정하며 manifest 선언과 exact equality를 검사한다. Bounds cell은 지원 분류나 실행 handler가 없으면 `UNSUPPORTED_BOUND_SPEC`으로 실패한다. 일반 string의 단일 literal Bounds는 exact equality로 검증하며 불일치는 `STRING_LITERAL_MISMATCH`다. Public P2.4 contract와는 동명 consistency registry의 exact set/value equality, error mapping과 Financial/Persona/Marketing invariant equality를 검사한다.
 
 2 MiB request/response hard limit은 원본 UTF-8 encoded transport byte length에 적용한다. Whitespace를 제거한 JSON, canonical JSON 또는 `json.dumps` 재직렬화 길이는 transport limit의 근거가 아니다. Internal error envelope도 response limit을 적용받는다. Boundary self-test는 정확히 2 MiB를 허용하고 2 MiB+1 byte와 multibyte UTF-8 초과를 각각 `REQUEST_BYTES_EXCEEDED` 또는 `RESPONSE_BYTES_EXCEEDED`로 거부한다.
 
@@ -285,7 +295,7 @@ Canonical JSON은 UTF-8, Unicode NFC, object key Unicode code point 오름차순
 | Field | JSON type | Presence | Nullable | Bounds/enum | Semantic rule |
 |---|---|---|---|---|---|
 | contractVersion | string | REQUIRED | NO | `1.0` | envelope version |
-| taskType | string enum | REQUIRED | NO | §7 Task Registry의 11개 `Task type` 값 | input discriminator |
+| taskType | string enum | REQUIRED | NO | §7 Task Registry의 13개 `Task type` 값 | input discriminator |
 | taskSchemaVersion | string | REQUIRED | NO | `1.0` | selected task schema version |
 | taskRunId | string | REQUIRED | NO | 1–128 | echo-only opaque execution reference |
 | taskAttemptId | string | REQUIRED | NO | 1–128 | echo-only opaque attempt reference |
@@ -300,7 +310,7 @@ Canonical JSON은 UTF-8, Unicode NFC, object key Unicode code point 오름차순
 | Field | JSON type | Presence | Nullable | Bounds/enum | Semantic rule |
 |---|---|---|---|---|---|
 | contractVersion | string | REQUIRED | NO | `1.0` | request echo |
-| taskType | string enum | REQUIRED | NO | §7 Task Registry의 11개 `Task type` 값 | request `taskType`과 equality |
+| taskType | string enum | REQUIRED | NO | §7 Task Registry의 13개 `Task type` 값 | request `taskType`과 equality |
 | taskSchemaVersion | string | REQUIRED | NO | `1.0` | request echo |
 | taskRunId | string | REQUIRED | NO | 1–128 | request echo |
 | taskAttemptId | string | REQUIRED | NO | 1–128 | request echo |
@@ -374,6 +384,13 @@ Provider raw reason, 자유문장 또는 HTTP body로 retryability를 결정하�
 | `DEPENDENCY_UNAVAILABLE` | `MODEL_DEPENDENCY_UNAVAILABLE` | true | none | none | dependency identity/raw body | FAILED | `AI_SERVICE_UNAVAILABLE` |
 | `DEPENDENCY_UNAVAILABLE` | `MCP_DEPENDENCY_UNAVAILABLE` | true | none | none | MCP identity/raw body | FAILED | `AI_SERVICE_UNAVAILABLE` |
 | `DEPENDENCY_UNAVAILABLE` | `LEGAL_SOURCE_DEPENDENCY_UNAVAILABLE` | true | none | none | secret/raw body | FAILED | `AI_SERVICE_UNAVAILABLE` |
+| `DEPENDENCY_UNAVAILABLE` | `AI_CONFIGURATION_INVALID` | false | none | none | provider/model/secret identity | FAILED | `AI_SERVICE_UNAVAILABLE` |
+| `DEPENDENCY_UNAVAILABLE` | `LEGAL_CONFIGURATION_INVALID` | false | none | none | secret/config raw value | FAILED | `AI_SERVICE_UNAVAILABLE` |
+| `DEPENDENCY_UNAVAILABLE` | `MOLEG_AUTHENTICATION_FAILED` | false | none | none | credential/raw body | FAILED | `AI_SERVICE_UNAVAILABLE` |
+| `DEPENDENCY_UNAVAILABLE` | `MOLEG_REQUEST_REJECTED` | false | none | none | request/raw body | FAILED | `AI_SERVICE_UNAVAILABLE` |
+| `DEPENDENCY_UNAVAILABLE` | `MOLEG_RESPONSE_INVALID` | false | none | none | response body | FAILED | `AI_SERVICE_UNAVAILABLE` |
+| `DEPENDENCY_UNAVAILABLE` | `MOLEG_DEPENDENCY_UNAVAILABLE` | true | none | none | dependency/raw body | FAILED | `AI_SERVICE_UNAVAILABLE` |
+| `DEPENDENCY_UNAVAILABLE` | `MOLEG_RATE_LIMITED` | true | none | none | quota/raw body | FAILED | `AI_SERVICE_UNAVAILABLE` |
 | `RATE_LIMITED` | `DEPENDENCY_RATE_LIMITED` | true | none | `retryAfterSeconds` | provider quota/body | FAILED | `AI_SERVICE_UNAVAILABLE` |
 | `EXECUTION_FAILED` | `TRANSIENT_EXECUTION_FAILURE` | true | none | none | provider raw reason/body | FAILED | `AI_SERVICE_UNAVAILABLE` |
 | `EXECUTION_FAILED` | `PERMANENT_EXECUTION_FAILURE` | false | none | none | provider raw reason/body | FAILED | `AI_SERVICE_UNAVAILABLE` |
@@ -382,6 +399,20 @@ Provider raw reason, 자유문장 또는 HTTP body로 retryability를 결정하�
 | `RESULT_SCHEMA_INVALID` | `RESULT_FIELD_CONSTRAINT_VIOLATION` | false | `field` | `limitName` | result raw value | FAILED | `AI_RESULT_INVALID` |
 | `RESULT_SCHEMA_INVALID` | `RESULT_REFERENCE_INVALID` | false | `field` | none | unresolved raw identifier | FAILED | `AI_RESULT_INVALID` |
 | `RESULT_SCHEMA_INVALID` | `RESULT_DOMAIN_INVARIANT_VIOLATION` | false | `field` | none | result content | FAILED | `AI_RESULT_INVALID` |
+| `RESULT_SCHEMA_INVALID` | `AI_RESULT_INVALID` | false | none | none | result/provider raw content | FAILED | `AI_RESULT_INVALID` |
+| `RESULT_SCHEMA_INVALID` | `LEGAL_ROUTING_CONTRACT_INVALID` | false | none | none | model result | FAILED | `AI_RESULT_INVALID` |
+| `RESULT_SCHEMA_INVALID` | `LEGAL_SCREENING_CONTRACT_INVALID` | false | none | none | model result | FAILED | `AI_RESULT_INVALID` |
+| `RESULT_SCHEMA_INVALID` | `LEGAL_CITATION_COVERAGE_INVALID` | false | none | none | model result | FAILED | `AI_RESULT_INVALID` |
+| `RESULT_SCHEMA_INVALID` | `LEGAL_SCREENING_FIELD_INVALID` | false | none | none | model result | FAILED | `AI_RESULT_INVALID` |
+| `RESULT_SCHEMA_INVALID` | `LEGAL_SOURCE_CONTRACT_INVALID` | false | none | none | result content | FAILED | `AI_RESULT_INVALID` |
+| `RESULT_SCHEMA_INVALID` | `CONCEPT_LEGAL_VALIDATION_INVALID` | false | none | none | model result | FAILED | `AI_RESULT_INVALID` |
+| `RESULT_SCHEMA_INVALID` | `CONCEPT_LEGAL_VALIDATION_CANDIDATE_KEYS_INVALID` | false | none | none | candidate values/model result | FAILED | `AI_RESULT_INVALID` |
+| `INVALID_REQUEST` | `LEGAL_INPUT_CONTRACT_INCOMPLETE` | false | none | none | raw input | FAILED | `AI_RESULT_INVALID` |
+| `INVALID_REQUEST` | `LEGAL_MODE_INVALID` | false | none | none | raw input | FAILED | `AI_RESULT_INVALID` |
+| `INVALID_REQUEST` | `LEGAL_RERUN_CATEGORIES_INVALID` | false | none | none | raw input | FAILED | `AI_RESULT_INVALID` |
+| `INVALID_REQUEST` | `LEGAL_CONFIRMED_FACTS_INVALID` | false | none | none | raw input | FAILED | `AI_RESULT_INVALID` |
+| `INVALID_REQUEST` | `LEGAL_REGISTRY_VERSION_MISMATCH` | false | none | none | raw registry value | FAILED | `AI_RESULT_INVALID` |
+| `INVALID_REQUEST` | `CONCEPT_LEGAL_VALIDATION_MODE_INVALID` | false | none | none | raw mode | FAILED | `AI_RESULT_INVALID` |
 | `INTERNAL_ERROR` | `UNEXPECTED_INTERNAL_ERROR` | true | none | none | stack trace/internal topology | FAILED | `AI_SERVICE_UNAVAILABLE` |
 
 12개 internal code 각각 하나 이상의 reason을 가진다. 같은 code/reason의 retryable 값은 고정이며 다른 조합은 `InternalErrorResponseV1` validation 실패다. `DEADLINE_EXCEEDED`의 현재 Attempt는 terminal이고 `retryable=true`는 새 Attempt가 정책상 가능할 수 있다는 의미뿐이다.
@@ -809,16 +840,38 @@ AI는 입력에 없던 local source reference를 임의 생성하지 않는다. 
 |---|---|---|---|---|---|
 | originalSourceSummary | string | REQUIRED | NO | 1–8,000 | source-faithful summary |
 | normalizedDescription | string | REQUIRED | NO | 1–16,000 | confirmed IdeaVersion 아님 |
-| facts | array<IdeaStatementItemV1> | REQUIRED | NO | minItems 0, maxItems 200 | fact evidence required |
-| assumptions | array<IdeaStatementItemV1> | REQUIRED | NO | minItems 0, maxItems 200 | facts와 분리 |
-| constraints | array<IdeaStatementItemV1> | REQUIRED | NO | minItems 0, maxItems 200 | 사용자 constraint 삭제 금지 |
-| openQuestions | array<IdeaStatementItemV1> | REQUIRED | NO | minItems 0, maxItems 50 | input maxOpenQuestions 이하 |
+| facts | array<string> | REQUIRED | NO | minItems 0, maxItems 200 | 원문에서 확인한 사실 |
+| assumptions | array<string> | REQUIRED | NO | minItems 0, maxItems 200 | facts와 분리 |
+| constraints | array<string> | REQUIRED | NO | minItems 0, maxItems 200 | 사용자 constraint 삭제 금지 |
+| openQuestions | array<string> | REQUIRED | NO | minItems 0, maxItems 50 | clarificationQuestions.question과 같은 순서 |
 | readiness | string enum | REQUIRED | NO | `UNDER_SPECIFIED`, `APPROPRIATE`, `OVER_SPECIFIED` | domain meaning 유지 |
-| warnings | array<WarningV1> | REQUIRED | NO | minItems 0, maxItems 100 | empty allowed |
-| evidenceNeeds | array<IdeaStatementItemV1> | REQUIRED | NO | minItems 0, maxItems 100 | research needs |
-| provenance | array<ProvenanceItemV1> | REQUIRED | NO | minItems 1, maxItems 500 | AI_PROPOSAL; source keys valid |
+| warnings | array<string> | REQUIRED | NO | minItems 0, maxItems 100 | empty allowed |
+| evidenceNeeds | array<string> | REQUIRED | NO | minItems 0, maxItems 100 | research needs |
+| originDraft | JSON value | REQUIRED | NO | exact object | nullable/array fields도 생략 금지 |
+| fieldMetadata | array<IdeaInputMetadataV1> | REQUIRED | NO | minItems 0, maxItems 100 | `MISSING`이면 `sourceType=AI_PROPOSED`, `locked=false` |
+| clarificationQuestions | array<IdeaClarificationQuestionV1> | REQUIRED | NO | minItems 0, maxItems 50 | 누락된 Origin 필수 필드별 질문 필요 |
 
-Adoption은 fact/assumption 분리, constraint 보존, 모든 key resolution을 요구하며 IdeaVersion/User Decision을 생성하지 않는다.
+`originDraft`는 `productServiceDescription`, `problem`, `target`, `solution`, `coreValue`, `primaryCategory`, `targetRegion`, `fixedValues`, `confirmedValues`, `assumptions`, `pricingIntent`, `revenueModelIntent`, `salesChannelIntent`, `knownUnitCost`, `alternatives`, `knownCompetitors`, `differentiationIntent`, `internalConstraints`만 가진다. `fieldMetadata` 항목은 `key`, `sourceType`, `requiredForStages`, `status`, `locked`, `fallbackPolicy`만, `clarificationQuestions` 항목은 `targetField`, `requirement`, `question`, `reason`만 가진다. Adoption은 이 exact 구조와 fact/assumption 분리, constraint 보존을 검증하며 IdeaVersion/User Decision을 자동 생성하지 않는다.
+
+### IdeaInputMetadataV1
+
+| Field | JSON type | Presence | Nullable | Bounds/enum | Semantic rule |
+|---|---|---|---|---|---|
+| key | string | REQUIRED | NO | 1–200 | Idea Origin field key |
+| sourceType | string enum | REQUIRED | NO | `USER_CONFIRMED`, `AI_PROPOSED` | model output은 확정값을 임의 승격하지 않음 |
+| requiredForStages | array<string> | REQUIRED | NO | minItems 0, maxItems 3; each 1–200 | values are `IDEA_ORIGIN`, `LEGAL_PRECHECK`, `CONCEPT_BUILD` |
+| status | string enum | REQUIRED | NO | `MISSING`, `AI_PROPOSED`, `USER_CONFIRMED` | current value state |
+| locked | boolean | REQUIRED | NO | true/false | missing/proposed는 false |
+| fallbackPolicy | string enum | REQUIRED | NO | `NO_FALLBACK`, `AI_MAY_PROPOSE`, `BLOCK_STAGE` | downstream fallback rule |
+
+### IdeaClarificationQuestionV1
+
+| Field | JSON type | Presence | Nullable | Bounds/enum | Semantic rule |
+|---|---|---|---|---|---|
+| targetField | string | REQUIRED | NO | 1–200 | missing or legal-sensitive field |
+| requirement | string enum | REQUIRED | NO | `REQUIRED_FOR_IDEA_ORIGIN`, `REQUIRED_FOR_LEGAL_PRECHECK` | question gate |
+| question | string | REQUIRED | NO | 1–2,000 | user-facing question |
+| reason | string | REQUIRED | NO | 1–2,000 | why the answer is required |
 
 ### LegalReviewInputV1
 
@@ -1061,9 +1114,133 @@ Binary/base64, file/path/Storage reference와 conversion probability content는 
 
 Spring은 `reportDecision` value equality, exact upstream references와 category separation을 검증한다. Result는 proposal일 뿐 FinalReportVersion 저장과 PDF 생성은 Spring 책임이며 Markdown/binary output은 금지한다.
 
+### LegalConfirmedFactV1
+
+| Field | JSON type | Presence | Nullable | Bounds/enum | Semantic rule |
+|---|---|---|---|---|---|
+| key | string | REQUIRED | NO | 1–128, blank 금지 | confirmed Idea Origin field key |
+| value | JSON value | REQUIRED | YES | structured or scalar JSON | exact confirmed value snapshot |
+| source | string | REQUIRED | NO | 1–256, blank 금지 | safe confirmation source label |
+
+### LegalSourcePipelineInputV1
+
+| Field | JSON type | Presence | Nullable | Bounds/enum | Semantic rule |
+|---|---|---|---|---|---|
+| mode | string enum | REQUIRED | NO | `FULL`, `INCREMENTAL` | pipeline mode |
+| rerunCategories | array<string> | REQUIRED | NO | minItems 0, maxItems 10; unique | incremental categories only |
+| confirmedFacts | array<LegalConfirmedFactV1> | REQUIRED | NO | minItems 0, maxItems 200 | confirmed values only |
+| registryVersion | string | REQUIRED | NO | 1–128, blank 금지 | exact deployed legal registry |
+| promptVersion | string | REQUIRED | NO | 1–128, blank 금지 | prompt contract identity |
+| sourceSchemaVersion | string | REQUIRED | NO | 1–64, blank 금지 | legal source result schema identity |
+| textContents | array<TextContentV1> | REQUIRED | NO | minItems 1, maxItems 64; aggregate chunks max 64 | canonical source text |
+
+### LegalSourceRouteV1
+
+| Field | JSON type | Presence | Nullable | Bounds/enum | Semantic rule |
+|---|---|---|---|---|---|
+| routeId | string | REQUIRED | NO | 1–128, blank 금지 | registry route id; unique |
+| topic | string | REQUIRED | NO | 1–512, blank 금지 | safe route label |
+| status | string enum | REQUIRED | NO | `APPLIES`, `POSSIBLE`, `NOT_APPLICABLE`, `UNKNOWN` | route decision |
+| evidenceQuotes | array<string> | REQUIRED | NO | minItems 0, maxItems 20; each 1–2,000 | verbatim input evidence |
+| reason | string | REQUIRED | NO | 1–2,000, blank 금지 | bounded explanation |
+| categories | array<string> | REQUIRED | NO | minItems 0, maxItems 10; unique | registry categories |
+
+### LegalSourceReasoningV1
+
+| Field | JSON type | Presence | Nullable | Bounds/enum | Semantic rule |
+|---|---|---|---|---|---|
+| category | string | REQUIRED | NO | 1–128, blank 금지 | finding category |
+| inputBasis | array<string> | REQUIRED | NO | minItems 0, maxItems 20; each 1–2,000 | source input quotes |
+| regulatoryArea | string | REQUIRED | NO | 1–512, blank 금지 | regulatory area label |
+| obligation | string | REQUIRED | NO | 1–4,000, blank 금지 | bounded obligation summary |
+| consequence | string | REQUIRED | NO | 1–4,000, blank 금지 | bounded consequence summary |
+| requiredAction | string | REQUIRED | NO | 1–4,000, blank 금지 | bounded action summary |
+| evidenceIds | array<string> | REQUIRED | NO | minItems 0, maxItems 200; unique | references LegalSourceEvidenceV1 |
+
+### LegalSourceFindingV1
+
+| Field | JSON type | Presence | Nullable | Bounds/enum | Semantic rule |
+|---|---|---|---|---|---|
+| category | string | REQUIRED | NO | 1–128, blank 금지 | registry category; unique in result |
+| applicability | string enum | REQUIRED | NO | `APPLIES`, `POSSIBLE` | applicable finding only |
+| summary | string | REQUIRED | NO | 1–4,000, blank 금지 | source-grounded summary |
+| evidenceIds | array<string> | REQUIRED | NO | minItems 0, maxItems 200; unique | references evidence array |
+| reasoning | LegalSourceReasoningV1 | REQUIRED | NO | exact object | category and evidence references match |
+
+### LegalSourceEvidenceV1
+
+| Field | JSON type | Presence | Nullable | Bounds/enum | Semantic rule |
+|---|---|---|---|---|---|
+| evidenceId | string | REQUIRED | NO | 1–128, blank 금지 | execution-local unique id |
+| routeId | string | REQUIRED | NO | 1–128, blank 금지 | references route |
+| category | string | REQUIRED | NO | 1–128, blank 금지 | registry category |
+| registryVersion | string | REQUIRED | NO | 1–128, blank 금지 | equals result registryVersion |
+| lawName | string | REQUIRED | NO | 1–512, blank 금지 | official law name |
+| article | string | REQUIRED | NO | 1–256, blank 금지 | official article identifier |
+| title | string | REQUIRED | YES | maxLength 512 | optional article title |
+| role | string enum | REQUIRED | NO | `REQUIREMENT`, `SANCTION`, `SCOPE`, `SUPPORTING` | screening role |
+| plainSummary | string | REQUIRED | NO | 1–4,000, blank 금지 | grounded summary |
+| whyRelevant | string | REQUIRED | NO | 1–4,000, blank 금지 | relevance explanation |
+| excerpt | string | REQUIRED | NO | 1–4,000, blank 금지 | source excerpt |
+| effectiveDate | string | REQUIRED | YES | maxLength 64 | source effective date |
+| lawUrl | string | REQUIRED | NO | HTTPS URL maxLength 2,048 | official source URL |
+| verifiedAt | string timestamp | REQUIRED | NO | RFC 3339 UTC `Z` | retrieval timestamp |
+
+### LegalSourceQuestionV1
+
+| Field | JSON type | Presence | Nullable | Bounds/enum | Semantic rule |
+|---|---|---|---|---|---|
+| question | string | REQUIRED | NO | 1–2,000, blank 금지 | missing-information question |
+| relatedRouteIds | array<string> | REQUIRED | NO | minItems 0, maxItems 20; unique | references route ids |
+
+### LegalSourcePipelineResultV1
+
+| Field | JSON type | Presence | Nullable | Bounds/enum | Semantic rule |
+|---|---|---|---|---|---|
+| taskType | string enum | REQUIRED | NO | `IDEA_LEGAL_PRECHECK`, `CONCEPT_LEGAL_VALIDATION` | equals request taskType |
+| sourceStatus | string enum | REQUIRED | NO | `SOURCE_COMPLETE`, `SOURCE_PARTIAL`, `REGISTRY_GAP` | source coverage outcome |
+| registryVersion | string | REQUIRED | NO | 1–128, blank 금지 | exact registry identity |
+| routes | array<LegalSourceRouteV1> | REQUIRED | NO | minItems 0, maxItems 200 | unique routeId |
+| findings | array<LegalSourceFindingV1> | REQUIRED | NO | minItems 0, maxItems 200 | unique category |
+| evidence | array<LegalSourceEvidenceV1> | REQUIRED | NO | minItems 0, maxItems 200 | unique evidenceId |
+| requiredUserInputs | array<LegalSourceQuestionV1> | REQUIRED | NO | minItems 0, maxItems 100 | route references resolve |
+| sourceWarnings | array<string> | REQUIRED | NO | minItems 0, maxItems 100; each 1–2,000 | safe source warnings |
+
+### ConceptLegalValidationBatchInputV1
+
+| Field | JSON type | Presence | Nullable | Bounds/enum | Semantic rule |
+|---|---|---|---|---|---|
+| textContents | array<TextContentV1> | REQUIRED | NO | minItems 1, maxItems 64; aggregate chunks max 64 | canonical JSON batch text |
+| validationMode | string | REQUIRED | NO | `GUARDRAIL_BATCH` | current Journey mode |
+| guardrailVersionId | integer | REQUIRED | NO | 1–9,223,372,036,854,775,807 | exact persisted guardrail version |
+
+### ConceptLegalValidationTraceV1
+
+| Field | JSON type | Presence | Nullable | Bounds/enum | Semantic rule |
+|---|---|---|---|---|---|
+| guardrailType | string | REQUIRED | NO | 1–128, blank 금지 | supplied guardrail section |
+| constraint | string | REQUIRED | NO | 1–4,000, blank 금지 | supplied constraint |
+| implementation | string | REQUIRED | NO | 1–4,000, blank 금지 | concept implementation trace |
+
+### ConceptLegalValidationItemV1
+
+| Field | JSON type | Presence | Nullable | Bounds/enum | Semantic rule |
+|---|---|---|---|---|---|
+| candidateKey | string | REQUIRED | NO | LocalKey 1–64 | exact input candidateKey |
+| status | string enum | REQUIRED | NO | `PASS`, `FAIL_LEGAL` | legal eligibility only |
+| reasons | array<string> | REQUIRED | NO | minItems 0, maxItems 100; each 1–2,000 | bounded reasons |
+| violatedStructureKeys | array<string> | REQUIRED | NO | minItems 0, maxItems 100; unique | exact concept structure keys |
+| legalTrace | array<ConceptLegalValidationTraceV1> | REQUIRED | NO | minItems 0, maxItems 200 | supplied guardrail trace only |
+
+### ConceptLegalValidationBatchResultV1
+
+| Field | JSON type | Presence | Nullable | Bounds/enum | Semantic rule |
+|---|---|---|---|---|---|
+| validations | array<ConceptLegalValidationItemV1> | REQUIRED | NO | minItems 1, maxItems 10 | exact input candidateKey set; no missing, duplicate, unknown key |
+
 ## 17. P2.6 fixture readiness matrix
 
-`required`는 P2.6 fixture/validator coverage gate에 포함되어야 한다는 뜻이다. Final correction 기준 named field-table schema는 common 13개, shared 30개, task input/result 22개로 총 65개다. 실제 실행 결과는 이 narrative에 복사하지 않고 validator 출력과 [fixture root](fixtures/internal-ai-v1/README.md)를 verification source로 사용한다.
+`required`는 fixture/validator coverage gate에 포함되어야 한다는 뜻이다. 현재 named field-table schema는 기존 65개, Idea Legal/Concept Legal 12개, 현재 Idea Origin metadata 2개를 합한 총 79개다. 실제 실행 결과는 이 narrative에 복사하지 않고 validator 출력과 [fixture root](fixtures/internal-ai-v1/README.md)를 verification source로 사용한다.
 
 | Schema | Positive fixture required | Negative fixture required | Critical invariant | Public/domain matching source | P2.6 file name direction |
 |---|---|---|---|---|---|
@@ -1112,8 +1289,22 @@ Spring은 `reportDecision` value equality, exact upstream references와 category
 | MarketingComparisonDimensionV1 | YES | YES | unique comparison dimension key | Marketing comparison request | `shared/marketing-comparison-dimension.*.json` |
 | IdeaInterpretationInputV1 | YES | YES | verified chunks/local sources | interpretation create request | `tasks/idea-interpretation.input.*.json` |
 | IdeaInterpretationResultV1 | YES | YES | facts/assumptions/constraints | IdeaInterpretationResultView | `tasks/idea-interpretation.result.*.json` |
+| IdeaInputMetadataV1 | YES | YES | missing/proposed source and lock semantics | Idea Origin draft | `tasks/idea-interpretation.result.*.json` |
+| IdeaClarificationQuestionV1 | YES | YES | target/requirement/question exact structure | Idea Origin draft | `tasks/idea-interpretation.result.*.json` |
 | LegalReviewInputV1 | YES | YES | exact confirmed idea/KR | LegalReviewRun model | `tasks/legal-review.input.*.json` |
 | LegalReviewResultV1 | YES | YES | degraded/authority/legal enum | LegalReviewRunView | `tasks/legal-review.result.*.json` |
+| LegalConfirmedFactV1 | YES | YES | confirmed value snapshot | IdeaOriginVersion | `tasks/idea-legal-precheck.input.*.json` |
+| LegalSourcePipelineInputV1 | YES | YES | TEXT/ko-KR and registry identity | LegalPrecheck TaskRun | `tasks/idea-legal-precheck.input.*.json` |
+| LegalSourceRouteV1 | YES | YES | unique registry route | Legal source result | `tasks/idea-legal-precheck.result.*.json` |
+| LegalSourceReasoningV1 | YES | YES | evidence references resolve | Legal source result | `tasks/idea-legal-precheck.result.*.json` |
+| LegalSourceFindingV1 | YES | YES | unique category | Legal source result | `tasks/idea-legal-precheck.result.*.json` |
+| LegalSourceEvidenceV1 | YES | YES | official source identity | Legal source result | `tasks/idea-legal-precheck.result.*.json` |
+| LegalSourceQuestionV1 | YES | YES | route references resolve | Legal source result | `tasks/idea-legal-precheck.result.*.json` |
+| LegalSourcePipelineResultV1 | YES | YES | task/registry/reference integrity | LegalSourcePipelineContract | `tasks/idea-legal-precheck.result.*.json` |
+| ConceptLegalValidationBatchInputV1 | YES | YES | canonical batch and guardrail identity | ConceptJourneyService | `tasks/concept-legal-validation.input.*.json` |
+| ConceptLegalValidationTraceV1 | YES | YES | supplied guardrail trace | Concept eligibility | `tasks/concept-legal-validation.result.*.json` |
+| ConceptLegalValidationItemV1 | YES | YES | candidateKey exact once | Concept eligibility | `tasks/concept-legal-validation.result.*.json` |
+| ConceptLegalValidationBatchResultV1 | YES | YES | exact candidate set | ConceptJourneyService | `tasks/concept-legal-validation.result.*.json` |
 | ConceptGenerationInputV1 | YES | YES | passing legal gate/count | ConceptGenerationRun model | `tasks/concept-generation.input.*.json` |
 | ConceptGenerationResultV1 | YES | YES | output proposals/no selection | ConceptCandidate/Version | `tasks/concept-generation.result.*.json` |
 | QuickAssessmentInputV1 | YES | YES | exact one concept | QuickAssessmentRun model | `tasks/quick-assessment.input.*.json` |

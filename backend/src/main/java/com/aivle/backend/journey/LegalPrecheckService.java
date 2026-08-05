@@ -44,12 +44,27 @@ public class LegalPrecheckService {
 
     @Transactional
     public StartView start(Long ownerId, Long projectId) {
+        return start(ownerId, projectId, false);
+    }
+
+    @Transactional
+    public StartView refreshSources(Long ownerId, Long projectId) {
+        return start(ownerId, projectId, true);
+    }
+
+    private StartView start(Long ownerId, Long projectId, boolean forceNewTerminalRun) {
         Project project = owned(ownerId, projectId); IdeaOriginVersion origin = currentOrigin(projectId);
         LegalSourcePipelineInput input = legalInput(origin);
         String inputJson = input.toJson(mapper); String inputHash = hasher.hash(TaskType.IDEA_LEGAL_PRECHECK, SCHEMA_VERSION, "ko-KR", inputJson);
         LegalPrecheckRun existing = runs.findTopByProjectIdAndIdeaOriginVersionIdAndInputSnapshotHashAndDeletedAtIsNullOrderByCreatedAtDescIdDesc(
             projectId, origin.getId(), inputHash).orElse(null);
-        if (existing != null && !(existing.getState() == LegalPrecheckRun.State.FAILED && "AI_CONFIGURATION_INVALID".equals(existing.getErrorCode()))) return startView(existing);
+        if (existing != null) {
+            boolean active = existing.getState() == LegalPrecheckRun.State.QUEUED
+                || existing.getState() == LegalPrecheckRun.State.RUNNING;
+            boolean configurationFailure = existing.getState() == LegalPrecheckRun.State.FAILED
+                && "AI_CONFIGURATION_INVALID".equals(existing.getErrorCode());
+            if (active || (!forceNewTerminalRun && !configurationFailure)) return startView(existing);
+        }
         String key = "legal-origin-" + origin.getId() + "-" + UUID.randomUUID();
         TaskRun task = taskRuns.create(ownerId, projectId, TaskType.IDEA_LEGAL_PRECHECK, "IDEA_ORIGIN_VERSION",
             origin.getId().toString(), inputJson, inputHash, key, UUID.randomUUID().toString(), 3);
@@ -92,6 +107,36 @@ public class LegalPrecheckService {
             suggestion.path("targetField").asText(), suggestion.path("proposedValue").asText());
     }
 
+    @Transactional
+    public RevisionApplyView acceptRevisionsAndRestart(Long ownerId, Long projectId, Long versionId,
+            List<Integer> indexes) {
+        LegalPrecheckVersion version = versions.findById(versionId)
+            .filter(value -> value.getProject().getId().equals(projectId) && value.getDeletedAt() == null)
+            .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+        JsonNode suggestions = mapper.readTree(version.getRevisionSuggestionsJson());
+        if (!suggestions.isArray() || indexes == null || indexes.isEmpty() || indexes.size() > 50)
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        List<Integer> selected = indexes.stream().filter(Objects::nonNull).distinct().sorted().toList();
+        if (selected.size() != indexes.size() || selected.stream().anyMatch(index -> index < 0 || index >= suggestions.size()))
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        List<IdeaOriginService.LegalRevision> revisions = new ArrayList<>();
+        for (Integer index : selected) {
+            JsonNode suggestion = suggestions.get(index);
+            revisions.add(new IdeaOriginService.LegalRevision(
+                suggestion.path("targetField").asText(), suggestion.path("proposedValue").asText()));
+        }
+        IdeaOriginService.WorkspaceView origin = ideaOrigins.acceptLegalRevisions(ownerId, projectId,
+            version.getIdeaOriginVersion().getId(), revisions);
+        StartView precheck = start(ownerId, projectId);
+        return new RevisionApplyView(origin, precheck, selected.size());
+    }
+
+    @Transactional
+    public RevisionApplyView applyAnswersAndRestart(Long ownerId, Long projectId, Long originVersionId) {
+        IdeaOriginService.WorkspaceView origin = ideaOrigins.applyLegalAnswers(ownerId, projectId, originVersionId);
+        return new RevisionApplyView(origin, start(ownerId, projectId), 0);
+    }
+
     private void synchronize(LegalPrecheckRun run) {
         TaskRun task = run.getTaskRun();
         if (task.getState() == TaskRunState.QUEUED || task.getState() == TaskRunState.READY) { run.queued(); runs.save(run); return; }
@@ -110,9 +155,10 @@ public class LegalPrecheckService {
         JsonNode findings = result.path("findings"); JsonNode evidence = result.path("evidence");
         JsonNode requiredInputs = result.path("requiredUserInputs"); String sourceStatus = result.path("sourceStatus").asText();
         if (!"SOURCE_COMPLETE".equals(sourceStatus)) log.warn("Legal precheck source incomplete projectId={} runId={} sourceStatus={} registryVersion={}",run.getProject().getId(),run.getId(),sourceStatus,result.path("registryVersion").asText());
-        GuardrailDraft guardrail = buildGuardrails(findings, evidence);
-        ArrayNode revisions = revisionSuggestions(evidence, result.path("routes"));
-        LegalPrecheckVersion.Status status = decide(sourceStatus, requiredInputs, guardrail, evidence);
+        Set<String> resolvedCategories = acceptedLegalCategories(run.getIdeaOriginVersion());
+        GuardrailDraft guardrail = buildGuardrails(findings, evidence, resolvedCategories);
+        ArrayNode revisions = revisionSuggestions(evidence, result.path("routes"), resolvedCategories);
+        LegalPrecheckVersion.Status status = decide(sourceStatus, requiredInputs, guardrail, evidence, resolvedCategories);
         boolean allowed = status == LegalPrecheckVersion.Status.PASS || status == LegalPrecheckVersion.Status.PASS_WITH_CONDITIONS;
         boolean verified = evidence.isArray() && !evidence.isEmpty() && allOfficial(evidence);
         String summary = summary(status, sourceStatus, evidence.size(), requiredInputs.size());
@@ -127,7 +173,7 @@ public class LegalPrecheckService {
         ideaOrigins.addLegalQuestions(run.getProject(), run.getIdeaOriginVersion(), requiredInputs);
     }
 
-    private GuardrailDraft buildGuardrails(JsonNode findings, JsonNode evidence) {
+    private GuardrailDraft buildGuardrails(JsonNode findings, JsonNode evidence, Set<String> resolvedCategories) {
         LinkedHashSet<String> hard=new LinkedHashSet<>(), prohibited=new LinkedHashSet<>(), conditional=new LinkedHashSet<>(), disclosures=new LinkedHashSet<>(), controls=new LinkedHashSet<>();
         if (evidence.isArray()) for (JsonNode item : evidence) {
             String summary=item.path("plainSummary").asText(); String combined=summary+" "+item.path("title").asText();
@@ -136,7 +182,10 @@ public class LegalPrecheckService {
                 case "SANCTION" -> controls.add(summary);
                 default -> conditional.add(summary);
             }
-            if (containsAny(combined, "금지", "하여서는 아니", "할 수 없다")) prohibited.add(summary);
+            boolean prohibitedText = containsAny(combined, "금지", "하여서는 아니", "할 수 없다");
+            if (prohibitedText && resolvedCategories.contains(item.path("category").asText()))
+                conditional.add("사용자가 수락한 사업 범위 제한: "+summary);
+            else if (prohibitedText) prohibited.add(summary);
             if (containsAny(combined, "표시", "고지", "공개", "처리방침")) disclosures.add(summary);
             if (containsAny(combined, "허가", "신고", "등록", "인증", "보관", "안전")) controls.add(summary);
         }
@@ -145,26 +194,38 @@ public class LegalPrecheckService {
         return new GuardrailDraft(array(hard),array(prohibited),array(conditional),array(disclosures),array(controls));
     }
 
-    private LegalPrecheckVersion.Status decide(String sourceStatus, JsonNode questions, GuardrailDraft guardrail, JsonNode evidence) {
+    LegalPrecheckVersion.Status decide(String sourceStatus, JsonNode questions, GuardrailDraft guardrail,
+            JsonNode evidence, Set<String> resolvedCategories) {
         if (questions.isArray() && !questions.isEmpty()) return LegalPrecheckVersion.Status.INSUFFICIENT_INFORMATION;
-        if (!"SOURCE_COMPLETE".equals(sourceStatus) || !evidence.isArray() || evidence.isEmpty()) return LegalPrecheckVersion.Status.EXPERT_REVIEW_REQUIRED;
-        if (hasHardProhibition(evidence)) return LegalPrecheckVersion.Status.PROHIBITED;
+        if (!evidence.isArray() || evidence.isEmpty()) return LegalPrecheckVersion.Status.EXPERT_REVIEW_REQUIRED;
+        if (hasHardProhibition(evidence, resolvedCategories)) return LegalPrecheckVersion.Status.PROHIBITED;
         if (!guardrail.prohibited().isEmpty()) return LegalPrecheckVersion.Status.REVISION_REQUIRED;
+        if ("REGISTRY_GAP".equals(sourceStatus)) return LegalPrecheckVersion.Status.EXPERT_REVIEW_REQUIRED;
+        if ("SOURCE_PARTIAL".equals(sourceStatus)) return LegalPrecheckVersion.Status.PASS_WITH_CONDITIONS;
         if (!guardrail.hard().isEmpty() || !guardrail.conditional().isEmpty() || !guardrail.disclosures().isEmpty() || !guardrail.controls().isEmpty())
             return LegalPrecheckVersion.Status.PASS_WITH_CONDITIONS;
         return LegalPrecheckVersion.Status.PASS;
     }
 
-    private ArrayNode revisionSuggestions(JsonNode evidence, JsonNode routes) {
+    ArrayNode revisionSuggestions(JsonNode evidence, JsonNode routes, Set<String> resolvedCategories) {
         ArrayNode values=mapper.createArrayNode(); if (!evidence.isArray()) return values;
-        for (JsonNode item:evidence) { String summary=item.path("plainSummary").asText();
-            if (!containsAny(summary,"금지","하여서는 아니","할 수 없다")) continue;
-            ObjectNode value=values.addObject(); value.put("targetField","legal."+item.path("category").asText().toLowerCase(Locale.ROOT));
-            value.put("reason",item.path("whyRelevant").asText());
-            value.put("originEvidence", routeEvidence(routes, item.path("routeId").asText()));
-            value.put("proposedValue","금지되는 행위를 제외하고, "+summary+" 조건을 충족하는 방식으로 사업 범위를 제한합니다.");
-            value.put("evidenceId",item.path("evidenceId").asText());
-        } return values;
+        Map<String,List<JsonNode>> byCategory=new LinkedHashMap<>();
+        for(JsonNode item:evidence){String category=item.path("category").asText();String summary=item.path("plainSummary").asText();
+            if(resolvedCategories.contains(category)||!Set.of("REQUIREMENT","SCOPE").contains(item.path("role").asText())
+                ||!containsAny(summary,"금지","하여서는 아니","할 수 없다"))continue;
+            byCategory.computeIfAbsent(category,ignored->new ArrayList<>()).add(item);
+        }
+        for(var entry:byCategory.entrySet()){
+            LinkedHashSet<String> summaries=new LinkedHashSet<>(),reasons=new LinkedHashSet<>(),originEvidence=new LinkedHashSet<>();
+            ArrayNode evidenceIds=mapper.createArrayNode();
+            for(JsonNode item:entry.getValue()){summaries.add(item.path("plainSummary").asText());reasons.add(item.path("whyRelevant").asText());
+                originEvidence.add(routeEvidence(routes,item.path("routeId").asText()));evidenceIds.add(item.path("evidenceId").asText());}
+            ObjectNode value=values.addObject();value.put("category",entry.getKey());
+            value.put("targetField","legal."+entry.getKey().toLowerCase(Locale.ROOT));
+            value.put("reason",String.join(" ",reasons));value.put("originEvidence",String.join(" · ",originEvidence));
+            value.put("proposedValue",entry.getKey()+" 관련 금지·제한을 피하도록 사업 범위를 다음 조건으로 확정합니다: "+String.join(" ",summaries));
+            value.put("evidenceId",evidenceIds.isEmpty()?"":evidenceIds.get(0).asText());value.set("evidenceIds",evidenceIds);
+        }return values;
     }
     private String routeEvidence(JsonNode routes,String routeId){if(routes.isArray())for(JsonNode route:routes)if(routeId.equals(route.path("routeId").asText())){JsonNode quotes=route.path("evidenceQuotes");if(quotes.isArray()&&!quotes.isEmpty())return quotes.get(0).asText();}return "확정된 Idea Origin의 관련 사업 설명";}
 
@@ -177,7 +238,9 @@ public class LegalPrecheckService {
         }
     private LegalSourcePipelineInput legalInput(IdeaOriginVersion origin){return LegalSourcePipelineInput.create(origin.getSnapshotJson(),"idea-origin-v"+origin.getVersionNumber(),"FULL",List.of(),confirmedFacts(origin),REGISTRY_VERSION,PROMPT_VERSION,SCHEMA_VERSION);}
     private boolean allOfficial(JsonNode evidence) { for(JsonNode item:evidence) if(!item.path("lawUrl").asText().startsWith("https://www.law.go.kr/"))return false; return true; }
-    private boolean hasHardProhibition(JsonNode evidence){for(JsonNode item:evidence){String value=item.path("plainSummary").asText();if(value.contains("전면 금지")||(value.contains("누구든지")&&value.contains("하여서는 아니")))return true;}return false;}
+    private Set<String> acceptedLegalCategories(IdeaOriginVersion origin){Set<String> values=new HashSet<>();JsonNode confirmed=mapper.readTree(origin.getConfirmedValuesJson());
+        if(confirmed.isObject())for(String key:confirmed.propertyNames())if(key.startsWith("legal.")&&key.length()>6)values.add(key.substring(6).toUpperCase(Locale.ROOT));return values;}
+    private boolean hasHardProhibition(JsonNode evidence,Set<String> resolvedCategories){for(JsonNode item:evidence){if(resolvedCategories.contains(item.path("category").asText())||!Set.of("REQUIREMENT","SCOPE").contains(item.path("role").asText()))continue;String value=item.path("plainSummary").asText();if(value.contains("전면 금지")||(value.contains("누구든지")&&value.contains("하여서는 아니")))return true;}return false;}
     private boolean containsAny(String value,String...tokens){for(String token:tokens)if(value.contains(token))return true;return false;}
     private ArrayNode array(Collection<String> values){ArrayNode result=mapper.createArrayNode();values.stream().filter(v->v!=null&&!v.isBlank()).forEach(result::add);return result;}
     private String summary(LegalPrecheckVersion.Status status,String sourceStatus,int evidence,int questions){return switch(status){
@@ -193,10 +256,11 @@ public class LegalPrecheckService {
     private RunView runView(LegalPrecheckRun run){return new RunView(run.getId(),run.getTaskRun().getId(),run.getState().name(),run.getTaskRun().isRetryable(),run.getErrorCode(),run.getIdeaOriginVersion().getId(),run.getInputSnapshotHash(),run.getRegistryVersion(),run.getPromptVersion(),run.getSchemaVersion());}
     private VersionView versionView(LegalPrecheckVersion value){LegalGuardrailSet set=guardrails.findByLegalPrecheckVersionIdAndDeletedAtIsNull(value.getId()).orElseThrow(()->new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));return new VersionView(value.getId(),value.getVersionNumber(),value.getIdeaOriginVersion().getId(),value.getStatus().name(),value.getSourceStatus(),value.getSummary(),mapper.readTree(value.getFindingsJson()),mapper.readTree(value.getEvidenceJson()),mapper.readTree(value.getQuestionsJson()),mapper.readTree(value.getRevisionSuggestionsJson()),value.isConceptBuilderAllowed(),value.isSourceVerified(),value.getRegistryVersion(),new GuardrailView(set.getId(),set.getVersionNumber(),mapper.readTree(set.getHardConstraintsJson()),mapper.readTree(set.getProhibitedPatternsJson()),mapper.readTree(set.getConditionalConstraintsJson()),mapper.readTree(set.getRequiredDisclosuresJson()),mapper.readTree(set.getRequiredOperationalControlsJson())));}
 
-    private record GuardrailDraft(ArrayNode hard,ArrayNode prohibited,ArrayNode conditional,ArrayNode disclosures,ArrayNode controls){}
+    record GuardrailDraft(ArrayNode hard,ArrayNode prohibited,ArrayNode conditional,ArrayNode disclosures,ArrayNode controls){}
     public record StartView(Long runId,String taskRunId,String state,boolean retryable,Long ideaOriginVersionId,String inputSnapshotHash){}
     public record RunView(Long id,String taskRunId,String state,boolean retryable,String errorCode,Long ideaOriginVersionId,String inputSnapshotHash,String registryVersion,String promptVersion,String schemaVersion){}
     public record GuardrailView(Long id,int versionNumber,JsonNode hardConstraints,JsonNode prohibitedPatterns,JsonNode conditionalConstraints,JsonNode requiredDisclosures,JsonNode requiredOperationalControls){}
     public record VersionView(Long id,int versionNumber,Long ideaOriginVersionId,String status,String sourceStatus,String summary,JsonNode findings,JsonNode evidence,JsonNode requiredUserInputs,JsonNode revisionSuggestions,boolean conceptBuilderAllowed,boolean sourceVerified,String registryVersion,GuardrailView guardrails){}
     public record CurrentView(RunView run,VersionView version,boolean stale){}
+    public record RevisionApplyView(IdeaOriginService.WorkspaceView origin,StartView precheck,int appliedSuggestionCount){}
 }

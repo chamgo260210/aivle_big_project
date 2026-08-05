@@ -80,7 +80,7 @@ describe('validation components', () => {
       </MemoryRouter>,
     );
     expect(screen.getByRole('link', { name: '이 결과로 마케팅 콘텐츠 만들기' }))
-      .toHaveAttribute('href', '/app/projects/7/validate/marketing/new?panelInterviewId=21');
+      .toHaveAttribute('href', '/app/projects/7/journey/marketing?panelInterviewId=21');
     unmount();
     render(
       <MemoryRouter initialEntries={['/app/projects/7/validate/market-response/31']}>
@@ -88,6 +88,6 @@ describe('validation components', () => {
       </MemoryRouter>,
     );
     expect(screen.getByRole('link', { name: '이 결과로 마케팅 콘텐츠 만들기' }))
-      .toHaveAttribute('href', '/app/projects/7/validate/marketing/new?marketResponseId=31&panelInterviewId=21');
+      .toHaveAttribute('href', '/app/projects/7/journey/marketing?marketResponseId=31&panelInterviewId=21');
   });
 });

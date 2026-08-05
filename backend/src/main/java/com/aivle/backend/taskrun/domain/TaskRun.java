@@ -44,6 +44,7 @@ public class TaskRun extends BaseEntity {
  public void timeOut(LocalDateTime now){requireRunning();state=TaskRunState.TIMED_OUT;retryable=attemptCount<maxAttempts;lastErrorCode="TASK_TIMEOUT";finishedAt=now;}
  public void recoverAfterLeaseExpiry(LocalDateTime now){requireRunning();lastErrorCode="TASK_TIMEOUT";if(attemptCount<maxAttempts){state=TaskRunState.QUEUED;retryable=false;finishedAt=null;}else{state=TaskRunState.TIMED_OUT;retryable=false;finishedAt=now;}}
  public void queueRetry(){if((state!=TaskRunState.FAILED&&state!=TaskRunState.TIMED_OUT)||!retryable)throw new IllegalStateException("task run is not retryable");state=TaskRunState.QUEUED;retryable=false;finishedAt=null;}
+ public void exhaustAttempts(LocalDateTime now){if(state!=TaskRunState.QUEUED&&state!=TaskRunState.READY)throw new IllegalStateException("task run is not claimable");state=TaskRunState.FAILED;retryable=false;lastErrorCode="ATTEMPT_LIMIT_EXCEEDED";finishedAt=now;}
  public boolean retryReplay(String key){return key!=null&&key.equals(lastRetryIdempotencyKey)&&state==TaskRunState.QUEUED;}
  public boolean retryKeyConflicts(String key){return state==TaskRunState.QUEUED&&lastRetryIdempotencyKey!=null&&!lastRetryIdempotencyKey.equals(key);}
  public void recordRetryKey(String key){lastRetryIdempotencyKey=key;}

@@ -1,1 +1,0 @@
-ALTER TABLE users ADD COLUMN security_version BIGINT NOT NULL DEFAULT 0;

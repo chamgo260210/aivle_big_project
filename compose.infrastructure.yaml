@@ -42,7 +42,7 @@ services:
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-aivle-local}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-replace-with-local-secret}
-      MINIO_BUCKET: ${MINIO_BUCKET:-aivle-ai-artifacts}
+      MINIO_BUCKET: ${OBJECT_STORAGE_BUCKET:-aivle-ai-artifacts}
     entrypoint:
       - /bin/sh
       - -ec

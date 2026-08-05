@@ -69,11 +69,11 @@ public class TaskRunService {
         List<TaskRun> candidates = runs.findClaimable(List.of(TaskRunState.QUEUED, TaskRunState.READY), PageRequest.of(0, 1));
         if (candidates.isEmpty()) return null;
         TaskRun run = candidates.get(0); LocalDateTime now = LocalDateTime.now(clock);
-        if (run.getAttemptCount() >= run.getMaxAttempts()) { run.fail("ATTEMPT_LIMIT_EXCEEDED", false, now); return null; }
         TaskAttempt attempt = run.getCurrentAttemptId() == null ? null : attempts.findById(run.getCurrentAttemptId()).orElse(null);
         if (attempt != null && attempt.getState() == TaskAttemptState.CREATED) {
             attempt.claim(workerId, now, now.plus(lease));
         } else {
+            if (run.getAttemptCount() >= run.getMaxAttempts()) { run.exhaustAttempts(now); return null; }
             attempt = TaskAttempt.claim(run, workerId, now, now.plus(lease), now.plus(timeout));
             attempts.save(attempt);
         }
@@ -86,10 +86,10 @@ public class TaskRunService {
             List.of(TaskRunState.QUEUED, TaskRunState.READY), PageRequest.of(0, 1));
         if (candidates.isEmpty()) return null;
         TaskRun run = candidates.get(0); LocalDateTime now = LocalDateTime.now(clock);
-        if (run.getAttemptCount() >= run.getMaxAttempts()) { run.fail("ATTEMPT_LIMIT_EXCEEDED", false, now); return null; }
         TaskAttempt attempt = run.getCurrentAttemptId() == null ? null : attempts.findById(run.getCurrentAttemptId()).orElse(null);
         if (attempt != null && attempt.getState() == TaskAttemptState.CREATED) attempt.claim(workerId, now, now.plus(lease));
-        else { attempt = TaskAttempt.claim(run, workerId, now, now.plus(lease), now.plus(timeout)); attempts.save(attempt); }
+        else { if (run.getAttemptCount() >= run.getMaxAttempts()) { run.exhaustAttempts(now); return null; }
+            attempt = TaskAttempt.claim(run, workerId, now, now.plus(lease), now.plus(timeout)); attempts.save(attempt); }
         return new Claim(run.getId(), attempt.getId(), attempt.getClaimToken());
     }
 
@@ -143,6 +143,21 @@ public class TaskRunService {
         TaskRun run = runs.findLocked(runId).orElseThrow(this::notFound); TaskAttempt attempt = attempts.findByIdAndTaskRunId(attemptId, runId).orElseThrow(this::notFound);
         if (run.terminal()) return;
         LocalDateTime now = LocalDateTime.now(clock); attempt.fail(claimToken, code, reason, retryable, now); run.fail(mapPublic(code, reason), retryable, now);
+    }
+
+    @Transactional
+    public void failWithLegalAutoRetry(String runId, String attemptId, String claimToken,
+            String code, String reason, boolean retryable) {
+        TaskRun run = runs.findLocked(runId).orElseThrow(this::notFound);
+        TaskAttempt attempt = attempts.findByIdAndTaskRunId(attemptId, runId).orElseThrow(this::notFound);
+        if (run.terminal()) return;
+        LocalDateTime now = LocalDateTime.now(clock);
+        attempt.fail(claimToken, code, reason, retryable, now);
+        run.fail(mapPublic(code, reason), retryable, now);
+        if (run.getTaskType() == TaskType.IDEA_LEGAL_PRECHECK && run.isRetryable()) {
+            run.queueRetry();
+            attempts.save(TaskAttempt.pending(run, now.plusMinutes(2)));
+        }
     }
 
     @Transactional

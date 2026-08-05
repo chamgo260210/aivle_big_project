@@ -229,7 +229,7 @@ public class ConceptJourneyService {
     private String eligibilityInputHash(Context c){if(c.origin()==null||c.guardrail()==null)return "";return sha256(c.origin().getId()+":"+c.origin().getSnapshotJson()+":"+c.origin().getConfirmedValuesJson()+":"+c.guardrail().getId()+":"+guardrailJson(c.guardrail()));}
     private String conceptsInput(String key,List<ConceptVersion> values){ var root=mapper.createObjectNode(); var array=root.putArray(key); values.forEach(v->{ObjectNode item=array.addObject(); item.put("conceptVersionId",v.getId()); item.put("name",v.getName()); item.put("summary",v.getOneLineSummary()); item.put("targetCustomer",v.getTargetCustomer()); item.put("valueProposition",v.getValueProposition()); item.put("revenueModel",v.getRevenueModel()); item.set("risks",parse(v.getRisksJson()));}); return taskInput(key,root.toString()); }
     private String taskInput(String key,String text){
-        ObjectNode content=mapper.createObjectNode(); content.put("contentKey",key); content.put("contentType","PLAIN_TEXT");
+        ObjectNode content=mapper.createObjectNode(); content.put("contentKey",key); content.put("contentType","TEXT");
         content.put("language","ko-KR"); content.put("totalCharacters",text.codePointCount(0,text.length())); content.put("contentHash",sha256(text));
         var chunks=content.putArray("chunks"); int offset=0,index=0;
         while(offset<text.length()){

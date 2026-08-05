@@ -47,6 +47,6 @@ describe('PersonaValidationHubPage', () => {
     expect(screen.getByText('초안 작성 중 · 2개')).toBeInTheDocument();
     expect(screen.queryByText(/%/)).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: '결과 보기' }))
-      .toHaveAttribute('href', '/app/projects/7/validate/interview/11');
+      .toHaveAttribute('href', '/app/projects/7/journey/interview');
   });
 });

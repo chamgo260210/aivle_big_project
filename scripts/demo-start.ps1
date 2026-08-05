@@ -10,6 +10,11 @@ $OutputEncoding = $utf8
 $root = Split-Path -Parent $PSScriptRoot
 $envFile = Join-Path $root ".env.demo"
 
+Write-Warning (
+    "Legacy stable-core demo: Backend + Frontend 직접 실행, /api/v1 중심, " +
+    "local/H2 설정 사용. 공식 Idea-Legal-Concept Journey 검증이 아닙니다."
+)
+
 if (-not (Test-Path -LiteralPath $envFile)) {
     throw @"
 .env.demo 파일이 없습니다.
@@ -103,7 +108,7 @@ FRONTEND_PID=$($frontend.Id)
     -Encoding UTF8
 
 Write-Host ""
-Write-Host "데모 서버를 시작했습니다."
+Write-Host "Legacy stable-core 데모 서버를 시작했습니다."
 Write-Host "Frontend : http://localhost:5173"
 Write-Host "Backend  : http://localhost:8080"
 Write-Host ""

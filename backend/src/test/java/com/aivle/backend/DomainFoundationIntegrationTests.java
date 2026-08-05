@@ -85,9 +85,15 @@ class DomainFoundationIntegrationTests {
     }
 
     @Test
-    void flywayAppliedAllMigrations() {
-        Integer count = jdbcClient.sql("select count(*) from flyway_schema_history where success = true")
+    void h2ServiceSchemaContainsCoreTables() {
+        Integer userCount = jdbcClient.sql("select count(*) from users")
                 .query(Integer.class).single();
-        assertThat(count).isGreaterThanOrEqualTo(3);
+        Integer projectCount = jdbcClient.sql("select count(*) from projects")
+                .query(Integer.class).single();
+        Integer jobCount = jdbcClient.sql("select count(*) from analysis_jobs")
+                .query(Integer.class).single();
+        assertThat(userCount).isZero();
+        assertThat(projectCount).isZero();
+        assertThat(jobCount).isZero();
     }
 }

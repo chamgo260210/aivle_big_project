@@ -1,12 +1,29 @@
 # Deployment Architecture
 
 - Status: TARGET_CANONICAL
-- Code Baseline Commit: e16bd316ac881f4c5fab076e65c14657f6a8c7d4
+- Reviewed Against Current Baseline: 3aeff219d72e1be502ba4ad1cade7f7aca83d10e
 - Document Phase: P1
 - Introduced In Commit: 1549a8efa0aeb2ca400f4795c1c44b34868e4722
 - Scope: Deployable boundaries, health, readiness and isolation
 - Supersedes: Legacy local and Compose architecture documents
-- Implementation Status: NOT_STARTED
+- Implementation Status: PARTIALLY_IMPLEMENTED_TARGET
+
+## Currently implemented
+
+- React Frontend, Spring Backend, FastAPI AI Server, PostgreSQL과 MinIO의 Compose 경계
+- 서비스 healthcheck와 Spring–FastAPI Internal v1 호출 경계
+- 빈 PostgreSQL용 Flyway Baseline V1
+
+## Retained compatibility
+
+- `/api/v1`, AnalysisJob 기반 실행과 보존 MVP Route는 현재 소비가 남아 있다.
+- Legacy demo는 Backend/Frontend 직접 실행용이며 공식 Compose topology 증거가 아니다.
+
+## Remaining target direction
+
+- Production network policy와 secret manager
+- 수평 scaling, full observability와 circuit breaker
+- 배포 자동화와 unified durable execution
 
 ## Deployable boundaries
 
@@ -34,4 +51,4 @@ Admin은 AI Server, Storage, 법령 API 연결 상태를 구분해 표시해야 
 
 ## Current versus Target
 
-현재 Compose와 health 설정은 baseline이며 Target network policy, secret manager, scaling, observability 또는 production 배포 완료를 의미하지 않는다. CI/CD workflow는 Phase 1.1에서 변경하지 않는다.
+현재 Compose와 health 설정은 local baseline이며 production network policy, secret manager, scaling, observability 또는 배포 완료를 의미하지 않는다. Repository-local CI는 검증 workflow이며 deployment automation은 아니다.
