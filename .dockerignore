@@ -4,6 +4,8 @@
 !.dockerignore
 !frontEnd
 !frontEnd/**
+!jaemu
+!jaemu/**
 !docs
 !docs/guide
 !docs/guide/**

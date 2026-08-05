@@ -29,6 +29,7 @@ import org.springframework.web.multipart.MultipartFile;
 import lombok.extern.slf4j.Slf4j;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
 
 @Service
@@ -436,6 +437,7 @@ public class JourneyAiService {
             validateNullableText(target.get("segment")); validateNullableText(target.get("situation"));
         }
         requiredArray(result, "fieldMetadata"); requiredArray(result, "clarificationQuestions");
+        backfillMissingRequiredIdeaQuestions(result, origin);
         for (JsonNode metadata : result.get("fieldMetadata")) {
             if (!metadata.isObject() || !Set.copyOf(metadata.propertyNames()).equals(Set.of(
                     "key", "sourceType", "requiredForStages", "status", "locked", "fallbackPolicy"))) {
@@ -465,6 +467,62 @@ public class JourneyAiService {
             if (missing && !questionTargets.contains(field)) throw new BusinessException(ErrorCode.AI_RESULT_INVALID);
         }
     }
+
+    /**
+     * The model is allowed to leave an origin field unknown, but an unknown required field
+     * must be surfaced to the user as a clarification question.  Do that deterministically
+     * here so a valid structured response is not discarded solely because the model omitted
+     * the corresponding question.
+     */
+    private void backfillMissingRequiredIdeaQuestions(JsonNode result, JsonNode origin) {
+        if (!(result instanceof ObjectNode resultObject)
+            || !(origin instanceof ObjectNode)
+            || !result.get("clarificationQuestions").isArray()
+            || !result.get("openQuestions").isArray()) {
+            return;
+        }
+
+        ArrayNode clarificationQuestions = (ArrayNode) result.get("clarificationQuestions");
+        ArrayNode openQuestions = (ArrayNode) result.get("openQuestions");
+        Set<String> targets = new java.util.HashSet<>();
+        for (JsonNode question : clarificationQuestions) {
+            JsonNode target = question.get("targetField");
+            if (target != null && target.isTextual() && !target.asText().isBlank()) {
+                targets.add(target.asText());
+            }
+        }
+
+        for (String field : ORIGIN_REQUIRED_FIELDS) {
+            JsonNode value = origin.get(field);
+            boolean missing = value == null || value.isNull() || (value.isTextual() && value.asText().isBlank())
+                || (value.isArray() && value.isEmpty());
+            if (!missing || targets.contains(field)) continue;
+
+            String questionText = "사업 아이디어의 " + ideaFieldLabel(field) + " 정보를 입력해 주세요.";
+            ObjectNode question = clarificationQuestions.addObject();
+            question.put("targetField", field);
+            question.put("requirement", "REQUIRED_FOR_IDEA_ORIGIN");
+            question.put("question", questionText);
+            question.put("reason", "아이디어 원본 정보를 확정하려면 필수입니다.");
+            openQuestions.add(questionText);
+            targets.add(field);
+        }
+    }
+
+    private String ideaFieldLabel(String field) {
+        return switch (field) {
+            case "productServiceDescription" -> "제품 또는 서비스 설명";
+            case "problem" -> "해결하려는 문제";
+            case "target" -> "주요 고객";
+            case "solution" -> "해결 방법";
+            case "coreValue" -> "핵심 가치";
+            case "primaryCategory" -> "사업 분야";
+            case "targetRegion" -> "서비스 대상 지역";
+            case "fixedValues" -> "확정된 조건";
+            default -> field;
+        };
+    }
+
     private void validateLegal(JsonNode result) {
         if (!LEGAL_STATUSES.contains(requiredText(result, "status"))) throw new BusinessException(ErrorCode.AI_RESULT_INVALID);
         requiredText(result, "summary"); requiredText(result, "disclaimer"); requiredArray(result, "issues");
