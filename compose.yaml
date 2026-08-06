@@ -179,6 +179,30 @@ services:
     networks:
       - app-network
 
+  jaemu:
+    build:
+      context: .
+      dockerfile: frontEnd/Dockerfile
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${JAEMU_PORT:-3001}:8080"
+    healthcheck:
+      test:
+        - CMD
+        - wget
+        - -q
+        - -O
+        - "-"
+        - http://127.0.0.1:8080/healthz
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    networks:
+      - app-network
+
 networks:
   app-network:
     driver: bridge

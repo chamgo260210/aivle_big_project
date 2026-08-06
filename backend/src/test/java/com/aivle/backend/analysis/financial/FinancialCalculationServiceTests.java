@@ -52,6 +52,15 @@ class FinancialCalculationServiceTests {
     }
 
     @Test
+    void subscriptionGrowthRateScalesMonthlyNewSubscribers() {
+        var input = assumptions(RevenueModel.SUBSCRIPTION, null, null, "10", "1000", "0",
+            "10000", "100", "20", "0");
+        var result = calculator.scenario(input, 12, base());
+        assertThat(result.months().get(0).activeSubscribers()).isEqualByComparingTo("120");
+        assertThat(result.months().get(1).activeSubscribers()).isGreaterThan(result.months().get(0).activeSubscribers());
+    }
+
+    @Test
     void hundredPercentChurnDoesNotCreateNegativeSubscribers() {
         var input = assumptions(RevenueModel.SUBSCRIPTION, null, null, "0", "1000", "0",
             "10000", "100", "0", "100");
