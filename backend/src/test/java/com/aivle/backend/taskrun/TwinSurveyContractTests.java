@@ -85,6 +85,27 @@ class TwinSurveyContractTests {
     }
 
     @Test
+    @DisplayName("전원 미결정도 통과한다 — 응답자 분류는 나온 것만 실린다")
+    void onlyPresentRespondentClassesAreRequired() throws Exception {
+        // 실스택에서 실제로 나온 모양이다. 다섯 분류를 다 요구하면 이 실행이 폐기된다.
+        ObjectNode result = payload();
+        ObjectNode pair = (ObjectNode) result.get("pairs").get(1);   // 못 잰 쪽 쌍
+        ObjectNode classes = MAPPER.createObjectNode();
+        classes.put("undecided", 100);
+        pair.set("respondentClasses", classes);
+        assertThatCode(() -> TwinSurveyContract.validate(result)).doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("모르는 응답자 분류는 거부한다")
+    void unknownRespondentClassRejected() throws Exception {
+        ObjectNode result = payload();
+        ((ObjectNode) result.get("pairs").get(0).get("respondentClasses")).put("guessing", 3);
+        assertThatThrownBy(() -> TwinSurveyContract.validate(result))
+            .isInstanceOf(ExecutionFailure.class);
+    }
+
+    @Test
     @DisplayName("계측에 모르는 칸이 있으면 거부한다")
     void unknownTelemetryFieldRejected() throws Exception {
         ObjectNode result = payload();

@@ -39,7 +39,13 @@ public final class TwinSurveyContract {
     /** 외적 타당성 시험에서 성적이 난 유형만. 늘리려면 성적이 먼저 있어야 한다. */
     private static final Set<String> SERVICEABLE_TASK_TYPES = Set.of("DOMINANCE", "PRICE");
     private static final Set<String> WINNERS = Set.of("X", "Y", "TIE");
-    private static final Set<String> RESPONDENT_CLASSES = Set.of("content_X", "content_Y", "position_driven");
+    /**
+     * 응답자 분류는 다섯이고 <b>나온 것만 실린다</b>({@code Counter} → dict).
+     * 여기를 {@code exact()} 로 못박았다가 실스택에서 걸렸다 — 전원 미결정인 실행은
+     * {@code undecided} 하나만 싣는다. 그건 실패가 아니라 실제로 일어나는 결과다.
+     */
+    private static final Set<String> RESPONDENT_CLASSES = Set.of(
+        "content_X", "content_Y", "position_driven", "anti_position", "undecided");
     private static final Set<Integer> SAMPLE_SIZES = Set.of(50, 100, 300);
 
     private static final Set<String> TELEMETRY_REQUIRED = Set.of(
@@ -143,8 +149,11 @@ public final class TwinSurveyContract {
         }
 
         JsonNode classes = pair.get("respondentClasses");
-        exact(classes, RESPONDENT_CLASSES);
-        for (String name : RESPONDENT_CLASSES) nonNegativeInteger(classes, name);
+        if (classes == null || !classes.isObject()) invalid();
+        for (String name : classes.propertyNames()) {
+            if (!RESPONDENT_CLASSES.contains(name)) invalid();
+            nonNegativeInteger(classes, name);
+        }
 
         stringArray(pair.get("rationaleExcerpts"));
         // ⚠ 여기가 경계다. 빈 배열은 「경계 없음」이 아니라 「경계 소실」이다.

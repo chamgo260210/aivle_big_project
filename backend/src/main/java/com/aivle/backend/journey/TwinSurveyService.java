@@ -68,8 +68,11 @@ public class TwinSurveyService {
         // 「누를 때마다 새로 실행」이라 같은 자극이면 canonicalInputHash 가 같다 — nonce 가 없으면
         // 중복 방지에 걸려 두 번째 실행이 만들어지지 않는다. 시장조사·마케팅과 같은 이유다.
         String nonce = UUID.randomUUID().toString();
+        // ⚠ subjectId 는 **NOT NULL 이다**. 컴파일도 단위 테스트도 이것을 못 잡는다 —
+        //   실스택 스모크가 첫 POST 에서 500 으로 잡아냈다. 트윈 조사의 주체는 컨셉이 아니라
+        //   프로젝트다(자극을 사용자가 그 자리에서 만든다).
         TaskRun task = taskRuns.create(ownerId, project.getId(), TaskType.TWIN_SURVEY,
-            "TWIN_SURVEY", null, input, inputHash, nonce, nonce, 1);
+            "TWIN_SURVEY", String.valueOf(project.getId()), input, inputHash, nonce, nonce, 1);
         return runView(runs.save(TwinSurveyRun.create(project, task, inputHash, sampleSize)));
     }
 
