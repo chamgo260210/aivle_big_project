@@ -142,9 +142,16 @@ async def execute(request: Request, body: InternalExecutionRequestV1):
                               body.taskRunId, body.taskAttemptId)
     try:
         calculated_hash = canonical_hash(body)
-    except ValueError:
+    except (TypeError, ValueError) as failure:
+        # The input can contain user planning text, so do not write it to logs.
+        logger.warning("Canonical input rejected taskType=%s taskRunId=%s error=%s",
+                       body.taskType, body.taskRunId, str(failure)[:160])
         return internal_error(correlation, "INVALID_REQUEST", "FIELD_CONSTRAINT_VIOLATION", 400, False,
-                              body.taskRunId, body.taskAttemptId)
+                              body.taskRunId, body.taskAttemptId, [{
+                                  "path": "input",
+                                  "expectedType": "canonical JSON with finite numbers and unique normalized keys",
+                                  "category": "CANONICAL_INPUT_INVALID",
+                              }])
     if calculated_hash != body.canonicalInputHash:
         return internal_error(correlation, "INVALID_REQUEST", "HASH_MISMATCH", 400, False,
                               body.taskRunId, body.taskAttemptId)

@@ -81,7 +81,7 @@ export default function MarketResearchPage() {
       {active ? <Alert tone="info">조사 중이다 — <strong>{elapsed}초</strong> 경과.</Alert> : null}
       {run?.state === 'FAILED' ? (
         <Alert tone="danger">
-          실행이 실패했다{run.errorCode ? ` (${run.errorCode})` : ''}.
+          실행이 실패했다{run.errorCode ? ` (${run.errorCode})` : ''}{run.errorReason ? `: ${run.errorReason}` : ''}.
           {run.retryable ? ' 다시 시도할 수 있다.' : ' 입력을 확인해야 한다.'}
         </Alert>
       ) : null}

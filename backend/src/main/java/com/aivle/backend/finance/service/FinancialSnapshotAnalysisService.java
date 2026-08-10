@@ -35,7 +35,7 @@ public class FinancialSnapshotAnalysisService {
             BigDecimal.ZERO,
             money(values, "unitVariableCost"),
             BigDecimal.ZERO,
-            sumMoney(values, "partnerPayout", "shippingCost", "customerIncrementalInfraCost"),
+            sumMoney(values, "paymentFee", "partnerPayout", "shippingCost", "customerIncrementalInfraCost"),
             money(values, "annualFixedLaborCost").divide(TWELVE, 2, java.math.RoundingMode.HALF_UP),
             money(values, "totalMarketingCost").divide(TWELVE, 2, java.math.RoundingMode.HALF_UP),
             money(values, "annualFixedInfrastructureCost").divide(TWELVE, 2, java.math.RoundingMode.HALF_UP),

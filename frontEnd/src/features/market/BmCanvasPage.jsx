@@ -61,7 +61,7 @@ export default function BmCanvasPage() {
       {error ? <Alert tone="danger">{error}</Alert> : null}
       {active ? <Alert tone="info">캔버스를 만드는 중이다 — {elapsed}초 경과.</Alert> : null}
       {run?.state === 'FAILED' ? (
-        <Alert tone="danger">생성이 실패했다{run.errorCode ? ` (${run.errorCode})` : ''}.</Alert>
+        <Alert tone="danger">생성이 실패했다{run.errorCode ? ` (${run.errorCode})` : ''}{run.errorReason ? `: ${run.errorReason}` : ''}.</Alert>
       ) : null}
 
       {!result ? (

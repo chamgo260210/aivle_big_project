@@ -55,6 +55,17 @@ export default function useMarketPolling(load, start) {
   const active = ACTIVE.has(run?.taskState);
 
   useEffect(() => {
+    if (run?.state !== 'FAILED') return;
+    // Show an actionable, safe failure record in DevTools without logging input text or secrets.
+    console.error('[market-research] execution failed', {
+      taskRunId: run.taskRunId,
+      code: run.errorCode,
+      reason: run.errorReason ?? null,
+      retryable: run.retryable,
+    });
+  }, [run?.state, run?.taskRunId, run?.errorCode, run?.errorReason, run?.retryable]);
+
+  useEffect(() => {
     if (!active) { startedAt.current = null; return undefined; }
     if (startedAt.current === null) startedAt.current = Date.now();
     // ⚠ effect 본문에서 동기 setState 를 하지 않는다(연쇄 렌더). 0 으로 되돌리는 것은
@@ -79,6 +90,11 @@ export default function useMarketPolling(load, start) {
       setRun(await start());
       startedAt.current = Date.now();
     } catch (failure) {
+      console.error('[market-research] start request failed', {
+        code: failure?.code,
+        status: failure?.status,
+        fieldErrors: failure?.fieldErrors,
+      });
       // 실행 중 재실행은 409 가 온다 — 에러가 아니라 「이미 돌고 있다」다.
       const message = getUserErrorMessage(failure);
       setError(String(message).includes('SAME_INPUT_ACTIVE')
