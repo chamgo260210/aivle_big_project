@@ -198,7 +198,7 @@ public class FinancialService {
         if (!missing.isEmpty()) throw new BusinessException(ErrorCode.FINANCIAL_SNAPSHOT_NOT_READY,
             "필수 재무 입력을 완료해 주세요: " + String.join(", ", missing));
         for (String key : FinancialPreparationFactory.REQUIRED_KEYS) validateField(key, fields.path(key).path("value"), true);
-        for (String key : FinancialPreparationFactory.CONDITIONAL_COST_KEYS)
+        for (String key : FinancialPreparationFactory.ALL_KEYS)
             validateField(key, fields.path(key).path("value"), false);
         if (calculator.calculateCac(fields) == null) throw invalid("마케팅비와 영업비의 통화를 맞추고 신규 고객 수를 1 이상 입력해 주세요.");
         String id = UUID.randomUUID().toString();
@@ -340,6 +340,16 @@ public class FinancialService {
         if ("newCustomerCount".equals(key)) {
             if (!value.isIntegralNumber() || value.asLong() < 1)
                 throw invalid("신규 고객 수는 1 이상의 정수여야 합니다.");
+            return;
+        }
+        if ("revenueModel".equals(key)) {
+            if (!value.isTextual() || !Set.of("ONE_TIME", "SUBSCRIPTION", "HYBRID").contains(value.asText()))
+                throw invalid("revenueModel must be ONE_TIME, SUBSCRIPTION, or HYBRID");
+            return;
+        }
+        if ("monthlyChurnRate".equals(key)) {
+            if (!value.isNumber() || value.asDouble() < 0 || value.asDouble() > 100)
+                throw invalid("monthlyChurnRate must be between 0 and 100");
             return;
         }
         if (!value.isObject() || !value.path("amount").isNumber() || value.path("amount").asDouble() < 0

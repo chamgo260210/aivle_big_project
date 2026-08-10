@@ -18,17 +18,20 @@ public class FinancialPreparationFactory {
     public static final List<String> INITIAL_INVESTMENT_KEYS = List.of("initialDevelopmentAndRnDCost",
         "initialEquipmentAndInfrastructureCost", "initialPatentAndLicensingCost");
     public static final List<String> CAC_INPUT_KEYS = List.of("totalMarketingCost", "totalSalesCost", "newCustomerCount");
+    public static final List<String> REVENUE_INPUT_KEYS = List.of("revenueModel", "unitPrice",
+        "monthlySubscriptionPrice", "monthlyChurnRate");
     public static final List<String> CONDITIONAL_COST_KEYS = List.of("unitVariableCost", "paymentFee",
         "partnerPayout", "shippingCost", "customerIncrementalInfraCost");
     public static final List<String> REQUIRED_KEYS = List.of("annualFixedLaborCost",
         "annualFixedRentAndManagementCost", "annualFixedInfrastructureCost", "initialDevelopmentAndRnDCost",
         "initialEquipmentAndInfrastructureCost", "initialPatentAndLicensingCost", "threeYearTargets",
-        "totalMarketingCost", "totalSalesCost", "newCustomerCount");
+        "totalMarketingCost", "totalSalesCost", "newCustomerCount", "revenueModel");
     public static final List<String> ALL_KEYS = List.of("annualFixedLaborCost",
         "annualFixedRentAndManagementCost", "annualFixedInfrastructureCost", "initialDevelopmentAndRnDCost",
         "initialEquipmentAndInfrastructureCost", "initialPatentAndLicensingCost", "threeYearTargets",
         "totalMarketingCost", "totalSalesCost", "newCustomerCount", "unitVariableCost", "paymentFee",
-        "partnerPayout", "shippingCost", "customerIncrementalInfraCost");
+        "partnerPayout", "shippingCost", "customerIncrementalInfraCost", "revenueModel", "unitPrice",
+        "monthlySubscriptionPrice", "monthlyChurnRate");
 
     private final ObjectMapper mapper;
     public FinancialPreparationFactory(ObjectMapper mapper) { this.mapper = mapper; }
@@ -45,6 +48,7 @@ public class FinancialPreparationFactory {
         inheritTargetsOrOpen(fields, facts.path("threeYearTargets"), provenance.path("threeYearTargets"), snapshot);
         for (String key : CAC_INPUT_KEYS) inheritDirectOrOpen(fields, key, facts, provenance, snapshot);
         for (String key : CONDITIONAL_COST_KEYS) inheritDirectOrOpen(fields, key, facts, provenance, snapshot);
+        for (String key : REVENUE_INPUT_KEYS) open(fields, key);
 
         ObjectNode references = mapper.createObjectNode();
         reference(references, "fixedOperatingCost", facts.path("fixedOperatingCost"),

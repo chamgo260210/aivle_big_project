@@ -16,7 +16,7 @@ const activeEstimateTask = (preparation) => Object.values(preparation?.assistanc
 export default function useFinance(projectId) {
   const client = useApiClient();
   const api = useMemo(() => createFinanceApi(client), [client]);
-  const [state, setState] = useState({ loading: true, busy: null, preparation: null, snapshot: null, run: null, error: null });
+  const [state, setState] = useState({ loading: true, busy: null, preparation: null, snapshot: null, run: null, analysis: null, error: null });
   const estimateEvents = useJobEvents(activeEstimateTask(state.preparation));
   const refresh = useCallback(async () => {
     setState((value) => ({ ...value, loading: true, error: null }));
@@ -30,8 +30,8 @@ export default function useFinance(projectId) {
       const [snapshotResult, runsResult] = await Promise.allSettled([api.currentSnapshot(projectId), api.runs(projectId)]);
       const snapshot = snapshotResult.status === 'fulfilled' ? snapshotResult.value : null;
       const runs = runsResult.status === 'fulfilled' ? runsResult.value.runs ?? [] : [];
-      setState({ loading: false, busy: null, preparation, snapshot,
-        run: runs.find((item) => item.module === 'FINANCIAL_ANALYSIS') ?? null, error: null });
+      setState((value) => ({ ...value, loading: false, busy: null, preparation, snapshot,
+        run: runs.find((item) => item.module === 'FINANCIAL_ANALYSIS') ?? null, error: null }));
     } catch (error) { setState((value) => ({ ...value, loading: false, busy: null, error })); }
   }, [api, projectId]);
   useEffect(() => { const timer = setTimeout(() => void refresh(), 0); return () => clearTimeout(timer); }, [refresh]);
@@ -52,6 +52,16 @@ export default function useFinance(projectId) {
     generateEstimate: (fieldKey) => act(`estimate:${fieldKey}`, () => api.generateEstimate(projectId, fieldKey, commandOptions())),
     decideEstimate: (fieldKey, payload) => act(`estimate:${fieldKey}`, () => api.decideEstimate(projectId, fieldKey, payload, commandOptions())),
     finalize: () => act('finalize', () => api.finalize(projectId)),
+    analyze: () => act('analysis', async () => {
+      const analysis = await api.analyze(projectId);
+      setState((value) => ({ ...value, analysis }));
+      return analysis;
+    }),
+    demo: () => act('demo', async () => {
+      const analysis = await api.demo(projectId);
+      setState((value) => ({ ...value, analysis }));
+      return analysis;
+    }),
     handoff: () => act('handoff', () => api.handoff(projectId, state.snapshot?.snapshotId)),
   };
 }
