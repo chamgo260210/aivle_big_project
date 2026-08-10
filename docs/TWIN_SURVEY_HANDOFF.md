@@ -380,3 +380,92 @@ n=50·2쌍이 12분 예산 안에 `COMPLETED` / 윤리형 자극이 **LLM 호출
 이 게이트는 구조적으로 flaky 를 다루지 못한다 — 허용목록에 넣으면 「통과했는데 목록에 있다」로,
 빼면 「예상 밖 실패」로 빨개진다. **어느 쪽도 초록이 되지 않는다.** 판정은 당분간
 `npx vitest run <바꾼 폴더>` 로 하고, 게이트 자체를 고치는 일은 별건으로 남긴다.
+
+---
+
+## 11. 다음 세션 착수점 — 「붙어 있는 기능」으로 만들기 (2026-08-11)
+
+계획서 원본: `~/.claude/plans/c-users-user-downloads-persona-interview-snug-perlis.md`
+(이 절만 읽어도 착수할 수 있게 요약해 둔다. 충돌하면 이 절이 아니라 **코드**가 정본이다.)
+
+### 진단 — 왜 아직 못 쓰나
+
+엔진·배관·화면은 끝났다. 못 쓰는 이유는 하나다: **자극을 사용자가 전부 손으로 만든다.**
+
+- `TwinSurveyPage.jsx` 의 `INITIAL_PAIRS` 가 `attrs: { 형태: '' }` 빈 칸이다.
+  속성명·양쪽 값·라벨·가격을 직접 타이핑해야 하고, 「가격은 양쪽 같게, 속성은 하나만」이라는
+  규칙까지 사용자가 지켜야 한다. 시장분석은 컨셉 하나 고르고 누르면 끝이다.
+- `TwinSurveyService`·`TwinSurveyInputFactory` 에 스냅샷·컨셉 참조가 **한 줄도 없다**.
+  정작 재료는 마켓 시드 스냅샷에 있다 — `selectedConcept.solution.featureSet`,
+  `finalHypotheses.differentiators`, `finalHypotheses.price`
+  (`MarketAnalysisSeedSnapshotFactory` 참조).
+- 트윈 결과를 읽는 곳은 `ProjectModuleStatusService` 하나뿐이다.
+
+### 0단계 — 메뉴가 안 보이는 건 코드가 아니라 배포다
+
+사이드바에 「8. 패널 트윈 조사」가 없고 마케팅이 아직 8번이면 **프론트 컨테이너가 낡은 것**이다.
+2026-08-10 실측: 컨테이너 빌드 17:24 / 커밋 `bc6a004` 18:35, 번들에 `panel-survey` 0건.
+
+```powershell
+docker compose up -d --build frontend
+```
+
+⚠ 이후 작업마다 **frontend 도 같이 빌드**한다. 어제 ai-server·backend 만 올리고 빠뜨렸다.
+
+### 할 일 (승인된 계획, 마케팅 연결은 제외)
+
+1. **게이트 정정** — `ProjectModuleStatusService.twinOrGate` 가 컨셉·재무 **둘 다** 보게.
+   `requiredInputs` 는 없는 것부터: `marketAnalysisSeedSnapshotId` → `financialSnapshotId`.
+   실행이 있으면 게이트와 무관하게 그 상태를 보이는 규칙은 유지.
+2. **자극 초안 AI 태스크 `TWIN_STIMULUS_DRAFT`** — 동기 인라인(패턴 A).
+   `TaskRunService` 에 새 메서드가 **필요 없다**: `create()` → `claim(runId, workerId, lease,
+   timeout)` → `startExecution()` → `client.execute()` → `adopt()`.
+   AI 호출은 트랜잭션 밖(`TransactionSynchronizationManager` 방어를 `TwinSurveyWorker` 처럼).
+   - 등록 **5곳**: `executions.py`(TASK_TYPES + 분기) · `test_internal_task_type_alignment.py`
+     (**14 → 15**) · `TaskType.java` · `ProjectJobQueryService.module()` switch ·
+     `ActiveSurfaceCleanupTests`
+   - 입력: 스냅샷 전체가 아니라 `conceptName`·`targetUsers`·`problemScenario`·`featureSet`·
+     `differentiators`·`price` 만. **부동소수점 금지**(가격은 원 단위 정수)
+   - 출력: `{situation, pairs:[{pairId, axis, X, Y, rationale}]}` 3~4쌍.
+     `app/twin/models.py` 의 `Side`·`Pair` 제약을 그대로 재사용해 검증
+   - **뽑은 쌍을 `task_type.classify` 로 거른다** — 우열형이 아니면 버린다. 프롬프트로
+     부탁하지 않고 코드로 막는다. 0쌍이면 정직하게 실패
+   - 새 파일: `ai/app/twin/stimulus_draft.py` · `ai/prompts/twin_stimulus_draft/` ·
+     `journey/TwinSurveyStimulusDraftService.java` · `taskrun/contract/TwinStimulusDraftContract.java`
+   - 엔드포인트: `POST /api/v2/projects/{id}/twin-survey/stimulus-draft` (동기 200)
+3. **화면** — `INITIAL_PAIRS` 빈 칸을 없애고 첫 화면은 「자극 초안 만들기」 버튼 하나.
+   초안 3~4쌍을 카드로 보이고 체크로 고른 뒤 기존 `StimulusEditor` 로 다듬는다.
+   `gateSurvey()` 거울을 그대로 쓴다. 0쌍이면 「차별점을 하나 이상 확정하라」로 막되
+   손으로 만드는 길은 남긴다.
+4. **문서** — `CLAUDE.md` §2 여정 서술이 아직 「페르소나 → 인터뷰 → 종합」이라는 **없어진 옛
+   체인**이다. 실제 체인(`… techOps → finance → panelSurvey → marketing`)으로 고친다.
+
+### 검증
+
+```powershell
+cd ai       ; python -m pytest -q
+cd frontEnd ; npx.cmd vitest run src/features/twin-survey/
+cd backend  ; .\gradlew.bat test --tests "*Twin*" --tests "*ModuleStatus*"
+docker compose up -d --build frontend ai-server backend
+```
+
+⚠ 백엔드 전체 `gradlew test` 는 이 기계에서 10시간 넘게 걸린 적이 있다 — `--tests` 로 좁힌다.
+⚠ 프론트 판정은 `test:baseline` 을 믿지 않는다(§10 — 실행마다 답이 달라진다).
+`npx vitest run <바꾼 폴더>` 로 판정한다.
+
+스모크에 무료 검사 2개를 더한다: **초안이 우열형만 돌려주는지**, **0쌍일 때 정직하게 실패하는지**.
+
+### 손대지 않기로 한 것
+
+- **마케팅 연결**(사용자 결정 2026-08-11). 붙일 자리는 조사해 뒀다 — AI 마케팅 입력이
+  `{source: marketing-source-snapshot-v1, request: marketing-content-request-v1}` 이고
+  `source` 는 계약이 굳어 있어 **`request` 에 선택 블록**을 더하는 것이 가장 얕다.
+  손댈 곳: `MarketingContentService.enqueue()` · `ai/app/tasks/marketing_content/models.py` ·
+  마케팅 프롬프트 · `MarketingResultContract`.
+- 0단계 재측정 · 가격형 되살리기 · 프론트 게이트 flaky 수정.
+
+### 워킹트리 주의
+
+2026-08-11 기준 **다른 세션이 시장조사 화면 작업을 진행 중**이다
+(`ai/app/research/*`, `frontEnd/src/features/market/*`, `MarketResearchContract` 등).
+`git add -A` 금지. 경로를 명시해 add 하고 `git diff --cached --name-only HEAD` 로 확인한다.
