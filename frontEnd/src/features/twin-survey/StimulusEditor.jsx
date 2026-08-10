@@ -2,7 +2,7 @@ import { gateSurvey } from './taskTypeGate.js';
 
 const TYPE_VIEW = {
   DOMINANCE: { label: '명백한 우열형', tone: 'success' },
-  PRICE: { label: '가격형', tone: 'warning' },
+  PRICE: { label: '가격형 — 제공하지 않음', tone: 'danger' },
   ETHICAL_VALUE: { label: '윤리·가치형 — 제공하지 않음', tone: 'danger' },
   UNMEASURABLE: { label: '측정 불가', tone: 'danger' },
   IDENTICAL: { label: '두 안이 같음', tone: 'danger' },

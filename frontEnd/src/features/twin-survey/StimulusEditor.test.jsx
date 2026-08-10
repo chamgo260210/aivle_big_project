@@ -41,7 +41,7 @@ describe('StimulusEditor — 판정을 그 자리에서 보여준다', () => {
     expect(screen.getByRole('status').textContent).toContain('한 번에 한 속성만');
   });
 
-  it('가격형은 통과하되 유형을 드러낸다', () => {
+  it('가격형은 막고 이유를 그 자리에서 말한다', () => {
     render(<StimulusEditor
       pairs={[pair({
         X: { label: 'A', attrs: { 형태: '신선' }, priceKrw: 5000 },
@@ -49,8 +49,10 @@ describe('StimulusEditor — 판정을 그 자리에서 보여준다', () => {
       })]}
       onChange={() => {}}
     />);
-    expect(screen.getByText('가격형')).toBeInTheDocument();
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.getByText('가격형 — 제공하지 않음')).toBeInTheDocument();
+    // 실행 전에 막고, 고치는 방법까지 같은 자리에서 말한다.
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+    expect(document.body.textContent).toContain('가격을 양쪽 같게');
   });
 
   it('여러 쌍 중 하나만 막혀도 경고한다', () => {

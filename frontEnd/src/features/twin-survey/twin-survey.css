@@ -51,28 +51,103 @@
 .twin-sample__note, .twin-sample__warning { grid-column: 1 / -1; margin: 0; font-size: .85rem; }
 .twin-sample__warning { color: var(--color-warning-text, #9a6700); }
 
-/* ── 결과 ──────────────────────────────────────────────────────────── */
-.twin-result { display: grid; gap: 1rem; }
-.twin-result__sampling { margin: 0; color: var(--color-text-secondary); font-size: .85rem; }
-.twin-pair__head { display: flex; align-items: center; gap: .5rem; margin-bottom: .5rem; }
-.twin-pair__standing { color: var(--color-text-secondary); font-size: .8rem; }
-.twin-pair__verdict { margin: 0 0 .25rem; font-size: 1.05rem; }
-.twin-pair__reason { margin: 0 0 .75rem; font-size: .875rem; }
-.twin-pair__figures { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: .625rem; margin: 0 0 .75rem; }
-.twin-pair__figures dt { color: var(--color-text-secondary); font-size: .78rem; }
-.twin-pair__figures dd { margin: .125rem 0 0; font-variant-numeric: tabular-nums; }
-.twin-pair__classes { display: flex; flex-wrap: wrap; gap: .75rem; margin: 0 0 .75rem; padding: 0; list-style: none; font-size: .85rem; color: var(--color-text-secondary); }
+/* ── 결과 — 목업 `persona_interview_mockup.html` 이 정본 ────────────────
+   목업의 토큰 이름(--surface-1/2 · --border · --text-muted · --bg-success)은 이 저장소에
+   **없다**. 아래 지역 변수가 그 매핑이고, 목업의 하드코딩 색도 여기서만 산다.
+   전역에 흘리지 않으려고 `.twin-result` 아래에 가둔다 — CSS 는 전역이다. */
+.twin-result {
+  --twin-lead: #1d9e75;          /* 이긴 쪽 */
+  --twin-trail: #85b7eb;         /* 진 쪽 */
+  --twin-neutral: #b4b2a9;       /* 미결정·위치응답 */
+  --twin-lead-bg: #e1f5ee;   --twin-lead-fg: #085041;
+  --twin-trail-bg: #e6f1fb;  --twin-trail-fg: #0c447c;
+  --twin-neutral-bg: #f1efe8; --twin-neutral-fg: #444441;
+  display: grid; gap: 1rem;
+}
 
-/* 경계는 값과 같은 카드 안에 있고, 눈에 띄어야 한다. 빠진 경우는 더 크게 띄운다. */
-.twin-pair__caveats {
-  margin: 0; padding: .625rem .75rem .625rem 1.75rem; font-size: .85rem;
-  border-left: 3px solid var(--color-warning-text, #9a6700);
-  background: var(--color-surface-muted, rgba(0, 0, 0, .03));
+.twin-panel {
+  background: var(--color-bg-subtle); border-radius: 12px; padding: 1.25rem;
+  display: grid; gap: .75rem;
 }
-.twin-pair__caveats.is-missing {
-  border-left-color: var(--color-danger-text, #b42318);
-  color: var(--color-danger-text, #b42318); font-weight: 600;
+.twin-panel__head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.twin-panel__title { font-size: 1rem; font-weight: 500; margin: 0; }
+.twin-panel__subtitle { font-size: .8125rem; color: var(--color-text-secondary); margin: 2px 0 0; }
+.twin-panel__done {
+  font-size: .75rem; padding: 4px 12px; border-radius: 999px; white-space: nowrap;
+  background: var(--twin-lead-bg); color: var(--twin-lead-fg);
 }
-.twin-pair__excerpts { margin-top: .75rem; font-size: .85rem; }
-.twin-pair__excerpts summary { cursor: pointer; color: var(--color-text-secondary); }
-.twin-result__notes { margin: 0; padding-left: 1.25rem; color: var(--color-text-secondary); font-size: .8rem; }
+.twin-panel__section { font-size: .875rem; font-weight: 500; margin: .25rem 0 0; }
+.twin-panel__empty { margin: 0; font-size: .85rem; color: var(--color-text-secondary); }
+
+/* 판정 + 구성 막대 */
+.twin-verdict {
+  background: var(--color-surface); border: 1px solid var(--color-border-default);
+  border-radius: 12px; padding: 1rem 1.25rem;
+}
+.twin-verdict__line { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.twin-verdict__headline { font-size: 1.375rem; font-weight: 500; }
+.twin-verdict__share { font-size: .875rem; color: var(--color-text-secondary); font-variant-numeric: tabular-nums; }
+.twin-verdict__reason { margin: 10px 0 0; font-size: .8125rem; color: var(--color-text-secondary); }
+.twin-bar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; background: var(--color-neutral-100, #edf1ef); }
+.twin-bar span { display: block; }
+.twin-bar__lead { background: var(--twin-lead); }
+.twin-bar__undecided { background: var(--twin-neutral); }
+.twin-bar__trail { background: var(--twin-trail); }
+
+/* 인터뷰 카드 */
+.twin-interview {
+  background: var(--color-surface); border: 1px solid var(--color-border-default);
+  border-radius: 12px; padding: .9rem 1.1rem;
+}
+.twin-interview__head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.twin-interview__avatar {
+  width: 38px; height: 38px; border-radius: 50%; flex: none;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 500; font-size: .8125rem; font-variant-numeric: tabular-nums;
+}
+.twin-interview__who { flex: 1; min-width: 0; }
+.twin-interview__line { font-size: .875rem; font-weight: 500; margin: 0; }
+.twin-interview__sub { font-size: .75rem; color: var(--color-text-secondary); margin: 0; }
+.twin-interview__badge {
+  font-size: .75rem; padding: 3px 10px; border-radius: 999px; white-space: nowrap;
+  max-width: 9rem; overflow: hidden; text-overflow: ellipsis;
+}
+.twin-interview__quote {
+  font-size: .8125rem; color: var(--color-text-secondary); margin: 0; line-height: 1.6;
+}
+.twin-interview__avatar.tone-lead, .twin-interview__badge.tone-lead {
+  background: var(--twin-lead-bg); color: var(--twin-lead-fg);
+}
+.twin-interview__avatar.tone-trail, .twin-interview__badge.tone-trail {
+  background: var(--twin-trail-bg); color: var(--twin-trail-fg);
+}
+.twin-interview__avatar.tone-neutral, .twin-interview__badge.tone-neutral {
+  background: var(--twin-neutral-bg); color: var(--twin-neutral-fg);
+}
+
+/* 경계는 값과 같은 판 안에 있고, 눈에 띄어야 한다. 빠진 경우는 더 크게 띄운다. */
+.twin-panel__caveats {
+  margin: 0; padding: .625rem .75rem .625rem 1.75rem; font-size: .75rem;
+  color: var(--color-text-secondary);
+  border-left: 3px solid var(--color-status-warning);
+  background: var(--color-surface);
+}
+.twin-panel__caveats.is-missing {
+  border-left-color: var(--color-status-danger);
+  color: var(--color-status-danger); font-weight: 600;
+}
+
+.twin-panel__how, .twin-panel__figures { font-size: .8125rem; }
+.twin-panel__how summary, .twin-panel__figures summary { cursor: pointer; color: var(--color-text-secondary); }
+.twin-panel__how p { margin: .5rem 0 0; color: var(--color-text-secondary); line-height: 1.6; }
+.twin-panel__figures dl {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: .625rem; margin: .625rem 0 0;
+}
+.twin-panel__figures dt { color: var(--color-text-secondary); font-size: .75rem; }
+.twin-panel__figures dd { margin: .125rem 0 0; font-variant-numeric: tabular-nums; }
+.twin-panel__classes {
+  display: flex; flex-wrap: wrap; gap: .75rem; margin: .625rem 0 0; padding: 0;
+  list-style: none; color: var(--color-text-secondary);
+}
+.twin-panel__short { margin: .5rem 0 0; color: var(--color-status-warning); }

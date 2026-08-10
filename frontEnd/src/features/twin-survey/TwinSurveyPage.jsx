@@ -2,10 +2,11 @@ import { useCallback, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 
 import { useApiClient } from '../../shared/api/ApiClientProvider.jsx';
-import { Alert, Badge, Button, Card, LoadingState } from '../../shared/ui';
+import { Alert, Button, Card, LoadingState } from '../../shared/ui';
 import SampleSizePicker from './SampleSizePicker.jsx';
 import StimulusEditor from './StimulusEditor.jsx';
 import { createTwinSurveyApi } from './twinSurveyApi.js';
+import { interviewLines } from './twinSurveyResult.js';
 import { gateSurvey } from './taskTypeGate.js';
 import useTwinSurveyPolling from './useTwinSurveyPolling.js';
 import './twin-survey.css';
@@ -65,7 +66,8 @@ export default function TwinSurveyPage() {
 
       <Alert tone="warning">
         이 결과는 <strong>실존 인물의 응답이 아니다</strong>. 실측 프로파일 기반 시뮬레이션이며,
-        검증 성적이 난 두 유형(명백한 우열형·가격형)에서만 제공한다.
+        검증 성적이 유지되는 <strong>명백한 우열형</strong>에서만 제공한다 —
+        가격이 걸린 질문(지불의사)은 실행 모델에 따라 방향이 뒤집혀 제공하지 않는다.
       </Alert>
 
       <Card title="자극">
@@ -120,58 +122,112 @@ function TwinResult({ result }) {
         </Alert>
       ) : null}
 
-      <p className="twin-result__sampling">
-        요청 {result.sampling.requested}명 중 {result.sampling.drawn}명 추출
-        {result.sampling.hasShortCells
-          ? ' · 층이 얕아 목표를 못 채운 셀이 있다(실효표본이 작다)'
-          : ''}
-      </p>
-
       {result.pairs.map((pair) => (
-        <Card key={pair.pairId} title={`${pair.labels.X} vs ${pair.labels.Y}`}>
-          <div className="twin-pair__head">
-            <Badge tone={pair.taskTypeView.tone}>{pair.taskTypeView.label}</Badge>
-            <span className="twin-pair__standing">{pair.taskTypeView.standing}</span>
-          </div>
-
-          <p className="twin-pair__verdict">
-            <strong>{pair.winnerView.label}</strong>
-            {pair.winnerLabel ? ` — ${pair.winnerLabel}` : ''}
-          </p>
-          <p className="twin-pair__reason">{pair.decisionReason}</p>
-
-          <dl className="twin-pair__figures">
-            <div><dt>Δ(내용 성분)</dt><dd>{pair.deltaText}</dd></div>
-            <div><dt>신뢰구간</dt><dd>{pair.intervalText}</dd></div>
-            <div><dt>측정 한계(MDE)</dt><dd>{format3(pair.mde)}</dd></div>
-            <div><dt>위치 성분</dt><dd>{format3(pair.positionComponent)}</dd></div>
-            <div><dt>확정 응답자</dt><dd>{pair.nPaired}명 / {pair.nRespondents}명</dd></div>
-          </dl>
-
-          <ul className="twin-pair__classes">
-            {pair.classes.map((item) => (
-              <li key={item.key}>{item.label} {item.count}명</li>
-            ))}
-          </ul>
-
-          {/* ⚠ 경계는 **이 카드 안**에 둔다. 값과 떨어지면 값만 인용된다. */}
-          <ul className={`twin-pair__caveats${pair.caveatsMissing ? ' is-missing' : ''}`}>
-            {pair.caveats.map((note) => <li key={note}>{note}</li>)}
-          </ul>
-
-          {pair.excerpts.length > 0 ? (
-            <details className="twin-pair__excerpts">
-              <summary>응답 이유 발췌 {pair.excerpts.length}건</summary>
-              <ul>{pair.excerpts.map((text, index) => <li key={index}>{text}</li>)}</ul>
-            </details>
-          ) : null}
-        </Card>
+        <PairPanel key={pair.pairId} pair={pair} result={result} />
       ))}
-
-      <ul className="twin-result__notes">
-        {result.notes.map((note) => <li key={note}>{note}</li>)}
-      </ul>
     </div>
+  );
+}
+
+/**
+ * 한 쌍의 결과 한 판. 목업(`persona_interview_mockup.html`)의 구조를 따른다 —
+ * 머리글 · 판정 · 구성 막대 · 대표 인터뷰 · 경계.
+ *
+ * <b>수치를 접어 두는 이유</b>는 감추려는 것이 아니라 순서 때문이다. 「어느 쪽이 이겼나」와
+ * 「사람들이 왜 그렇게 말했나」가 먼저 오고, Δ·MDE 는 그 판단을 확인하려는 사람이 편다.
+ */
+function PairPanel({ pair, result }) {
+  const c = pair.composition;
+  return (
+    <section className="twin-panel">
+      <header className="twin-panel__head">
+        <div>
+          <p className="twin-panel__title">패널 트윈 조사</p>
+          <p className="twin-panel__subtitle">{pair.labels.X} vs {pair.labels.Y}</p>
+        </div>
+        <span className="twin-panel__done">{result.sampling.drawn}명 완료</span>
+      </header>
+
+      <div className="twin-verdict">
+        <div className="twin-verdict__line">
+          <span className="twin-verdict__headline">
+            {pair.measurable ? `${c.leadLabel} 우세` : '판정 불가 — 못 잼'}
+          </span>
+          <span className="twin-verdict__share">
+            {c.leadPercent}% vs {c.trailPercent}% · 미결정 {c.undecidedPercent}%
+          </span>
+        </div>
+        {/* 이긴 쪽 / 미결정·위치응답 / 진 쪽. 이 막대는 응답자 구성이지 점유율이 아니다. */}
+        <div className="twin-bar" role="img"
+             aria-label={`${c.leadLabel} ${c.lead}명, 미결정 ${c.undecided}명, ${c.trailLabel} ${c.trail}명`}>
+          <span className="twin-bar__lead" style={{ width: `${c.leadPercent}%` }} />
+          <span className="twin-bar__undecided" style={{ width: `${c.undecidedPercent}%` }} />
+          <span className="twin-bar__trail" style={{ width: `${c.trailPercent}%` }} />
+        </div>
+        <p className="twin-verdict__reason">{pair.decisionReason}</p>
+      </div>
+
+      <p className="twin-panel__section">대표 응답자 인터뷰</p>
+      {pair.interviews.length > 0 ? (
+        pair.interviews.map((interview, index) => (
+          <InterviewCard key={index} interview={interview} labels={pair.labels} />
+        ))
+      ) : (
+        <p className="twin-panel__empty">인용할 응답을 고르지 못했다.</p>
+      )}
+
+      <details className="twin-panel__how">
+        <summary>대표는 어떻게 골랐나</summary>
+        <p>
+          이긴 쪽 2명 · 진 쪽 2명 · 미결정 1명을 성×연령 층이 겹치지 않게 뽑는다.
+          제시 순서를 보고 고른 응답자(위치응답)는 제외한다 — 그 말을 이유로 읽으면
+          없는 근거가 생긴다. 난수를 쓰지 않아 같은 조사면 같은 5명이 나온다.
+        </p>
+      </details>
+
+      {/* ⚠ 경계는 **이 판 안**에 둔다. 값과 떨어지면 값만 인용된다. */}
+      <ul className={`twin-panel__caveats${pair.caveatsMissing ? ' is-missing' : ''}`}>
+        {pair.caveats.map((note) => <li key={note}>{note}</li>)}
+      </ul>
+
+      <details className="twin-panel__figures">
+        <summary>측정치 보기</summary>
+        <dl>
+          <div><dt>Δ(내용 성분)</dt><dd>{pair.deltaText}</dd></div>
+          <div><dt>신뢰구간</dt><dd>{pair.intervalText ?? '—'}</dd></div>
+          <div><dt>측정 한계(MDE)</dt><dd>{format3(pair.mde)}</dd></div>
+          <div><dt>위치 성분</dt><dd>{format3(pair.positionComponent)}</dd></div>
+          <div><dt>확정 응답자</dt><dd>{pair.nPaired}명 / {pair.nRespondents}명</dd></div>
+          <div><dt>유형</dt><dd>{pair.taskTypeView.label}</dd></div>
+        </dl>
+        <ul className="twin-panel__classes">
+          {pair.classes.map((item) => <li key={item.key}>{item.label} {item.count}명</li>)}
+        </ul>
+        {result.sampling.hasShortCells ? (
+          <p className="twin-panel__short">층이 얕아 목표를 못 채운 셀이 있다 — 실효표본이 작다.</p>
+        ) : null}
+      </details>
+    </section>
+  );
+}
+
+function InterviewCard({ interview, labels }) {
+  const { head, sub, badge } = interviewLines(interview, labels);
+  const tone = interview.choiceView.tone;
+  return (
+    <article className="twin-interview">
+      <div className="twin-interview__head">
+        <span className={`twin-interview__avatar tone-${tone}`}>
+          {interview.profile.age ?? '—'}
+        </span>
+        <div className="twin-interview__who">
+          <p className="twin-interview__line">{head}</p>
+          <p className="twin-interview__sub">{sub}</p>
+        </div>
+        <span className={`twin-interview__badge tone-${tone}`}>{badge}</span>
+      </div>
+      <p className="twin-interview__quote">&ldquo;{interview.quote}&rdquo;</p>
+    </article>
   );
 }
 

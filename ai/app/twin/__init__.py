@@ -15,16 +15,20 @@ from pydantic import ValidationError
 
 from app.providers import ProviderFailure
 from app.twin import caveats as caveat_text
-from app.twin.aggregate import analyze, mde_effective, verdict
+from app.twin.aggregate import analyze, classify_subjects, mde_effective, verdict
 from app.twin.bank import load, stratified_sample
 from app.twin.models import TwinSurveyInput
+from app.twin.profile import is_empty, parse_profile
 from app.twin.runner import run_survey
 from app.twin.task_type import SERVICEABLE, classify
 
 __all__ = ["execute_twin_survey"]
 
-EXCERPTS_PER_PAIR = 6          # 응답 봉투 2 MiB 상한 — 셀 원장은 절대 싣지 않는다
+INTERVIEWS_PER_PAIR = 5        # 응답 봉투 2 MiB 상한 — 셀 원장은 절대 싣지 않는다
 EXCERPT_MAX_CHARS = 300
+
+#: 인터뷰 배분 — 이긴 쪽 2 · 진 쪽 2 · 미결정 1. 모자라면 이긴 쪽 → 진 쪽 순으로 채운다.
+INTERVIEW_QUOTA = ((("winner",), 2), (("loser",), 2), (("undecided",), 1))
 
 NOTES = (
     "이 결과는 실존 인물의 응답이 아니라 실측 프로파일 기반 시뮬레이션이다.",
@@ -43,6 +47,92 @@ def _excerpt(raw: str | None) -> str | None:
     if not body:
         return None
     return body[:EXCERPT_MAX_CHARS]
+
+
+def _quote(usable: list[dict], subject: str, pair_id: str) -> str | None:
+    """그 사람의 말. **fwd 방향 rep1 을 우선**한다.
+
+    방향을 고정하는 이유: 인용문 안의 «A/B» 는 제시 순서를 가리키는데, rev 는 순서가
+    뒤집혀 있다. 섞어 쓰면 화면의 라벨과 인용문의 A/B 가 어긋난다.
+    """
+    rows = [r for r in usable if r["subject"] == subject and r["pair_id"] == pair_id]
+    rows.sort(key=lambda r: (r["direction"] != "fwd", r["rep"]))
+    for row in rows:
+        body = _excerpt(row.get("raw"))
+        if body:
+            return body
+    return None
+
+
+def _pick(candidates: list[str], want: int, cells: dict[str, str], used: set) -> list[str]:
+    """층을 겹치지 않게 먼저 고르고, 그래도 모자라면 완화해서 채운다.
+
+    난수를 쓰지 않는다 — `candidates` 가 pid 오름차순이라 같은 입력이면 같은 사람이 나온다
+    (`bank.stratified_sample` 과 같은 규율).
+    """
+    picked: list[str] = []
+    for subject in candidates:
+        if len(picked) >= want:
+            break
+        cell = cells.get(subject)
+        if cell is not None and cell in used:
+            continue
+        picked.append(subject)
+        used.add(cell)
+    for subject in candidates:                       # 층 제약을 못 지키면 인원이 우선이다
+        if len(picked) >= want:
+            break
+        if subject not in picked:
+            picked.append(subject)
+    return picked
+
+
+def _interviews(usable: list[dict], pair_id: str, winner: str | None,
+                classes: dict[str, str], cards: dict[str, str],
+                cells: dict[str, str]) -> list[dict]:
+    """대표 응답자 몇 명의 «프로필 + 선택 + 그 사람의 말».
+
+    위치응답자(`position_driven`·`anti_position`)는 **뺀다** — 내용이 아니라 제시 순서를
+    보고 고른 사람이라, 그 인용을 이유로 읽으면 없는 근거가 생긴다.
+    """
+    by_class: dict[str, list[str]] = {}
+    for subject, label in sorted(classes.items()):
+        by_class.setdefault(label, []).append(subject)
+
+    if winner == "Y":
+        order = [("content_Y", "Y", 2), ("content_X", "X", 2), ("undecided", "UNDECIDED", 1)]
+    else:
+        # 이긴 쪽이 없어도(«못 잼») 양쪽을 같은 수로 보인다 — 한쪽만 보이면 판정처럼 읽힌다.
+        order = [("content_X", "X", 2), ("content_Y", "Y", 2), ("undecided", "UNDECIDED", 1)]
+
+    used_cells: set = set()
+    chosen: list[tuple[str, str]] = []
+    for label, choice, want in order:
+        for subject in _pick(by_class.get(label, []), want, cells, used_cells):
+            chosen.append((subject, choice))
+
+    # 배분을 못 채웠으면 남은 사람으로 메운다. 실측에서 여기가 걸렸다 — 우열형은 한쪽이
+    # 만장일치에 가까워 «진 쪽»이 0명인 일이 흔하고, 그대로 두면 카드가 3장만 나온다.
+    # 채우는 순서는 배분 순서와 같다(이긴 쪽 → 진 쪽 → 미결정).
+    taken = {subject for subject, _ in chosen}
+    for label, choice, _want in order:
+        for subject in by_class.get(label, []):
+            if len(chosen) >= INTERVIEWS_PER_PAIR:
+                break
+            if subject not in taken:
+                chosen.append((subject, choice))
+                taken.add(subject)
+
+    interviews = []
+    for subject, choice in chosen:
+        if len(interviews) >= INTERVIEWS_PER_PAIR:
+            break
+        profile = parse_profile(cards.get(subject))
+        quote = _quote(usable, subject, pair_id)
+        if is_empty(profile) or not quote:
+            continue                                  # 빈 카드를 화면에 앉히지 않는다
+        interviews.append({"choice": choice, "profile": profile, "quote": quote})
+    return interviews
 
 
 def _refuse(blocked: list[tuple[str, object]]) -> ProviderFailure:
@@ -73,6 +163,8 @@ async def execute_twin_survey(payload: dict, budget_seconds: float = 600.0) -> d
     cards_all, frame = load()
     drawn, sampling = stratified_sample(frame, request.sampleSize)
     cards = {row["pid_hash"]: cards_all[row["pid_hash"]] for row in drawn}
+    # 인터뷰 대표를 고를 때 층이 겹치지 않게 쓰는 성×연령 셀. 표집에 쓴 것과 같은 축이다.
+    cells = {row["pid_hash"]: f"{row['gender']}{row['band']}" for row in drawn}
 
     rows, telemetry = await run_survey(cards, stimuli, request.situation, budget_seconds)
     usable = [r for r in rows if r.get("ok")]
@@ -88,17 +180,9 @@ async def execute_twin_survey(payload: dict, budget_seconds: float = 600.0) -> d
         if not decision["measurable"]:
             notes = notes + caveat_text.for_unmeasurable()
 
-        excerpts = []
-        for row in usable:
-            if row["pair_id"] != pair_id or row["choice"] is None:
-                continue
-            body = _excerpt(row.get("raw"))
-            if body:
-                excerpts.append(body)
-            if len(excerpts) >= EXCERPTS_PER_PAIR:
-                break
-
         winner = decision["winner"]
+        interviews = _interviews(usable, pair_id, winner,
+                                 classify_subjects(usable, pair_id), cards, cells)
         pairs_out.append({
             "pairId": pair_id,
             "taskType": task_type,
@@ -118,7 +202,7 @@ async def execute_twin_survey(payload: dict, budget_seconds: float = 600.0) -> d
             "nPaired": stats["n_p"],
             "nRespondents": stats["n_subjects"],
             "respondentClasses": stats["cls"],
-            "rationaleExcerpts": excerpts,
+            "interviews": interviews,
             "caveats": notes,
         })
 

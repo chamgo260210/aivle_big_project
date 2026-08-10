@@ -150,6 +150,31 @@ if ($null -eq $ethicalResult) {
     Write-Pass "윤리형 거절 errorCode=$($ethicalResult.run.errorCode)"
 }
 
+# ── 3-2. 가격형도 거절되나 ────────────────────────────────────────────
+#     2026-08-10 차단. 계기 재측정에서 방향이 반전됐다(B3: CLI +0.23 / mini −0.68 / terra +1.00).
+#     화면 게이트가 회귀해도 서버가 막아야 한다 — 그것을 여기서 확인한다.
+Write-Step "price stimulus refused"
+$price = Invoke-Json POST "$BaseUrl/api/v2/projects/$projectId/twin-survey" $headers @{
+    situation = "가게에서 하나를 고릅니다. 아래 두 상품이 있습니다."
+    sampleSize = 50
+    pairs = @(@{
+        pairId = "B3"
+        X = @{ label = "신선 냉장"; attrs = @{ "형태" = "신선(냉장)" }; priceKrw = 5000 }
+        Y = @{ label = "냉동"; attrs = @{ "형태" = "냉동" }; priceKrw = 4500 }
+    })
+}
+Write-Output "  enqueued taskRunId=$($price.data.taskRunId)"
+$priceResult = Wait-Terminal 120
+if ($null -eq $priceResult) {
+    Add-Failure "가격형 실행이 2분 안에 끝나지 않았다 — 거절은 LLM 0회로 즉시여야 한다"
+} elseif ($priceResult.run.state -ne "FAILED") {
+    Add-Failure "가격형이 거절되지 않았다: $($priceResult.run.state)"
+} elseif ($priceResult.run.errorCode -ne "TWIN_TASK_TYPE_NOT_SERVICEABLE") {
+    Add-Failure "가격형 거절 이유가 뭉개졌다: $($priceResult.run.errorCode)"
+} else {
+    Write-Pass "가격형 거절 errorCode=$($priceResult.run.errorCode)"
+}
+
 # ── 4. 실제 조사 (유료) ───────────────────────────────────────────────
 if (-not $Paid) {
     Write-Output "`n(유료 구간 건너뜀 — 실제 조사를 태우려면 -Paid)"
@@ -159,13 +184,15 @@ if (-not $Paid) {
     $run = Invoke-Json POST "$BaseUrl/api/v2/projects/$projectId/twin-survey" $headers @{
         situation = "가게에서 하나를 고릅니다. 아래 두 상품이 있습니다."
         sampleSize = $SampleSize
+        # 둘 다 **우열형**이다 — 가격을 양쪽 같게 두고 속성 하나만 바꾼다.
+        # 가격이 다른 쌍은 위 3-2 에서 거절되는 것을 이미 확인했다.
         pairs = @(
             @{ pairId = "P1"
                X = @{ label = "신선 냉장"; attrs = @{ "형태" = "신선(냉장)" }; priceKrw = 4500 }
                Y = @{ label = "냉동"; attrs = @{ "형태" = "냉동" }; priceKrw = 4500 } },
             @{ pairId = "P2"
-               X = @{ label = "신선 냉장(비쌈)"; attrs = @{ "형태" = "신선(냉장)" }; priceKrw = 6600 }
-               Y = @{ label = "냉동"; attrs = @{ "형태" = "냉동" }; priceKrw = 4500 } }
+               X = @{ label = "노르웨이산"; attrs = @{ "원산지" = "노르웨이산" }; priceKrw = 4500 }
+               Y = @{ label = "칠레산"; attrs = @{ "원산지" = "칠레산" }; priceKrw = 4500 } }
         )
     }
     Write-Output "  enqueued taskRunId=$($run.data.taskRunId)"
@@ -192,6 +219,37 @@ if (-not $Paid) {
                 Add-Failure "$($pair.pairId): caveats 가 비었다"
             } else {
                 Write-Pass "$($pair.pairId) $($pair.taskType) winner=$($pair.winner) measurable=$($pair.measurable) caveats=$($pair.caveats.Count)"
+            }
+            if ($pair.taskType -ne "DOMINANCE") {
+                Add-Failure "$($pair.pairId): 우열형이 아닌 결과가 나왔다 — $($pair.taskType)"
+            }
+
+            # 인터뷰 — 화면이 «사람의 말»로 답하는 자리다. 비면 목업이 성립하지 않는다.
+            $interviews = @($pair.interviews)
+            if ($interviews.Count -eq 0) {
+                Add-Failure "$($pair.pairId): interviews 가 비었다"
+            } elseif ($interviews.Count -gt 5) {
+                Add-Failure "$($pair.pairId): interviews 가 5장을 넘는다 ($($interviews.Count))"
+            } else {
+                $filled = 0
+                foreach ($item in $interviews) {
+                    if (-not $item.quote -or -not $item.quote.Trim()) {
+                        Add-Failure "$($pair.pairId): 인용이 빈 인터뷰가 있다"
+                    }
+                    if ($item.quote -like "*선택:*") {
+                        Add-Failure "$($pair.pairId): 인용에 «선택:» 줄이 남았다"
+                    }
+                    # 프로필 6칸이 실제로 채워지는지 — 파서가 조용히 죽으면 여기서 잡힌다.
+                    $p = $item.profile
+                    if ($p.age -and $p.gender -and $p.household -and $p.region -and $p.income -and $p.job) {
+                        $filled++
+                    }
+                }
+                $choices = ($interviews | ForEach-Object { $_.choice } | Sort-Object -Unique) -join ","
+                Write-Pass "$($pair.pairId) 인터뷰 $($interviews.Count)장 · 프로필 6칸 완전 $filled 장 · 선택 [$choices]"
+                if ($filled -eq 0) {
+                    Add-Failure "$($pair.pairId): 프로필이 한 장도 채워지지 않았다 — 파서가 죽었다"
+                }
             }
         }
         if ($version.caveatCount -le 0) { Add-Failure "물질화된 caveatCount 가 0이다" }
