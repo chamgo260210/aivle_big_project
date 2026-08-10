@@ -13,6 +13,7 @@ describe('project route cutover', () => {
     ['business-model', 'BmCanvasPage'],
     ['tech-ops', 'TechOpsPage'],
     ['finance', 'FinancePage'],
+    ['panel-survey', 'TwinSurveyPage'],
     ['marketing', 'MarketingContentPage'],
   ])('renders the active %s module screen', (path, component) => {
     expect(routerSource).toContain(`path="${path}" element={<${component} />}`);

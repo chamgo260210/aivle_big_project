@@ -20,7 +20,7 @@ class ActiveSurfaceCleanupTests {
             "MARKET_ANALYSIS", "BUSINESS_MODEL", "TECH_OPS", "FINANCIAL_ANALYSIS", "PERSONA_RESPONSE");
         assertThat(Arrays.stream(PipelineModuleType.values()).map(Enum::name)).containsExactly(
             "IDEA", "CONCEPT_FACTORY", "CONCEPT_SELECTION", "MARKET_ANALYSIS",
-            "BUSINESS_MODEL", "TECH_OPS", "FINANCE", "MARKETING");
+            "BUSINESS_MODEL", "TECH_OPS", "FINANCE", "PANEL_SURVEY", "MARKETING");
     }
 
     @Test
@@ -40,6 +40,6 @@ class ActiveSurfaceCleanupTests {
             "CONCEPT_CANDIDATE", "CONCEPT_DISTINCTNESS_JUDGE", "CONCEPT_LEGAL_REVIEW",
             "CONCEPT_REDESIGN", "CONCEPT_HYPOTHESIS_ALTERNATIVE", "CONCEPT_DELTA_LEGAL_REVIEW",
             "TECH_OPS_PROPOSAL", "FINANCE_ESTIMATE", "MARKETING_CONTENT_GENERATION",
-            "MARKET_RESEARCH");
+            "MARKET_RESEARCH", "TWIN_SURVEY");
     }
 }

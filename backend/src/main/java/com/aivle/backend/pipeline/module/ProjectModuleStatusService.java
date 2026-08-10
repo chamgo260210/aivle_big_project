@@ -4,6 +4,8 @@ import com.aivle.backend.common.exception.BusinessException;
 import com.aivle.backend.common.exception.ErrorCode;
 import com.aivle.backend.journey.MarketResearchRun;
 import com.aivle.backend.journey.MarketResearchRunRepository;
+import com.aivle.backend.journey.TwinSurveyRun;
+import com.aivle.backend.journey.TwinSurveyRunRepository;
 import com.aivle.backend.pipeline.concept.domain.ConceptFactoryRun;
 import com.aivle.backend.pipeline.concept.domain.ConceptFactoryRunStatus;
 import com.aivle.backend.pipeline.concept.domain.ConceptSlotStatus;
@@ -51,6 +53,7 @@ public class ProjectModuleStatusService {
     private final FinancialInputPreparationRepository financialPreparationRepository;
     private final FinancialInputSnapshotRepository financialSnapshotRepository;
     private final MarketResearchRunRepository marketResearchRunRepository;
+    private final TwinSurveyRunRepository twinSurveyRunRepository;
 
     public List<ProjectModuleStatusResponse> findAll(Long userId, Long projectId) {
         projectRepository.findByIdAndOwnerIdAndDeletedAtIsNull(projectId, userId)
@@ -63,6 +66,8 @@ public class ProjectModuleStatusService {
         var selection = selectionRepository.findByProjectIdAndCurrentSelectionTrueAndDeletedAtIsNull(projectId).orElse(null);
         MarketAnalysisSeedSnapshot selectedSnapshot = selection == null ? null
             : marketSeedSnapshotRepository.findBySelectionIdAndProjectIdAndDeletedAtIsNull(selection.getId(), projectId).orElse(null);
+        TwinSurveyRun twinRun = twinSurveyRunRepository
+            .findTopByProjectIdAndDeletedAtIsNullOrderByCreatedAtDescIdDesc(projectId).orElse(null);
         MarketResearchRun marketRun = latestResearchRun(projectId, MarketResearchRun.Kind.FULL);
         MarketResearchRun businessRun = latestResearchRun(projectId, MarketResearchRun.Kind.BM);
         ModuleRun techOpsRun = latestRun(projectId, ModuleType.TECH_OPS);
@@ -149,6 +154,18 @@ public class ProjectModuleStatusService {
                 new NextAction("재무 입력 준비", "/finance"), financialRun == null ? null : financialRun.getId(), null,
                 financialSnapshot == null ? null : financialSnapshot.getId(), null, null,
                 financialRun == null ? financialPreparation == null ? null : financialPreparation.getUpdatedAt() : financialRun.getUpdatedAt()),
+            // ⚠ 이 게이트는 **새로 만든 것**이다. 재무와 마케팅은 원래 데이터로 이어져 있지 않았다
+            //   (마케팅 게이트는 selectedSnapshot 기반). 트윈 조사는 재무 다음에 서므로
+            //   앞 단계의 확정물인 financialSnapshotId 를 요구한다.
+            //   시장조사와 같은 규칙으로, **실행이 있으면 게이트와 무관하게 그 상태를 보여준다** —
+            //   막아 두면 다 끝난 모듈이 「준비 전」으로 보이는 거짓말이 된다.
+            response(projectId, PipelineModuleType.PANEL_SURVEY, twinOrGate(twinRun, financialSnapshot != null),
+                financialSnapshot == null ? List.of("financialSnapshotId") : List.of(),
+                new NextAction("패널 트윈 조사", "/panel-survey"),
+                twinRun == null ? null : String.valueOf(twinRun.getId()),
+                twinRun == null ? null : twinRun.getTaskRun().getId(),
+                financialSnapshot == null ? null : financialSnapshot.getId(), null, null,
+                twinRun == null ? null : twinRun.getUpdatedAt()),
             response(projectId, PipelineModuleType.MARKETING, marketingStatus,
                 marketingSource == null ? List.of("marketingSourceSnapshotId") : List.of(),
                 new NextAction("마케팅 콘텐츠", "/marketing"), marketing == null ? null : marketing.getId(),
@@ -169,6 +186,16 @@ public class ProjectModuleStatusService {
     private PipelineModuleStatus researchOrGate(MarketResearchRun run, MarketAnalysisSeedSnapshot seed) {
         if (run != null) return researchStatus(run);
         return seed == null ? PipelineModuleStatus.NOT_READY : PipelineModuleStatus.READY;
+    }
+
+    private PipelineModuleStatus twinOrGate(TwinSurveyRun run, boolean financialReady) {
+        if (run != null) return switch (run.getState()) {
+            case QUEUED -> PipelineModuleStatus.QUEUED;
+            case RUNNING -> PipelineModuleStatus.RUNNING;
+            case SUCCEEDED -> PipelineModuleStatus.COMPLETED;
+            case FAILED -> PipelineModuleStatus.FAILED;
+        };
+        return financialReady ? PipelineModuleStatus.READY : PipelineModuleStatus.NOT_READY;
     }
 
     private PipelineModuleStatus researchStatus(MarketResearchRun run) {
