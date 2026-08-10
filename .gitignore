@@ -8,3 +8,8 @@
 .vscode
 .pytest_cache
 .idea
+#AGENTS.md
+
+# 시장조사 엔진의 측정 원장·산출물 (판 ㉝ 이식). 232MB 이고 재생성 가능하다.
+ai/app/research/research2/runs/
+ai/app/research/research2/outputs/

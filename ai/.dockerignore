@@ -7,3 +7,6 @@ outputs
 .env.*
 .git
 tests
+# 시장조사 측정 원장 232MB. 이미지에 넣지 않는다 — 빌드 컨텍스트가 통째로 느려진다.
+app/research/research2/runs
+app/research/research2/outputs
