@@ -1,0 +1,113 @@
+/* 시장조사 · BM 캔버스 (판 ㉝) */
+
+.market-page { display: flex; flex-direction: column; gap: 1.25rem; }
+.market-page__head { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap; }
+.market-page__head h2 { margin: 0 0 .25rem; }
+.market-page__head p { margin: 0; color: var(--text-muted, #5b6472); font-size: .9rem; }
+.market-page__actions { display: flex; gap: .5rem; }
+.market-page__foot { display: flex; justify-content: flex-end; padding-top: .5rem; }
+.market-note { color: var(--text-muted, #5b6472); font-size: .85rem; margin: 0 0 .75rem; }
+
+/* ── 성적표 ─────────────────────────────────────────────── */
+.market-scorecard { width: 100%; border-collapse: collapse; font-size: .9rem; }
+.market-scorecard th, .market-scorecard td { text-align: left; padding: .5rem .6rem; border-bottom: 1px solid var(--border, #e5e8ec); vertical-align: top; }
+.market-scorecard thead th { font-size: .8rem; color: var(--text-muted, #5b6472); }
+.market-scorecard tbody th { white-space: nowrap; width: 8rem; }
+
+/* ── 시장 규모 ───────────────────────────────────────────── */
+.market-figures { display: grid; gap: .75rem; margin: 0; }
+.market-figures > div { display: grid; grid-template-columns: 7rem 1fr; gap: .75rem; align-items: baseline; }
+.market-figures dt { font-weight: 600; color: var(--text-muted, #5b6472); }
+.market-figures dd { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; }
+.market-figures dd b { font-size: 1.05rem; }
+.market-figures code { font-size: .78rem; color: var(--text-muted, #5b6472); }
+
+/* 경계 — 값 옆에 붙어 있어야 한다. 색으로도 구분한다. */
+.market-caveat,
+.market-evidence__caveat {
+  flex-basis: 100%;
+  font-style: italic;
+  font-size: .82rem;
+  color: #8a5a00;
+  background: #fff8e6;
+  border-left: 3px solid #e0a800;
+  padding: .25rem .5rem;
+  border-radius: 3px;
+}
+
+/* ── 근거 카드 ───────────────────────────────────────────── */
+.market-evidence-list { display: grid; gap: .75rem; }
+.market-evidence { border: 1px solid var(--border, #e5e8ec); border-radius: 8px; padding: .75rem .9rem; background: #fff; }
+.market-evidence.is-highlighted { border-color: #2f6feb; box-shadow: 0 0 0 3px rgba(47, 111, 235, .15); }
+.market-evidence__head { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; margin-bottom: .5rem; }
+.market-evidence__id { font-family: ui-monospace, monospace; font-size: .75rem; color: var(--text-muted, #5b6472); }
+.market-evidence__metric { flex: 1; min-width: 10rem; }
+.market-evidence__value { display: flex; flex-wrap: wrap; align-items: baseline; gap: .5rem; margin-bottom: .5rem; }
+.market-evidence__value b { font-size: 1.1rem; }
+.market-evidence__period { font-size: .8rem; color: var(--text-muted, #5b6472); }
+.market-evidence blockquote { margin: .5rem 0; padding: .4rem .7rem; border-left: 3px solid var(--border, #e5e8ec); color: #333; font-size: .88rem; }
+.market-evidence__calc code { display: block; font-size: .8rem; margin-bottom: .3rem; }
+.market-evidence__calc ul { margin: 0; padding-left: 1.1rem; font-size: .82rem; color: var(--text-muted, #5b6472); }
+.market-evidence__foot { display: flex; flex-wrap: wrap; gap: .75rem; font-size: .78rem; color: var(--text-muted, #5b6472); margin-top: .5rem; }
+.market-evidence__missing { color: #b4453c; }
+
+/* ── BM 캔버스 9칸 ──────────────────────────────────────── */
+/* 저장소에 grid-template-areas 를 쓰는 곳이 없어서 여기서 처음 만든다.
+   표준 BMC 는 비대칭이라 repeat(3) 으로는 안 나온다. */
+.bmc-grid {
+  display: grid;
+  gap: .6rem;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-areas:
+    "partners activities value relations segments"
+    "partners resources  value channels  segments"
+    "cost     cost       cost  revenue   revenue";
+}
+.bmc-cell {
+  border: 1px solid var(--border, #e5e8ec);
+  border-radius: 8px;
+  padding: .6rem .7rem;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  gap: .4rem;
+  min-height: 8rem;
+}
+.bmc-cell__head { display: flex; align-items: center; justify-content: space-between; gap: .4rem; }
+.bmc-cell__head h3 { margin: 0; font-size: .88rem; }
+.bmc-cell__content { margin: 0; padding-left: 1rem; font-size: .84rem; }
+.bmc-cell__content li { margin-bottom: .25rem; }
+.bmc-cell__empty,
+.bmc-cell__absent { margin: 0; font-size: .82rem; color: var(--text-muted, #5b6472); }
+.bmc-cell__absent { color: #b4453c; }
+.bmc-cell__reason { margin: 0; font-size: .78rem; color: var(--text-muted, #5b6472); }
+.bmc-cell__missing { margin: 0; font-size: .78rem; color: #b4453c; }
+.bmc-cell__caveat {
+  margin: 0; font-style: italic; font-size: .78rem;
+  color: #8a5a00; background: #fff8e6;
+  border-left: 3px solid #e0a800; padding: .2rem .45rem; border-radius: 3px;
+}
+.bmc-cell__evidence { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem; font-size: .75rem; }
+.bmc-chip {
+  font-family: ui-monospace, monospace; font-size: .72rem;
+  border: 1px solid var(--border, #e5e8ec); background: #f6f8fa;
+  border-radius: 999px; padding: .1rem .5rem; cursor: pointer;
+}
+.bmc-chip:hover { background: #e9eef5; }
+.bmc-chip.is-active { background: #2f6feb; color: #fff; border-color: #2f6feb; }
+
+.market-decision { display: flex; align-items: center; gap: .6rem; margin: 0 0 .5rem; }
+.market-fit { display: grid; gap: .5rem; margin: .5rem 0 0; }
+.market-fit > div { display: grid; grid-template-columns: 7rem 1fr; gap: .75rem; }
+.market-fit dt { font-weight: 600; color: var(--text-muted, #5b6472); }
+.market-fit dd { margin: 0; font-size: .88rem; }
+
+/* 견본 컨셉 고르기 — 임시 다리. 컨셉이 DB 에서 오면 이 규칙도 같이 사라진다. */
+.market-concept-picker { display: flex; flex-wrap: wrap; gap: .5rem; }
+
+@media (max-width: 900px) {
+  .bmc-grid { grid-template-columns: 1fr; grid-template-areas: none; }
+  .bmc-cell { grid-area: auto !important; }
+  .market-figures > div,
+  .market-fit > div { grid-template-columns: 1fr; }
+}

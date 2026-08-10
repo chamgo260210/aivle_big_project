@@ -27,6 +27,8 @@ import AdminProjectsPage, { AdminProjectDetailOverlay } from '../../features/adm
 import AdminAuditPage, { AdminAuditDetailOverlay } from '../../features/admin/pages/AdminAuditPage.jsx';
 import { IdeaJourneyPage, LegalJourneyPage } from '../../features/journey/JourneyPages.jsx';
 import { ConceptAnalysisPage, ConceptGenerationPage, ConceptSelectionPage } from '../../features/journey/ConceptJourneyPages.jsx';
+import MarketResearchPage from '../../features/market/MarketResearchPage.jsx';
+import BmCanvasPage from '../../features/market/BmCanvasPage.jsx';
 import { InterviewJourneyPage, PersonaJourneyPage } from '../../features/journey/PersonaInterviewPages.jsx';
 import { FinalReportJourneyPage, MarketingJourneyPage } from '../../features/journey/MarketingReportPages.jsx';
 
@@ -71,6 +73,9 @@ export default function AppRouter() {
             <Route index element={<IdeaJourneyPage />} />
             <Route path="idea" element={<IdeaJourneyPage />} />
             <Route path="legal" element={<LegalJourneyPage />} />
+            {/* 시장조사 → 「다음」 → BM 캔버스. 법률 다음에 온다 — 데이터 흐름 순서다. */}
+            <Route path="journey/market-research" element={<MarketResearchPage />} />
+            <Route path="journey/business-model" element={<BmCanvasPage />} />
             <Route path="journey/concept" element={<ConceptGenerationPage />} />
             <Route path="journey/concept-analysis" element={<ConceptAnalysisPage />} />
             <Route path="journey/concept-selection" element={<ConceptSelectionPage />} />
@@ -85,7 +90,7 @@ export default function AppRouter() {
             <Route path="plan/structure" element={<LegacyProjectRedirect />} />
             <Route path="review" element={<Navigate to="legal" replace />} />
             <Route path="review/legal" element={<LegacyProjectRedirect suffix="/legal" />} />
-            <Route path="review/market" element={<LegacyProjectRedirect suffix="/journey/concept" />} />
+            <Route path="review/market" element={<LegacyProjectRedirect suffix="/journey/market-research" />} />
             <Route path="review/financial" element={<LegacyProjectRedirect suffix="/journey/concept-analysis" />} />
             <Route path="review/financial/new" element={<LegacyProjectRedirect suffix="/journey/concept-analysis" />} />
             <Route path="review/financial/:analysisId" element={<LegacyProjectRedirect suffix="/journey/concept-analysis" />} />

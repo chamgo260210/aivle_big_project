@@ -67,14 +67,37 @@ public class InternalAiExecutionClient {
     );
 
     private final RestClient client;
+    /** 오래 걸리는 작업 전용. read timeout 만 다르다. */
+    private final RestClient longClient;
     private final AiServerProperties properties;
     private final ObjectMapper mapper;
 
+    /** 짧은 클라이언트 하나만 주는 형태 — 테스트용. 긴 호출도 같은 것을 쓴다. */
+    public InternalAiExecutionClient(RestClient client, AiServerProperties properties,
+                                     ObjectMapper mapper) {
+        this(client, client, properties, mapper);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
     public InternalAiExecutionClient(@Qualifier("aiServerRestClient") RestClient client,
+                                     @Qualifier("aiServerLongRestClient") RestClient longClient,
                                      AiServerProperties properties, ObjectMapper mapper) {
         this.client = client;
+        this.longClient = longClient;
         this.properties = properties;
         this.mapper = mapper;
+    }
+
+    /**
+     * 어느 클라이언트로 부를지는 <b>작업 종류가 정한다</b>.
+     *
+     * <p>시장조사는 90~266초 걸린다. 기본 30s 로 부르면 read timeout 이 나고, 그 실패는
+     * {@code REQUEST_DEADLINE_EXCEEDED}(retryable) 로 사상돼 <b>자동 재시도가 260초짜리를
+     * 다시 태운다</b> — 실패하면서 비용만 배가 된다.
+     */
+    private RestClient clientFor(TaskRun run) {
+        return run.getTaskType() == com.aivle.backend.taskrun.domain.TaskType.MARKET_RESEARCH
+            ? longClient : client;
     }
 
     public ExecutionResponse execute(TaskRun run, String attemptId, LocalDateTime deadline) {
@@ -91,7 +114,7 @@ public class InternalAiExecutionClient {
         byte[] requestBytes = mapper.writeValueAsBytes(body);
         enforceSize(requestBytes, "REQUEST_BYTES_EXCEEDED");
         try {
-            byte[] responseBytes = client.post().uri("/internal/v1/ai/executions")
+            byte[] responseBytes = clientFor(run).post().uri("/internal/v1/ai/executions")
                 .contentType(MediaType.APPLICATION_JSON)
                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + properties.internalApiKey())
                 .header("X-Correlation-Id", run.getCorrelationId())

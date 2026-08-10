@@ -1,0 +1,212 @@
+/**
+ * 시장조사·BM 결과 정규화기.
+ *
+ * ⚠ **이 프로젝트에는 TypeScript 도 스키마 검증도 없다. 그래서 이 파일이 타입 시스템이다.**
+ * 컴포넌트는 서버 JSON 을 직접 읽지 않고 여기를 거친다.
+ *
+ * 왜 필요한가: 지금 journey 화면들은 서버 응답을 그대로 `useState` 에 넣고 JSX 에서 꺼내 쓴다.
+ * 필드 하나가 빠지면 `undefined` 가 조용히 렌더된다 — **`grade` 가 없으면 「등급 없음」이 아니라
+ * 그냥 아무것도 안 나오고, 읽는 사람은 그 숫자를 확정치로 본다.** 그게 이 파이프라인이
+ * 없애려고 만든 실패 그 자체라서, 누락은 **명시적 문구**로 바꾼다.
+ */
+
+/** 근거의 확실성 등급. 서버가 정하고 화면은 옮기기만 한다. */
+export const GRADE_VIEW = {
+  '확정': { label: '확정', tone: 'success' },
+  '실무 신뢰': { label: '실무 신뢰', tone: 'info' },
+  '추정': { label: '추정', tone: 'warning' },
+  '근거 없음': { label: '근거 없음', tone: 'neutral' },
+};
+const GRADE_MISSING = { label: '등급 표기 없음', tone: 'danger' };
+
+/** 캔버스 칸 상태. */
+export const CELL_STATUS_VIEW = {
+  VERIFIED: { label: '확인됨', tone: 'success' },
+  PARTIAL: { label: '일부 확인', tone: 'warning' },
+  UNVERIFIED: { label: '미확인', tone: 'danger' },
+  PLAN: { label: '계획(근거 없음)', tone: 'neutral' },
+  BLOCKED: { label: '진행 불가', tone: 'danger' },
+};
+
+export const DECISION_VIEW = {
+  PASS: { label: '통과', tone: 'success' },
+  CONDITIONAL: { label: '조건부', tone: 'warning' },
+  REVISION_REQUIRED: { label: '수정 필요', tone: 'danger' },
+  BLOCKED: { label: '진행 불가', tone: 'danger' },
+};
+
+export const SUBJECT_LABEL = {
+  MARKET_SIZE: '시장 크기',
+  GROWTH: '성장률',
+  COMPETITOR: '경쟁사',
+  PRICE: '가격',
+  DEMAND: '수요 근거',
+  CALCULATION: '시장 규모 계산',
+  NOT_FOUND: '못 찾은 것',
+};
+
+export const SCORE_STATE_VIEW = {
+  FILLED: { label: '채워짐', tone: 'success' },
+  PARTIAL: { label: '부분', tone: 'warning' },
+  MISSING: { label: '미확보', tone: 'danger' },
+  REPORTED: { label: '보고됨', tone: 'neutral' },
+};
+
+/** 표준 BM 캔버스 배치 순서. 격자 area 이름과 짝이다. */
+export const CANVAS_LAYOUT = [
+  { cell: 'KEY_PARTNERS', area: 'partners', label: '핵심 파트너' },
+  { cell: 'KEY_ACTIVITIES', area: 'activities', label: '핵심 활동' },
+  { cell: 'KEY_RESOURCES', area: 'resources', label: '핵심 자원' },
+  { cell: 'VALUE_PROPOSITIONS', area: 'value', label: '가치 제안' },
+  { cell: 'CUSTOMER_RELATIONSHIPS', area: 'relations', label: '고객 관계' },
+  { cell: 'CHANNELS', area: 'channels', label: '채널' },
+  { cell: 'CUSTOMER_SEGMENTS', area: 'segments', label: '고객 세그먼트' },
+  { cell: 'COST_STRUCTURE', area: 'cost', label: '비용 구조' },
+  { cell: 'REVENUE_STREAMS', area: 'revenue', label: '수익원' },
+];
+
+const list = (value) => (Array.isArray(value) ? value : []);
+const text = (value) => (typeof value === 'string' && value.trim() ? value : null);
+
+/**
+ * 등급을 표시용으로 바꾼다.
+ *
+ * ⚠ 모르는 값이나 누락을 **조용히 넘기지 않는다.** 「등급 표기 없음」이라고 쓰는 것이
+ * 아무것도 안 쓰는 것보다 정직하다 — 빈 자리는 「확정」처럼 읽힌다.
+ */
+export function gradeView(grade) {
+  return GRADE_VIEW[grade] ?? { ...GRADE_MISSING, raw: grade ?? null };
+}
+
+/** 숫자 + 단위. 값이 없으면 「미확보」. 0 은 값이므로 살린다. */
+export function formatValue(value, unit) {
+  if (value === null || value === undefined || Number.isNaN(value)) return '미확보';
+  const number = typeof value === 'number' ? value.toLocaleString('ko-KR') : String(value);
+  return unit ? `${number} ${unit}` : number;
+}
+
+function normalizeEvidence(raw) {
+  return {
+    id: text(raw?.id) ?? '(id 없음)',
+    kind: text(raw?.kind) ?? '알 수 없음',
+    metric: text(raw?.metric),
+    subject: text(raw?.subject),
+    period: text(raw?.period),
+    value: typeof raw?.value === 'number' ? raw.value : null,
+    unit: text(raw?.unit),
+    grade: text(raw?.grade),
+    gradeReason: text(raw?.gradeReason),
+    sourceUrl: text(raw?.sourceUrl),
+    sourceKind: text(raw?.sourceKind),
+    retrievedAt: text(raw?.retrievedAt),
+    quote: text(raw?.quote),
+    // **경계는 값과 한 몸이다.** 빈 배열로 두어 화면이 «없음»과 «안 실림»을 헷갈리지 않게.
+    caveats: list(raw?.caveats).filter(Boolean),
+    formula: text(raw?.formula),
+    inputs: raw?.inputs && typeof raw.inputs === 'object' ? raw.inputs : null,
+    materialIds: list(raw?.materialIds),
+    assumptions: list(raw?.assumptions),
+  };
+}
+
+function normalizeFigure(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  return {
+    value: typeof raw.value === 'number' ? raw.value : null,
+    unit: text(raw.unit),
+    grade: text(raw.grade),
+    formula: text(raw.formula),
+    assumptions: list(raw.assumptions),
+    caveats: list(raw.caveats),
+    evidenceIds: list(raw.evidenceIds),
+  };
+}
+
+/**
+ * 서버 result → 화면이 읽는 모양.
+ *
+ * 두 모드가 같은 봉투를 쓰고 해당 없는 칸은 `null` 이다. 그래서 한 함수로 받는다.
+ */
+export function normalizeMarketResult(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const evidence = list(raw.evidence).map(normalizeEvidence);
+  const byId = new Map(evidence.map((item) => [item.id, item]));
+
+  const canvas = raw.canvas && Array.isArray(raw.canvas.cells)
+    ? CANVAS_LAYOUT.map((slot) => {
+      const found = raw.canvas.cells.find((cell) => cell?.canvasCell === slot.cell);
+      return {
+        ...slot,
+        status: text(found?.status) ?? 'UNVERIFIED',
+        content: list(found?.content),
+        reason: text(found?.reason) ?? '사유가 오지 않았다',
+        sourceLabels: list(found?.sourceLabels),
+        evidenceIds: list(found?.marketEvidenceIds),
+        missingEvidence: list(found?.missingEvidence),
+        caveats: list(found?.caveats),
+        // 칸이 아예 안 온 경우를 «미확인»과 구분한다 — 다른 사건이다.
+        absent: !found,
+      };
+    })
+    : null;
+
+  return {
+    runId: text(raw.runId),
+    conceptId: text(raw.conceptId),
+    asOf: text(raw.asOf),
+    mode: text(raw.mode),
+    stages: list(raw.stages),
+    degradations: list(raw.degradations),
+    scorecard: Array.isArray(raw.scorecard)
+      ? raw.scorecard.map((item) => ({
+        subject: text(item?.subject) ?? 'UNKNOWN',
+        label: SUBJECT_LABEL[item?.subject] ?? item?.subject ?? '알 수 없는 과목',
+        state: text(item?.state) ?? 'MISSING',
+        detail: text(item?.detail) ?? '',
+      }))
+      : null,
+    market: raw.market
+      ? {
+        tam: normalizeFigure(raw.market.tam),
+        sam: normalizeFigure(raw.market.sam),
+        som: normalizeFigure(raw.market.som),
+        growth: normalizeFigure(raw.market.growth),
+        price: raw.market.price
+          ? {
+            min: raw.market.price.min ?? null,
+            base: raw.market.price.base ?? null,
+            max: raw.market.price.max ?? null,
+            currency: text(raw.market.price.currency),
+            baseKind: text(raw.market.price.baseKind),
+            // ⚠ 이 문장을 화면에서 빼지 마라. 「잠정 대표값」이 사라지면 확정 단가로 읽힌다.
+            baseNote: text(raw.market.price.baseNote),
+            grade: text(raw.market.price.grade),
+            caveats: list(raw.market.price.caveats),
+            evidenceIds: list(raw.market.price.evidenceIds),
+          }
+          : null,
+        notFound: list(raw.market.notFound),
+        coverageCaveat: text(raw.market.coverageCaveat),
+      }
+      : null,
+    canvas,
+    bm: raw.bm && typeof raw.bm === 'object'
+      ? {
+        decision: text(raw.bm.decision),
+        confidence: text(raw.bm.confidence),
+        summary: text(raw.bm.summary),
+        marketFitStatus: text(raw.bm.marketFitStatus),
+        marketFitSummary: text(raw.bm.marketFitSummary),
+        consistencyStatus: text(raw.bm.consistencyStatus),
+        consistencySummary: text(raw.bm.consistencySummary),
+        strengths: list(raw.bm.strengths),
+        weaknesses: list(raw.bm.weaknesses),
+        risks: list(raw.bm.risks),
+        legal: raw.bm.legal ?? null,
+      }
+      : null,
+    evidence,
+    evidenceById: byId,
+    notes: list(raw.notes),
+  };
+}

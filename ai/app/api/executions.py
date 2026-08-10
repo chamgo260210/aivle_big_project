@@ -20,6 +20,7 @@ TASK_TYPES = {
     "INTERVIEW_SYNTHESIS", "MARKETING_GENERATION", "MARKETING_COMPARISON",
     "FINAL_REPORT_GENERATION",
     "IDEA_LEGAL_PRECHECK", "CONCEPT_LEGAL_VALIDATION",
+    "MARKET_RESEARCH",
 }
 
 
@@ -131,6 +132,7 @@ async def execute(request: Request, body: InternalExecutionRequestV1):
         "PERSONA_INTERVIEW", "INTERVIEW_SYNTHESIS",
         "MARKETING_GENERATION", "MARKETING_COMPARISON", "FINAL_REPORT_GENERATION",
         "IDEA_LEGAL_PRECHECK", "CONCEPT_LEGAL_VALIDATION",
+        "MARKET_RESEARCH",
     }:
         return internal_error(correlation, "DEPENDENCY_UNAVAILABLE", "MODEL_DEPENDENCY_UNAVAILABLE", 503, True,
                               body.taskRunId, body.taskAttemptId)
@@ -149,6 +151,15 @@ async def execute(request: Request, body: InternalExecutionRequestV1):
         elif body.taskType == "CONCEPT_LEGAL_VALIDATION" and body.input.get("validationMode") == "GUARDRAIL":
             from app.legal.concept_validation import execute_concept_legal_validation
             result = await execute_concept_legal_validation(body.input, text)
+        elif body.taskType == "MARKET_RESEARCH":
+            # 시장조사는 프롬프트 1회가 아니라 다단계 파이프라인이라 execute_journey_task 를
+            # 타지 않는다 (legal 과 같은 구조). 남은 deadline 을 그대로 예산으로 넘긴다.
+            # ⚠ 한 TaskType 에 **두 모드**(FULL·BM)가 있고 가르는 것은 `input.mode` 다.
+            #    봉투는 두 모드가 같고 해당 없는 칸은 null 이다 — 그래야 백엔드가
+            #    `MarketResearchContract.exact()` 한 번으로 못박을 수 있다.
+            from app.research.pipeline import run_market_research
+            budget = (deadline - datetime.now(timezone.utc)).total_seconds()
+            result = await run_market_research(body.input, body.taskAttemptId, budget)
         elif body.taskType in {"IDEA_LEGAL_PRECHECK", "CONCEPT_LEGAL_VALIDATION"}:
             from app.legal.pipeline import execute_legal_source_pipeline
             result = await execute_legal_source_pipeline(body.taskType, text, body.input)

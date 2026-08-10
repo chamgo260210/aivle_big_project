@@ -45,6 +45,8 @@ app:
     base-url: ${AI_SERVER_BASE_URL:http://127.0.0.1:8000}
     connect-timeout: ${AI_SERVER_CONNECT_TIMEOUT:3s}
     read-timeout: ${AI_SERVER_READ_TIMEOUT:30s}
+    # 시장조사 전 구간(90~266초) 전용. 기본 read-timeout 으로는 시작하자마자 초과다.
+    long-read-timeout: ${AI_SERVER_LONG_READ_TIMEOUT:420s}
     internal-api-key: ${AI_SERVER_INTERNAL_API_KEY:}
   jobs:
     document-processing:

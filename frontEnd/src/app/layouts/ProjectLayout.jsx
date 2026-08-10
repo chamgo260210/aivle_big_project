@@ -5,7 +5,10 @@ import { ProjectProvider, useProjectContext } from '../../features/projects/Proj
 import { appRoutes, projectRoutes } from '../../features/projects/routing/projectRoutes.js';
 
 const CURRENT_JOURNEY_STEPS = [
-  ['아이디어', ''], ['법률 검토', 'legal'], ['콘셉트 생성', 'journey/concept'],
+  ['아이디어', ''], ['법률 검토', 'legal'],
+  // 시장조사 → BM 캔버스. 여기 없으면 스테퍼·이전/다음에서 화면이 사라진다.
+  ['시장조사', 'journey/market-research'], ['BM 캔버스', 'journey/business-model'],
+  ['콘셉트 생성', 'journey/concept'],
 ];
 
 const LEGACY_MVP_STEPS = [

@@ -16,8 +16,20 @@ public class TaskRunWorker {
     public boolean executeOne(String workerId) {
         return execute(service.claimNext(workerId, Duration.ofSeconds(30), Duration.ofMinutes(2)));
     }
+    /**
+     * 작업 종류마다 걸리는 시간이 다르다. 시장조사 전 구간은 <b>90~266초</b>라
+     * 2분 고정 예산으로는 구조적으로 못 끝난다 — lease 가 먼저 만료돼
+     * {@code recoverExpired} 가 <b>실행 중인 attempt 를 회수</b>하고 260초짜리를 중복 실행한다.
+     */
+    private static Duration budget(com.aivle.backend.taskrun.domain.TaskType taskType) {
+        return taskType == com.aivle.backend.taskrun.domain.TaskType.MARKET_RESEARCH ? Duration.ofMinutes(6) : Duration.ofMinutes(2);
+    }
+    /** lease 는 예산보다 넉넉해야 한다. 같거나 짧으면 정상 실행이 만료로 회수된다. */
+    private static Duration lease(com.aivle.backend.taskrun.domain.TaskType taskType) {
+        return budget(taskType).plusMinutes(2);
+    }
     public boolean executeOne(com.aivle.backend.taskrun.domain.TaskType taskType, String workerId) {
-        return execute(service.claimNext(taskType, workerId, Duration.ofMinutes(3), Duration.ofMinutes(2)));
+        return execute(service.claimNext(taskType, workerId, lease(taskType), budget(taskType)));
     }
     private boolean execute(TaskRunService.Claim claim) {
         if (claim == null) return false;
@@ -25,7 +37,9 @@ public class TaskRunWorker {
         if (TransactionSynchronizationManager.isActualTransactionActive()) throw new IllegalStateException("AI call must run outside a DB transaction");
         try {
             TaskRun run = service.getOwnedForWorker(claim.taskRunId());
-            ExecutionResponse response = client.execute(run, claim.taskAttemptId(), java.time.LocalDateTime.now().plusMinutes(2));
+            // deadline 은 **작업 종류가 정한다**. 예전엔 2분 고정이라 시장조사가 시작하자마자 초과였다.
+            ExecutionResponse response = client.execute(run, claim.taskAttemptId(),
+                java.time.LocalDateTime.now().plus(budget(run.getTaskType())));
             try {
                 validateResult(run, response.result());
             } catch (ExecutionFailure invalidResult) {
@@ -54,6 +68,13 @@ public class TaskRunWorker {
         if (run.getTaskType() == com.aivle.backend.taskrun.domain.TaskType.IDEA_LEGAL_PRECHECK
             || run.getTaskType() == com.aivle.backend.taskrun.domain.TaskType.CONCEPT_LEGAL_VALIDATION) {
             com.aivle.backend.taskrun.contract.LegalSourcePipelineContract.validate(result, run.getTaskType().name());
+            rejectForbiddenFields(result);
+            return;
+        }
+        // 시장조사·BM. **이 분기가 없으면 결과가 조용히 폐기된다** — 컴파일도 테스트도 안 깨지고
+        // AI 비용만 쓴 뒤 아래 줄에서 RESULT_DOMAIN_INVARIANT_VIOLATION 으로 버려진다.
+        if (run.getTaskType() == com.aivle.backend.taskrun.domain.TaskType.MARKET_RESEARCH) {
+            com.aivle.backend.taskrun.contract.MarketResearchContract.validate(result);
             rejectForbiddenFields(result);
             return;
         }
