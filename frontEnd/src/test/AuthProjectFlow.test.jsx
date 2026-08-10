@@ -65,17 +65,16 @@ describe('auth and project integration flow', () => {
     });
     fireEvent.submit(screen.getByRole('button', { name: '로그인' }).closest('form'));
 
-    expect(await screen.findByRole('heading', { name: '첫 사업 검증 프로젝트를 만들어 보세요' }))
-      .toBeInTheDocument();
-    fireEvent.click(screen.getByRole('link', { name: '프로젝트 만들기' }));
+    fireEvent.click(await screen.findByRole('link', { name: 'Projects' }));
+    fireEvent.click(await screen.findByRole('link', { name: '프로젝트 만들기' }));
     fireEvent.change(document.getElementById('project-title'), {
       target: { value: '통합 프로젝트' },
     });
     fireEvent.submit(screen.getByRole('button', { name: '프로젝트 만들기' }).closest('form'));
 
-    expect(await screen.findByRole('heading', { name: '프로젝트가 생성되었습니다' }))
+    expect(await screen.findByRole('heading', { name: '통합 프로젝트' }))
       .toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /프로젝트만 열기/ })).toHaveAttribute('href', '/app/projects/21');
+    expect(document.getElementById('project-overview-title')).toHaveTextContent('프로젝트 개요');
     expect(client.post).toHaveBeenCalledWith('/projects', expect.objectContaining({
       title: '통합 프로젝트',
     }));

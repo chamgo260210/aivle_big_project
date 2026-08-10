@@ -1,75 +1,51 @@
-# AI 시장검증 플랫폼 
+# New Pipeline Platform
 
-> 아직 유저가 없는 웹 서비스를, 출시 전에 가상 고객 수백 명에게 미리 물어보는 AI 시장검증 플랫폼
+이 저장소는 프로젝트별 기획을 정리하고 외부 분석 모듈과 연결하는 신규 제품 파이프라인을 구현합니다.
 
-## 1. 문제 정의
+1. Idea Brief 작성·확정
+2. 적격 컨셉 5개 생성과 공식 근거 기반 법률 구현 가능성 사전검토
+3. 컨셉 비교·선택
+4. Market Handoff와 외부 시장분석 결과 반영
+5. Finalized Planning 생성, BM·재무 및 Persona 외부 모듈 Handoff
+6. Marketing Content 생성·수정·확정
 
-실제 서비스를 구현하는데에 있어서 시장조사는 필수적이다 하지만 시장조사에 대한 기업의 입맛대로 데이터를 얻는 과정은 돈이 많이 들고 과정도 번거롭다 
-하지만 대신해주는 가상 인간 가상 페르소나가 있으면 좋지않을까? 마음대로 중간에 질문지를 바꾸어도 좋고 묻기 어려운 질문이여도 좋다
+컨셉 생성은 정확히 5개 Slot을 사용하며 후보별 최대 1회 Redesign, 최대 2회
+Replacement, 전체 최대 15개 후보 검사 한도를 적용합니다. 사실이나 근거가 부족하면 성공을
+가장하지 않고 입력 필요 또는 실패 상태로 종료합니다.
 
-실제 시장조사는 수백만 원 + 수 주 소요
--> 가상 페르소나 서비스를 사용하면 쉽고 돈을 조금 내고도 빠르게 리서치가 가능하다
+## Runtime
 
-이 플랫폼은 실제 고객을 만나기 전 단계의 검증 공백을 채운다.
+- `frontEnd`: React/Vite Project Shell, 모듈 상태, 작업 센터와 사용자 화면
+- `backend`: Spring Boot, PostgreSQL/Flyway, TaskRun/JobEvent, 신규 `pipeline/**`
+- `ai`: FastAPI 내부 execution API와 신규 `app/tasks/**`
+- `compose.yaml`: PostgreSQL, MinIO, Backend, AI, Frontend 로컬 구성
 
-## 2. 핵심 기술 — 페르소나 엔진
+브라우저는 Spring Backend만 호출합니다. Backend는 상태와 snapshot을 소유하고,
+`InternalAiExecutionClient`를 통해 FastAPI의 `POST /internal/v1/ai/executions`를 호출합니다.
+AI 서버가 직접 DB 상태를 변경하지 않습니다.
 
-LLM에게 단순히 같은 프롬프트를 통해 구성하게 되면 응답이 동일화 되는 문제가 될 수 있어서 컨텍스트가 오염되어 지지않게 별도로 관리하고
-타겟 페르소나와 시장 페르소나 두 개의 페르소나를 통해 관리한다
+## Database
 
-타겟 페르소나가 만들어진 이유는 간단한데 컨셉테스트에서 시장에서 정말로 먹힐지 하는 타겟층들에게 실험을 하기 위함이다
-그리고 시장 페르소나는 처음 시장조사나 컨셉테스트가 완료된 후의 전체 시장에서의 검증을 위해 구성되어있다
+보존 데이터가 없는 rebuild 환경을 전제로 Flyway migration은
+`backend/src/main/resources/db/migration/V1__new_pipeline_baseline.sql` 하나로 시작합니다.
+기존 DB/volume에 대한 in-place upgrade는 지원하지 않으므로 적용 전에 DB를 초기화해야 합니다.
 
-페르소나의 집단은 1차와 2차로 구분되어 있다
-1차 페르소나는 집단적 특징을 이야기한다 예를 들면 얼리어답터,초보자,시니어 등을 비율을 상정하고 그룹에 대한 특징을 정의한다
-2차 페르소나는 각각의 가상 인격들을 만들어 주는것을 이야기한다 에이전트를 통해 가상 인격을 생성하는 생성자 노드를 두어 페르소나를 llm을 통해 생성한다
+## Runtime contracts
 
-<img width="1344" height="1672" alt="image" src="https://github.com/user-attachments/assets/959ebe38-ec8d-4c93-92c7-d660583da15b" />
-위 그림은 실제 페르소나 엔진이 돌아가는 과정을 시각화 한 것이다
+- 사용자가 직접 호출하는 제품 API는 `/api/v3/projects/{projectId}/...` 아래에 있습니다.
+- 작업 Event 조회는 `/api/v2/jobs/{jobId}/events`의 SSE와 `?after=<sequence>` JSON polling을 사용합니다.
+- Backend Query API가 상태 정본이며 Job Event는 갱신 신호입니다.
+- Provider 작업은 Idea Brief, Concept Candidate, Concept Legal Review, Concept Redesign,
+  Marketing Content Generation의 다섯 계약으로 제한합니다.
+- 실제 Provider 검증은 `python -m app.tools.idea_brief_provider_smoke`,
+  `python -m app.tools.concept_factory_provider_smoke`,
+  `python -m app.tools.marketing_content_provider_smoke`로 수행합니다.
 
-## 3. 주요 기능 (5개 메뉴)
+## Documentation
 
-### ① 시장 조사 
-시장 조사를 진행할때에 3가지 항목을 바탕으로 조사하여 결과 리포트를 만들어줌
-1. 시장성 조사: 이 서비스가 시장에서 정말로 필요로 하는지 등을 조사한 다음 시장 페르소나를 통해 검증
-2. 경쟁 조사: 경쟁 조사는 이미 유사한 서비스가 있는지를 검증
-3. 타겟 고객 조사: 타겟 고객 조사를 통해서 이 서비스의 수요도가 어떤 페르소나들에게서 높게 나왔는지를 분석해서 타겟층을 도출하여 앞으로의 서비스 검증에 도움을 줌
-
-### ② 서비스 검증 
-서비스 검증은 실제로 이 서비스가 시장에 나가기 전 다듬는 단계로 타겟층을 고려할때 어떤 기능이 추가되고 삭제되어야하는지 전체적인 장단점등을 분석하여 서비스 완성도를 높임
-1. BM 검증: BM 캔버스에 칸을 나누어 9개의 항목으로 적합한지에 대해서 분석 (ex 핵심파트너,비용관리,수익모델 등)
-2. 기능 검증: 전체적인 기능을 평가하여 기능정의가 좋은 기능들과 상대적으로 부적절한 기능들을 분석하여 대시보드 형식으로 제공
-3. 컨셉 테스트: 타겟 페르소나들이 실제로 이 서비스에 대한 컨셉을 어떻게 생각하는지 장단점은 무엇인지를 도출하고 리포트로써 제공
-
-- 산출물: 서비스 적합도 리포트 + 타겟층 인터뷰 리뷰 
-
-### ③ AI 시장 검증 
-개별 인터뷰 정보들을 모아서 집단 조사를 하는 기능과 서로 다른 생각을 하는 페르소나들이 토론하여 이 서비스에 대한 리포트를 내는 기능으로 정의
-1. 페르소나 집단조사: 각각의 항목의 설문에 대해 답하는 형식으로 전체 시장 페르소나들에게 질의를 하고 답을 받아 인사이트 도출
-2. 페르소나 토론: 페르소나들이 서로 대화하며 상호작용을 하며 서로간의 생각을 말하면서 실제 시장 평가를 입체적으로 구성
-3. 시장검증 리포트: 각각의 집단 조사 결과와 토론들을 바탕으로 시장에서의 장단점과 가상 평가들을 구성하여 출시 전 검증 리포트 작성
-   
-- 산출물: 시장 검증 리포트
-
-### ④ 마케팅 제작지원
-1. 광고 기획:각각의 리포트 내용들을 바탕으로 타겟 고객층들에게 어필 될 수 있는 광고를 기획
-2. A/B 테스트: 다른 방향의 기획 2개를 구성하여 타겟고객층들의 만족도 조사하여 선정
-3. 출시 전략 리포트: 타겟층들한테 마케팅을 하려면 어떤 방식이 좋을지에 대한 구체적인 전략 리포트 생성
-
-- 산출물: 출시 전략 리포트 + 광고 포스터
-
-### ⑤ 프로젝트 관리 
-페르소나를 수정하여 다시 조사를 하거나 리포트들을 모아서 한번에 볼 수 있는 전체 프로젝트를 한눈에 볼 수 있게 관리하는 대시보드
-1. 페르소나 관리: 각각의 페르소나들을 수정하여 다시 시장분석을 할 수 있게 비율수정과 타겟 페르소나 생성등을 지원
-2. 프로젝트 리포트 관리: 각 과정에서 나온 리포트들과 설명들을 모아서 볼 수 있도록 함
-3. 분석 대시보드: 리포트에서 나왔었던 자료들을 한눈에 볼 수 있도록 표나 그래프로 구성
-4. GTM 전략 리포트: 전체 구성들을 한눈에 볼 수 있도록 정리한 리포트 생성
-
-- 산출물: GTM 전략 리포트
-
-
-
-
-
-
-
+- 구현 계약: `docs/rebuild/`
+- API 요약: `docs/api/openapi.yaml`
+- 최종 구조: `docs/rebuild/FINAL_REPOSITORY_STRUCTURE.md`
+- Entity/Table 목록: `docs/rebuild/FINAL_ENTITY_TABLE_INVENTORY.md`
+- DB baseline: `docs/rebuild/FINAL_DATABASE_BASELINE.md`
+- 현재 실행 단위 검증: `docs/rebuild/verification/PRODUCT-CUTOVER-CLEANUP_USER_VERIFICATION.md`

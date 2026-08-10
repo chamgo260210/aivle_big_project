@@ -18,7 +18,7 @@ public class AdminAccessService {
 
     @Transactional(readOnly = true)
     public User requireAdmin() {
-        User user = users.findById(currentUserProvider.currentUserId())
+        User user = users.findByIdAndDeletedAtIsNull(currentUserProvider.currentUserId())
             .filter(candidate -> candidate.getRole() == UserRole.ADMIN && candidate.canLogin())
             .orElseThrow(() -> new BusinessException(ErrorCode.ADMIN_ACCESS_REQUIRED));
         return user;

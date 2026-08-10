@@ -19,7 +19,7 @@ describe('LandingPage', () => {
 
   it('renders its primary content, anchors, and auth links', () => {
     renderLanding();
-    expect(screen.getByRole('heading', { level: 1, name: /사업계획서를, 검증 가능한 다음 단계로/ })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: /아이디어에서, 실행 판단을 위한 보고서까지/ })).toBeInTheDocument();
     ['intro', 'workflow', 'features', 'faq', 'demo'].forEach((id) => expect(document.getElementById(id)).toBeInTheDocument());
     expect(screen.getAllByRole('link', { name: '로그인' })[0]).toHaveAttribute('href', '/auth/login');
     expect(screen.getAllByRole('link', { name: /무료로 시작하기/ })[0]).toHaveAttribute('href', '/auth/signup');
@@ -58,7 +58,7 @@ describe('LandingPage', () => {
   it('renders the enhanced demo CTA and only runs its attention state without reduced motion', async () => {
     vi.useFakeTimers();
     render(<MemoryRouter><HeroSection introState="completed" reducedMotion={false} onNavigate={vi.fn()} /></MemoryRouter>);
-    const cta = screen.getByRole('button', { name: '데모로 작동 방식 보기' });
+    const cta = screen.getByRole('button', { name: '파이프라인 미리보기' });
     expect(cta).toHaveClass('landing-demo-cta');
     expect(cta.querySelector('[aria-hidden="true"]')).toBeInTheDocument();
     await act(async () => { vi.advanceTimersByTime(30); });
@@ -151,7 +151,7 @@ describe('LandingPage', () => {
 
   it('opens and closes an FAQ answer', () => {
     renderLanding();
-    const button = screen.getByRole('button', { name: '어떤 문서를 업로드할 수 있나요?' });
+    const button = screen.getByRole('button', { name: '어떤 입력을 사용할 수 있나요?' });
     expect(button).toHaveAttribute('aria-expanded', 'false');
     fireEvent.click(button); expect(button).toHaveAttribute('aria-expanded', 'true');
     fireEvent.click(button); expect(button).toHaveAttribute('aria-expanded', 'false');
@@ -178,7 +178,7 @@ describe('LandingPage', () => {
     renderLanding();
     const observer = observers.find((item) => item.targets.some((target) => target.id === 'intro'));
     act(() => observer.callback([{ target: document.getElementById('demo'), isIntersecting: true, intersectionRatio: 1 }]));
-    expect(screen.getAllByRole('button', { name: '데모' })[0]).toHaveAttribute('aria-current', 'true');
+    expect(screen.getAllByRole('button', { name: '미리보기' })[0]).toHaveAttribute('aria-current', 'true');
     window.IntersectionObserver = original;
   });
 

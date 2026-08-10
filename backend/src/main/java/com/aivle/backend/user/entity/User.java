@@ -59,6 +59,8 @@ public class User extends BaseEntity {
     @Column(length = 500)
     private String lockedReason;
     private LocalDateTime disabledAt;
+    @Column(length = 500)
+    private String disabledReason;
     private LocalDateTime roleUpdatedAt;
     private Long roleUpdatedBy;
     @Column(nullable = false)
@@ -122,6 +124,7 @@ public class User extends BaseEntity {
             this.lockedReason = null;
         }
         this.disabledAt = status == UserStatus.DISABLED ? now : null;
+        this.disabledReason = status == UserStatus.DISABLED ? reason : null;
     }
 
     public void updateProfile(
@@ -136,5 +139,17 @@ public class User extends BaseEntity {
         this.organizationName = organizationName;
         this.departmentName = departmentName;
         this.jobTitle = jobTitle;
+    }
+
+    public void anonymizeAndDelete(String anonymousUsername, String reason, LocalDateTime now) {
+        this.username = anonymousUsername;
+        this.email = null;
+        this.name = "탈퇴한 사용자";
+        this.organizationName = null;
+        this.departmentName = null;
+        this.jobTitle = null;
+        updateStatus(UserStatus.DISABLED, reason, now);
+        advanceSecurityVersion();
+        softDelete(now);
     }
 }

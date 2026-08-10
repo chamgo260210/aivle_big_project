@@ -179,7 +179,11 @@ public class AuthService {
         if (!stored.isUsableAt(now)
             || !stored.getTokenJti().equals(jwt.getId())
             || !stored.getUser().getId().toString().equals(jwt.getSubject())
-            || !stored.getUser().canLogin()) {
+            || !stored.getUser().canLogin()
+            || stored.getUser().isDeleted()
+            || jwt.getClaim("securityVersion") == null
+            || stored.getUser().getSecurityVersion().longValue()
+                != ((Number) jwt.getClaim("securityVersion")).longValue()) {
             throw new BusinessException(ErrorCode.REFRESH_TOKEN_INVALID);
         }
 
@@ -227,7 +231,7 @@ public class AuthService {
 
     @Transactional(readOnly = true)
     public UserResponse me(Long currentUserId) {
-        User user = userRepository.findById(currentUserId)
+        User user = userRepository.findByIdAndDeletedAtIsNull(currentUserId)
             .filter(User::canLogin)
             .orElseThrow(() ->
                 new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED));
@@ -236,6 +240,7 @@ public class AuthService {
 
     @Transactional
     public UserResponse updateProfile(Long currentUserId, UpdateProfileRequest request, String requestId) {
+        servicePolicy.requireWriteAvailableForUser(currentUserId);
         User user = activeUser(currentUserId);
         String normalizedEmail = normalizeEmail(request.email());
         if (normalizedEmail != null && userRepository.existsByEmailIgnoreCase(normalizedEmail)
@@ -255,6 +260,7 @@ public class AuthService {
 
     @Transactional
     public void changePassword(Long currentUserId, ChangePasswordRequest request, String requestId) {
+        servicePolicy.requireWriteAvailableForUser(currentUserId);
         User user = activeUser(currentUserId);
         if (!passwordEncoder.matches(request.currentPassword(), user.getPasswordHash())) {
             throw new BusinessException(ErrorCode.INVALID_CREDENTIALS);
@@ -268,7 +274,7 @@ public class AuthService {
     }
 
     private User activeUser(Long userId) {
-        return userRepository.findById(userId)
+        return userRepository.findByIdAndDeletedAtIsNull(userId)
             .filter(User::canLogin)
             .orElseThrow(() -> new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED));
     }

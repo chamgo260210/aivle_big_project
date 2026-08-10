@@ -3,9 +3,8 @@ import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 
 import App from '../app/App.jsx';
-import { AuthProvider } from '../features/auth/AuthProvider.jsx';
+import AppProviders from '../app/providers/AppProviders.jsx';
 import { AUTH_STATUS } from '../features/auth/authSession.js';
-import { ApiClientProvider } from '../shared/api/ApiClientProvider.jsx';
 
 const authenticated = {
   status: AUTH_STATUS.AUTHENTICATED,
@@ -39,11 +38,13 @@ function renderApp(
 ) {
   return render(
     <MemoryRouter initialEntries={[path]}>
-      <ApiClientProvider client={apiClient}>
-        <AuthProvider initialSnapshot={snapshot} session={session}>
-          <App />
-        </AuthProvider>
-      </ApiClientProvider>
+      <AppProviders
+        apiClient={apiClient}
+        authSession={session}
+        authProps={{ initialSnapshot: snapshot }}
+      >
+        <App />
+      </AppProviders>
     </MemoryRouter>,
   );
 }
@@ -52,7 +53,7 @@ describe('application routing', () => {
   it('renders the public route', () => {
     renderApp('/');
     expect(screen.getByRole('heading', {
-      name: '사업계획서를, 검증 가능한 다음 단계로.',
+      name: '아이디어에서, 실행 판단을 위한 보고서까지.',
     })).toBeInTheDocument();
   });
 
@@ -63,7 +64,7 @@ describe('application routing', () => {
 
   it('redirects an authenticated user away from public auth routes', async () => {
     renderApp('/auth/login', authenticated);
-    expect(await screen.findByRole('heading', { name: '첫 사업 검증 프로젝트를 만들어 보세요' })).toBeInTheDocument();
+    expect(await screen.findByRole('link', { name: 'Projects' })).toBeInTheDocument();
   });
 
   it('keeps a protected route pending while auth is unknown', () => {
@@ -90,9 +91,9 @@ describe('application routing', () => {
   });
 
   it('supports direct project route entry', async () => {
-    renderApp('/projects/42/documents', authenticated);
-    expect(await screen.findByRole('heading', { name: '사업계획서 문서' })).toBeInTheDocument();
-    expect(screen.getAllByText('테스트 프로젝트 42').length).toBeGreaterThan(0);
+    renderApp('/app/projects/42/idea', authenticated);
+    expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent('42');
+    expect(screen.getByRole('navigation', { name: '프로젝트 모듈' })).toBeInTheDocument();
   });
 
   it('retains the project route parameter after rendering again', async () => {
@@ -123,7 +124,7 @@ describe('application routing', () => {
 
   it('renders project context navigation', async () => {
     renderApp('/projects/77/overview', authenticated);
-    expect(await screen.findByRole('navigation', { name: '프로젝트 영역' })).toBeInTheDocument();
+    expect(await screen.findByRole('navigation', { name: '프로젝트 모듈' })).toBeInTheDocument();
   });
 
   it('provides the main landmark', () => {
@@ -133,7 +134,7 @@ describe('application routing', () => {
 
   it('uses a single level-one heading in a protected page', async () => {
     renderApp('/dashboard', authenticated);
-    await screen.findByRole('heading', { name: '첫 사업 검증 프로젝트를 만들어 보세요' });
+    await screen.findByRole('link', { name: 'Projects' });
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
   });
 

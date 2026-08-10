@@ -6,6 +6,14 @@ import { ApiError } from '../../shared/api/apiError.js';
 import { ApiClientProvider } from '../../shared/api/ApiClientProvider.jsx';
 import { ProjectCreatePage, ProjectListPage } from './ProjectPages.jsx';
 
+vi.mock('../service-policy/useServicePolicy.js', () => ({
+  useServicePolicy: () => ({
+    loading: false,
+    policy: { maintenanceMode: false, registrationEnabled: true },
+    error: null,
+  }),
+}));
+
 function renderProject(element, client, path = '/app/projects') {
   return render(
     <MemoryRouter initialEntries={[path]}>
@@ -13,7 +21,7 @@ function renderProject(element, client, path = '/app/projects') {
         <Routes>
           <Route path="/app/projects" element={element} />
           <Route path="/app/projects/new" element={element} />
-          <Route path="/app/projects/:id/get-started" element={<h1>Start this project</h1>} />
+          <Route path="/app/projects/:id/overview" element={<h1>Project overview</h1>} />
         </Routes>
       </ApiClientProvider>
     </MemoryRouter>,
@@ -45,7 +53,7 @@ describe('project pages', () => {
     });
     expect(await screen.findByRole('link', { name: '실제 프로젝트' })).toBeInTheDocument();
     expect(screen.getByText('작성 중')).toBeInTheDocument();
-    expect(screen.getByText('Plan')).toBeInTheDocument();
+    expect(screen.getByText('8단계 모듈')).toBeInTheDocument();
   });
 
   it('renders a retryable project load error', async () => {
@@ -79,14 +87,14 @@ describe('project pages', () => {
     expect(input).toHaveFocus();
   });
 
-  it('creates a project and lets the user choose how to start', async () => {
+  it('creates a project and opens its overview', async () => {
     const client = { post: vi.fn(async () => ({ data: project })) };
     renderProject(<ProjectCreatePage />, client, '/app/projects/new');
     fireEvent.change(document.getElementById('project-title'), {
       target: { value: '실제 프로젝트' },
     });
     fireEvent.submit(screen.getByRole('button', { name: '프로젝트 만들기' }).closest('form'));
-    expect(await screen.findByRole('heading', { name: 'Start this project' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Project overview' })).toBeInTheDocument();
     expect(client.post).toHaveBeenCalledWith('/projects', {
       title: '실제 프로젝트',
       description: null,

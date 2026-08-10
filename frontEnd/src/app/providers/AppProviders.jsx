@@ -2,6 +2,7 @@ import { createAuthApi } from '../../features/auth/api/authApi.js';
 import { AuthProvider } from '../../features/auth/AuthProvider.jsx';
 import { createAuthSession } from '../../features/auth/authSession.js';
 import { createAuthTokenProvider } from '../../features/auth/authTokenStorage.js';
+import ServicePolicyProvider from '../../features/service-policy/ServicePolicyProvider.jsx';
 import { ApiClientProvider } from '../../shared/api/ApiClientProvider.jsx';
 import { createApiClient } from '../../shared/api/apiClient.js';
 import GlobalErrorBoundary from './GlobalErrorBoundary.jsx';
@@ -29,9 +30,11 @@ export default function AppProviders({
   return (
     <GlobalErrorBoundary>
       <ApiClientProvider client={apiClient}>
-        <AuthProvider session={authSession} {...authProps}>
-          {children}
-        </AuthProvider>
+        <ServicePolicyProvider>
+          <AuthProvider session={authSession} {...authProps}>
+            {children}
+          </AuthProvider>
+        </ServicePolicyProvider>
       </ApiClientProvider>
     </GlobalErrorBoundary>
   );

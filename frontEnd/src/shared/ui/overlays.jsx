@@ -7,6 +7,7 @@ import './ui.css';
 
 const FOCUSABLE =
   'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+let openOverlayCount = 0;
 
 export function Dialog({
   open,
@@ -17,6 +18,7 @@ export function Dialog({
   phase = 'entered',
   onExited,
   initialFocusRef,
+  describedBy,
 }) {
   const titleId = useId();
   const panelRef = useRef(null);
@@ -51,10 +53,12 @@ export function Dialog({
     }
 
     document.addEventListener('keydown', handleKeyDown);
+    openOverlayCount += 1;
     document.body.classList.add('has-overlay');
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
-      document.body.classList.remove('has-overlay');
+      openOverlayCount = Math.max(0, openOverlayCount - 1);
+      if (openOverlayCount === 0) document.body.classList.remove('has-overlay');
       openerRef.current?.focus();
     };
   }, [initialFocusRef, open, phase]);
@@ -73,6 +77,7 @@ export function Dialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
+        aria-describedby={describedBy}
         onAnimationEnd={(event) => {
           if (phase === 'exiting' && event.target === event.currentTarget) onExited?.();
         }}
@@ -92,9 +97,9 @@ export function Drawer(props) {
   return <Dialog variant="drawer" {...props} />;
 }
 
-export function SideSheet({ title, onClose, open, children, footer, label = 'Side sheet', phase, onExited, initialFocusRef }) {
+export function SideSheet({ title, onClose, open, children, footer, label = 'Side sheet', phase, onExited, initialFocusRef, describedBy }) {
   return (
-    <Dialog open={open} onClose={onClose} title={title} variant="sheet" phase={phase} onExited={onExited} initialFocusRef={initialFocusRef}>
+    <Dialog open={open} onClose={onClose} title={title} variant="sheet" phase={phase} onExited={onExited} initialFocusRef={initialFocusRef} describedBy={describedBy}>
       <div className="ui-side-sheet" aria-label={label}>{children}</div>
       {footer && <footer className="ui-side-sheet__footer">{footer}</footer>}
     </Dialog>

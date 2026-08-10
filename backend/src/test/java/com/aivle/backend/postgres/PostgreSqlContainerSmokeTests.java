@@ -31,7 +31,7 @@ class PostgreSqlContainerSmokeTests extends PostgreSqlIntegrationTestSupport {
     }
 
     @Test
-    void startsPinnedPostgreSqlAndAppliesAllBaselineMigrations() {
+    void startsPinnedPostgreSqlAndAppliesAllMigrations() {
         String version = jdbcTemplate.queryForObject("select version()", String.class);
         String timezone = jdbcTemplate.queryForObject("show timezone", String.class);
         String encoding = jdbcTemplate.queryForObject(
@@ -42,7 +42,15 @@ class PostgreSqlContainerSmokeTests extends PostgreSqlIntegrationTestSupport {
         assertThat(version).contains("PostgreSQL 17.10");
         assertThat(timezone).isEqualTo("UTC");
         assertThat(encoding).isEqualTo("UTF8");
-        assertThat(flyway.info().applied()).hasSize(10);
+        assertThat(flyway.info().applied()).hasSize(1);
+        assertThat(flyway.info().current().getVersion().getVersion())
+            .isEqualTo("1");
+        System.out.printf(
+            "R7_PG_FRESH postgres=\"%s\" flywayLatest=1 "
+                + "applied=1 applicationContext=PASS "
+                + "ddlAutoValidate=PASS%n",
+            version
+        );
     }
 
     @Test
@@ -51,7 +59,7 @@ class PostgreSqlContainerSmokeTests extends PostgreSqlIntegrationTestSupport {
             insert into users (
                 username, email, password_hash, name, role, status, failed_login_count,
                 created_at, updated_at, version
-            ) values (?, ?, ?, ?, ?, 0, current_timestamp, current_timestamp, 0)
+            ) values (?, ?, ?, ?, ?, ?, 0, current_timestamp, current_timestamp, 0)
             """,
             "phase2-smoke",
             "phase2-smoke@example.com",

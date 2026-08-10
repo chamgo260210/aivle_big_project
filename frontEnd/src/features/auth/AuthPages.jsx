@@ -3,6 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 
 import { getUserErrorMessage } from '../../shared/api/apiError.js';
 import { Alert, Button, PasswordInput, TextInput } from '../../shared/ui/index.js';
+import { useServicePolicy } from '../service-policy/useServicePolicy.js';
 import { useAuth } from './AuthProvider.jsx';
 import AuthBrandPanel from './components/AuthBrandPanel.jsx';
 import AuthCard from './components/AuthCard.jsx';
@@ -10,7 +11,6 @@ import LoginRateLimitNotice from './components/LoginRateLimitNotice.jsx';
 import AuthShell from './components/AuthShell.jsx';
 import PasswordRequirements from './components/PasswordRequirements.jsx';
 import useCapsLock from './hooks/useCapsLock.js';
-import { useAuthTransition } from '../../app/transitions/AuthTransitionProvider.jsx';
 import usePasswordChecks from './hooks/usePasswordChecks.js';
 import useLoginRetryCountdown from './hooks/useLoginRetryCountdown.js';
 import './auth.css';
@@ -84,7 +84,6 @@ function AuthPage({ children, mode }) {
 
 export function LoginPage() {
   const { login } = useAuth();
-  const { start } = useAuthTransition();
   const errorRef = useRef(null);
   const timerRef = useRef(null);
   const { isCapsLockOn, handleBlur: handleCapsLockBlur, handleFocus: handleCapsLockFocus, handleKeyDown: handleCapsLockKeyDown, handleKeyUp: handleCapsLockKeyUp } = useCapsLock();
@@ -107,14 +106,15 @@ export function LoginPage() {
     else if (!usernamePattern.test(username)) nextErrors.username = '사용할 수 없는 문자가 포함되어 있습니다.';
     if (!values.password) nextErrors.password = '비밀번호를 입력해 주세요.';
     if (Object.keys(nextErrors).length) { setErrors(nextErrors); focusFirstError(nextErrors, 'login'); return; }
-    setSubmitting(true); setGlobalError('');
+    setSubmitting(true); setErrors({}); setGlobalError('');
     try {
-      const loggedInUser = await login({ username, password: values.password });
+      await login({ username, password: values.password });
       clearRetryCountdown();
       window.sessionStorage.removeItem(warningStorageKey);
       window.dispatchEvent(new Event('auth-login-attempt-warning'));
+      setErrors({});
+      setGlobalError('');
       setSuccess(true);
-      await start({ destination: loggedInUser?.role === 'ADMIN' ? '/admin' : '/app', message: '워크스페이스를 준비하고 있습니다.' });
     } catch (error) {
       if (error?.code === 'LOGIN_RATE_LIMITED') {
         startRetryCountdown(error.retryAfterSeconds);
@@ -135,6 +135,12 @@ export function LoginPage() {
 
 export function SignupPage() {
   const { signup } = useAuth();
+  const {
+    loading: policyLoading,
+    policy,
+    error: policyError,
+    refresh: refreshPolicy,
+  } = useServicePolicy();
   const errorRef = useRef(null);
   const timerRef = useRef(null);
   const { isCapsLockOn, handleBlur: handleCapsLockBlur, handleFocus: handleCapsLockFocus, handleKeyDown: handleCapsLockKeyDown, handleKeyUp: handleCapsLockKeyUp } = useCapsLock();
@@ -143,9 +149,24 @@ export function SignupPage() {
   const [globalError, setGlobalError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [serverRegistrationDisabled, setServerRegistrationDisabled] = useState(false);
   const passwordChecks = usePasswordChecks(values.password, values.confirmPassword, values.username, values.displayName);
   useEffect(() => () => window.clearTimeout(timerRef.current), []);
+  useEffect(() => {
+    const refreshTimer = window.setTimeout(() => {
+      void refreshPolicy().catch(() => undefined);
+    }, 0);
+    return () => window.clearTimeout(refreshTimer);
+  }, [refreshPolicy]);
+  const registrationPaused = serverRegistrationDisabled
+    || (!policyLoading && !policyError && !policy.registrationEnabled);
+  const signupUnavailable = policyLoading || Boolean(policyError) || registrationPaused;
   const update = (field) => (event) => { const value = field === 'username' ? event.target.value.toLowerCase() : event.target.value; setValues((current) => ({ ...current, [field]: value })); setErrors((current) => ({ ...current, [field]: undefined })); setGlobalError(''); };
+  const retryPolicy = () => {
+    setServerRegistrationDisabled(false);
+    setGlobalError('');
+    void refreshPolicy().catch(() => undefined);
+  };
   function validate() {
     const next = {}; const username = values.username.trim().toLowerCase(); const email = values.email.trim();
     if (!username) next.username = '아이디를 입력해 주세요.'; else if (username.length < 4) next.username = '아이디는 4자 이상이어야 합니다.'; else if (username.length > 30) next.username = '아이디는 30자 이하로 입력해 주세요.'; else if (!usernamePattern.test(username)) next.username = '사용할 수 없는 문자가 포함되어 있습니다.';
@@ -159,10 +180,196 @@ export function SignupPage() {
     return next;
   }
   async function handleSubmit(event) {
-    event.preventDefault(); if (submitting) return;
+    event.preventDefault(); if (submitting || signupUnavailable) return;
     const nextErrors = validate(); if (Object.keys(nextErrors).length) { setErrors(nextErrors); focusFirstError(nextErrors, 'signup'); return; }
     setSubmitting(true); setGlobalError('');
-    try { await signup({ username: values.username.trim().toLowerCase(), displayName: values.displayName.trim(), password: values.password, email: values.email.trim() || null, organizationName: values.organizationName.trim() || null, departmentName: values.departmentName.trim() || null, jobTitle: values.jobTitle.trim() || null }); setSuccess(true); } catch (error) { const fields = fieldErrorsFrom(error); setErrors(fields); setGlobalError(getUserErrorMessage(error)); window.requestAnimationFrame(() => Object.keys(fields).length ? focusFirstError(fields, 'signup') : errorRef.current?.focus()); } finally { setSubmitting(false); }
+    try {
+      await signup({
+        username: values.username.trim().toLowerCase(),
+        displayName: values.displayName.trim(),
+        password: values.password,
+        email: values.email.trim() || null,
+        organizationName: values.organizationName.trim() || null,
+        departmentName: values.departmentName.trim() || null,
+        jobTitle: values.jobTitle.trim() || null,
+      });
+      setSuccess(true);
+    } catch (error) {
+      const fields = fieldErrorsFrom(error);
+      setErrors(fields);
+      if (error?.code === 'REGISTRATION_DISABLED') {
+        setServerRegistrationDisabled(true);
+      }
+      setGlobalError(getUserErrorMessage(error));
+      window.requestAnimationFrame(() => (
+        Object.keys(fields).length
+          ? focusFirstError(fields, 'signup')
+          : errorRef.current?.focus()
+      ));
+    } finally {
+      setSubmitting(false);
+    }
   }
-  return <AuthPage mode="signup"><AuthCard title="첫 번째 검증 프로젝트를 시작하세요" description="계정을 만들고 검증 결과와 다음 행동을 안전하게 저장하세요."><AuthError errorRef={errorRef} message={globalError} title="가입하지 못했습니다" />{success ? <AuthSuccess title="계정이 준비되었습니다" message="첫 번째 프로젝트를 시작할 수 있습니다." /> : <form className="auth-form" onSubmit={handleSubmit} noValidate><TextInput id="signup-username" label="아이디" description="4~30자의 영문 소문자, 숫자, 마침표, 밑줄, 하이픈을 사용할 수 있습니다." placeholder="ventureuser" autoComplete="username" value={values.username} error={errors.username} onChange={update('username')} required />{errors.username === '이미 사용 중인 아이디입니다.' && <p className="auth-inline-link">다른 아이디를 입력해 주세요.</p>}<TextInput id="signup-display-name" label="이름 또는 닉네임" description="프로젝트 화면에 표시되는 이름입니다." autoComplete="name" value={values.displayName} error={errors.displayName} onChange={update('displayName')} required /><PasswordInput id="signup-password" label="비밀번호" autoComplete="new-password" value={values.password} error={errors.password} onChange={update('password')} onFocus={handleCapsLockFocus} onBlur={handleCapsLockBlur} onKeyUp={handleCapsLockKeyUp} onKeyDown={handleCapsLockKeyDown} required /><PasswordInput id="signup-password-confirm" label="비밀번호 확인" autoComplete="new-password" value={values.confirmPassword} error={errors.confirmPassword} onChange={update('confirmPassword')} onFocus={handleCapsLockFocus} onBlur={handleCapsLockBlur} onKeyUp={handleCapsLockKeyUp} onKeyDown={handleCapsLockKeyDown} required /><PasswordRequirements password={values.password} confirmPassword={values.confirmPassword} username={values.username} displayName={values.displayName} /><fieldset className="auth-optional-fields"><legend>추가 정보 <span>선택</span></legend><p>선택 사항이며 입력하지 않아도 가입할 수 있습니다.</p><TextInput id="signup-email" label="이메일 (선택)" type="email" placeholder="name@example.com" autoComplete="email" description="계정 안내용 선택 정보입니다. 현재는 이메일 인증을 진행하지 않습니다." value={values.email} error={errors.email} onChange={update('email')} /><TextInput id="signup-organization" label="소속 또는 조직 (선택)" placeholder="회사, 학교, 기관 또는 팀 이름" value={values.organizationName} onChange={update('organizationName')} /><TextInput id="signup-department" label="부서 또는 팀 (선택)" placeholder="예: 신사업팀, AI 2조" value={values.departmentName} onChange={update('departmentName')} /><TextInput id="signup-job-title" label="직급 또는 역할 (선택)" placeholder="예: 팀원, 기획자, 대표, 연구원" value={values.jobTitle} onChange={update('jobTitle')} /></fieldset>{isCapsLockOn && <p className="auth-caps-lock" aria-live="polite">Caps Lock이 켜져 있습니다.</p>}<Button className="auth-form__submit" type="submit" size="large" loading={submitting}>{submitting ? '계정을 만들고 있습니다...' : '무료 계정 만들기'}</Button></form>}<p className="auth-card__switch">이미 계정이 있나요? <Link to="/auth/login" state={{ authTransition: true, source: 'auth-switch', intent: 'login' }}>로그인</Link></p></AuthCard></AuthPage>;
+  return (
+    <AuthPage mode="signup">
+      <AuthCard
+        title="첫 번째 검증 프로젝트를 시작하세요"
+        description="계정을 만들고 검증 결과와 다음 행동을 안전하게 저장하세요."
+      >
+        <AuthError errorRef={errorRef} message={globalError} title="가입하지 못했습니다" />
+        {policyLoading && (
+          <div className="auth-policy-notice">
+            <Alert title="정책 확인 중">서비스 운영 상태를 확인하고 있습니다.</Alert>
+          </div>
+        )}
+        {policyError && (
+          <div className="auth-policy-notice">
+            <Alert tone="danger" title="운영 상태를 확인하지 못했습니다">
+              <p>서비스 운영 상태를 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.</p>
+              <Button type="button" variant="outline" size="small" onClick={retryPolicy}>
+                다시 시도
+              </Button>
+            </Alert>
+          </div>
+        )}
+        {registrationPaused && (
+          <div className="auth-policy-notice">
+            <Alert tone="warning" title="현재 신규 회원가입이 일시 중지되었습니다.">
+              기존 계정은 로그인하여 서비스를 이용할 수 있습니다.
+            </Alert>
+          </div>
+        )}
+        {success ? (
+          <AuthSuccess
+            title="계정이 준비되었습니다"
+            message="첫 번째 프로젝트를 시작할 수 있습니다."
+          />
+        ) : (
+          <form className="auth-form" onSubmit={handleSubmit} noValidate>
+            <TextInput
+              id="signup-username"
+              label="아이디"
+              description="4~30자의 영문 소문자, 숫자, 마침표, 밑줄, 하이픈을 사용할 수 있습니다."
+              placeholder="ventureuser"
+              autoComplete="username"
+              value={values.username}
+              error={errors.username}
+              onChange={update('username')}
+              disabled={signupUnavailable}
+              required
+            />
+            {errors.username === '이미 사용 중인 아이디입니다.' && (
+              <p className="auth-inline-link">다른 아이디를 입력해 주세요.</p>
+            )}
+            <TextInput
+              id="signup-display-name"
+              label="이름 또는 닉네임"
+              description="프로젝트 화면에 표시되는 이름입니다."
+              autoComplete="name"
+              value={values.displayName}
+              error={errors.displayName}
+              onChange={update('displayName')}
+              disabled={signupUnavailable}
+              required
+            />
+            <PasswordInput
+              id="signup-password"
+              label="비밀번호"
+              autoComplete="new-password"
+              value={values.password}
+              error={errors.password}
+              onChange={update('password')}
+              onFocus={handleCapsLockFocus}
+              onBlur={handleCapsLockBlur}
+              onKeyUp={handleCapsLockKeyUp}
+              onKeyDown={handleCapsLockKeyDown}
+              disabled={signupUnavailable}
+              required
+            />
+            <PasswordInput
+              id="signup-password-confirm"
+              label="비밀번호 확인"
+              autoComplete="new-password"
+              value={values.confirmPassword}
+              error={errors.confirmPassword}
+              onChange={update('confirmPassword')}
+              onFocus={handleCapsLockFocus}
+              onBlur={handleCapsLockBlur}
+              onKeyUp={handleCapsLockKeyUp}
+              onKeyDown={handleCapsLockKeyDown}
+              disabled={signupUnavailable}
+              required
+            />
+            <PasswordRequirements
+              password={values.password}
+              confirmPassword={values.confirmPassword}
+              username={values.username}
+              displayName={values.displayName}
+            />
+            <fieldset className="auth-optional-fields" disabled={signupUnavailable}>
+              <legend>추가 정보 <span>선택</span></legend>
+              <p>선택 사항이며 입력하지 않아도 가입할 수 있습니다.</p>
+              <TextInput
+                id="signup-email"
+                label="이메일 (선택)"
+                type="email"
+                placeholder="name@example.com"
+                autoComplete="email"
+                description="계정 안내용 선택 정보입니다. 현재는 이메일 인증을 진행하지 않습니다."
+                value={values.email}
+                error={errors.email}
+                onChange={update('email')}
+              />
+              <TextInput
+                id="signup-organization"
+                label="소속 또는 조직 (선택)"
+                placeholder="회사, 학교, 기관 또는 팀 이름"
+                value={values.organizationName}
+                onChange={update('organizationName')}
+              />
+              <TextInput
+                id="signup-department"
+                label="부서 또는 팀 (선택)"
+                placeholder="예: 신사업팀, AI 2조"
+                value={values.departmentName}
+                onChange={update('departmentName')}
+              />
+              <TextInput
+                id="signup-job-title"
+                label="직급 또는 역할 (선택)"
+                placeholder="예: 팀원, 기획자, 대표, 연구원"
+                value={values.jobTitle}
+                onChange={update('jobTitle')}
+              />
+            </fieldset>
+            {isCapsLockOn && (
+              <p className="auth-caps-lock" aria-live="polite">Caps Lock이 켜져 있습니다.</p>
+            )}
+            <Button
+              className="auth-form__submit"
+              type="submit"
+              size="large"
+              loading={submitting}
+              disabled={signupUnavailable}
+            >
+              {policyLoading
+                ? '운영 상태 확인 중...'
+                : submitting
+                  ? '계정을 만들고 있습니다...'
+                  : '무료 계정 만들기'}
+            </Button>
+          </form>
+        )}
+        <p className="auth-card__switch">
+          이미 계정이 있나요?{' '}
+          <Link
+            to="/auth/login"
+            state={{ authTransition: true, source: 'auth-switch', intent: 'login' }}
+          >
+            로그인
+          </Link>
+        </p>
+      </AuthCard>
+    </AuthPage>
+  );
 }
