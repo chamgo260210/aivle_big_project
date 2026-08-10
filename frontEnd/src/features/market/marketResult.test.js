@@ -3,8 +3,8 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  CANVAS_LAYOUT, NOT_FOUND_GROUP, NOT_FOUND_VIEW,
-  formatValue, gradeView, normalizeMarketResult,
+  CANVAS_BANDS, CANVAS_LAYOUT, CELL_KIND, NOT_FOUND_GROUP, NOT_FOUND_VIEW,
+  bucketEvidence, competitorGaps, formatValue, gradeView, hostOf, normalizeMarketResult,
 } from './marketResult.js';
 
 /**
@@ -120,6 +120,85 @@ describe('normalizeMarketResult — BM', () => {
   it('판정과 신뢰도가 온다', () => {
     expect(result.bm.decision).toBe('CONDITIONAL');
     expect(result.bm.confidence).toBe('MEDIUM');
+  });
+
+  it('칸의 근거가 id 가 아니라 근거 그대로 실려 온다', () => {
+    const segments = result.canvas.find((cell) => cell.cell === 'CUSTOMER_SEGMENTS');
+    expect(segments.evidence.map((item) => item.id)).toEqual(segments.evidenceIds);
+    expect(segments.evidence.every((item) => item.grade)).toBe(true);
+  });
+});
+
+describe('캔버스 배치와 칸의 성격', () => {
+  it('밴드가 9칸을 빠짐없이 한 번씩 덮는다 — 배치표와 갈리면 칸이 사라진다', () => {
+    const banded = CANVAS_BANDS.flatMap(([, cells]) => cells);
+    expect(banded).toHaveLength(9);
+    expect(new Set(banded).size).toBe(9);
+    expect(banded).toEqual(CANVAS_LAYOUT.map((slot) => slot.cell));
+    expect(CANVAS_LAYOUT.every((slot) => slot.label)).toBe(true);
+  });
+
+  it('9칸이 전부 관측/계획으로 갈려 있다 — 안 갈리면 정상 결과가 미완성으로 읽힌다', () => {
+    const kinds = CANVAS_LAYOUT.map((slot) => CELL_KIND[slot.cell]?.[0]);
+    expect(kinds.filter((kind) => kind === '관측')).toHaveLength(4);
+    expect(kinds.filter((kind) => kind === '계획')).toHaveLength(5);
+    expect(CANVAS_LAYOUT.every((slot) => CELL_KIND[slot.cell]?.[1])).toBe(true);
+  });
+
+  it('정규화가 칸에 성격과 출처 문구를 실어 준다', () => {
+    const canvas = normalizeMarketResult(fixture('bm.json')).canvas;
+    const cost = canvas.find((cell) => cell.cell === 'COST_STRUCTURE');
+    expect(cost.kind).toBe('계획');
+    expect(cost.origin).toContain('입력 제약');
+  });
+});
+
+describe('근거를 과목으로 가른다 — 봉투에 과목 필드가 없어 화면이 되짚는다', () => {
+  const result = normalizeMarketResult(fixture('full.json'));
+  const bag = bucketEvidence(result);
+
+  it('한 근거는 정확히 한 과목에만 들어간다 — 어느 것도 버려지지 않는다', () => {
+    const all = Object.values(bag).flat().map((item) => item.id);
+    expect(all).toHaveLength(result.evidence.length);
+    expect(new Set(all).size).toBe(result.evidence.length);
+  });
+
+  it('가격·모집단·계산이 제 과목으로 간다', () => {
+    expect(bag.price.map((item) => item.id)).toEqual(
+      expect.arrayContaining(result.market.price.evidenceIds),
+    );
+    expect(bag.size.map((item) => item.id)).toContain('C-F006');
+    expect(bag.calc.every((item) => item.kind === '계산')).toBe(true);
+  });
+
+  it('경쟁사 지표는 어느 값에도 안 쓰였어도 경쟁사로 간다', () => {
+    // 12조짜리 네이버 전사 매출. 「매출액」이라 경쟁사 칸에 서고, 그 곁에 경계가 따라붙는다.
+    const naver = bag.comp.find((item) => item.id === 'C-F010');
+    expect(naver).toBeTruthy();
+    expect(naver.caveats[0]).toContain('시장 매출 아님');
+  });
+});
+
+describe('못 찾은 경쟁사 슬롯', () => {
+  it('경쟁사 지표인 줄만 (회사, 지표) 로 뽑는다', () => {
+    const result = normalizeMarketResult(fixture('full.json'));
+    const gaps = competitorGaps(result.market.notFound);
+    expect(gaps).toContainEqual(['네이버 예약', '매출액']);
+    // 「종사자 1인 사업체 비율」은 경쟁사 지표가 아니다 — 경쟁사 카드에 서면 안 된다.
+    expect(gaps.every(([, metric]) => metric !== '종사자 1인 사업체 비율')).toBe(true);
+  });
+
+  it('덩이가 없거나 모양이 다르면 빈 목록이다 — 던지지 않는다', () => {
+    expect(competitorGaps(null)).toEqual([]);
+    expect(competitorGaps([{ key: 'empty_slots', entries: ['모양이 다른 줄'] }])).toEqual([]);
+  });
+});
+
+describe('출처 도메인', () => {
+  it('www 를 떼고, 링크가 아니면 null 이다', () => {
+    expect(hostOf('https://www.kosis.kr/statHtml')).toBe('kosis.kr');
+    expect(hostOf(null)).toBeNull();
+    expect(hostOf('출처 없음')).toBeNull();
   });
 });
 

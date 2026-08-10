@@ -1,27 +1,30 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useApiClient } from '../../shared/api/ApiClientProvider.jsx';
 import { createMarketApi } from './marketApi.js';
 import { projectRoutes } from '../../app/routing/projectRoutes.js';
 import { Alert, Badge, Button, Card, LoadingState } from '../../shared/ui';
-import BmCanvas from './BmCanvas.jsx';
-import EvidenceCard from './EvidenceCard.jsx';
+import BmCanvas, { BmCellDetails } from './BmCanvas.jsx';
+import useCellFocus from './useCellFocus.js';
 import useMarketPolling from './useMarketPolling.js';
 import { DECISION_VIEW } from './marketResult.js';
 import './market.css';
 
+/** 신뢰도 코드 → 사람이 읽는 말. 모르는 코드는 원문 그대로 통과시킨다. */
+const CONFIDENCE_VIEW = { HIGH: '확신 높음', MEDIUM: '확신 중간', LOW: '확신 낮음' };
+
 /**
  * 2단계 — BM 캔버스. 1단계 결과를 근거로 채운다.
  *
- * <p>칸의 근거 칩을 누르면 아래 근거 카드가 강조된다 — 그 연결이 없으면
- * 칸의 문장이 <b>출처 없는 단정</b>으로 읽힌다.
+ * <p>읽는 순서: 판정 → 집계 → 9칸 요약 → 강점·약점·위험 → 칸별 세부.
+ * 근거는 <b>그것을 쓴 칸 옆</b>에 붙는다 — 하단에 근거를 몰아 두면 칸의 문장과 근거가
+ * 화면 두 곳으로 갈라져, 어느 문장이 무엇에 기대는지가 사라진다.
  */
 export default function BmCanvasPage() {
   const { projectId } = useParams();
   const navigate = useNavigate();
   const client = useApiClient();
   const api = useMemo(() => createMarketApi(client, projectId), [client, projectId]);
-  const [selected, setSelected] = useState(null);
 
   const load = useCallback(() => api.currentBusinessModel(), [api]);
   // ⚠ 여기 실린 conceptId 는 **쓰이지 않는다.** 백엔드가 1단계 결과의 conceptId 를 그대로
@@ -29,32 +32,31 @@ export default function BmCanvasPage() {
   const start = useCallback(() => api.startBusinessModel(String(projectId), today()),
     [api, projectId]);
   const { run, result, error, busy, loading, active, elapsed, trigger } = useMarketPolling(load, start);
-
-  const selectEvidence = useCallback((id) => {
-    setSelected(id);
-    document.getElementById(`evidence-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  }, []);
+  const focus = useCellFocus('bm-');
 
   if (loading) return <LoadingState label="BM 캔버스를 불러오는 중" />;
 
-  const decision = result?.bm ? DECISION_VIEW[result.bm.decision] : null;
+  const bm = result?.bm ?? null;
+  const decision = bm ? DECISION_VIEW[bm.decision] : null;
 
   return (
     <section className="market-page">
-      <header className="market-page__head">
-        <div>
-          <h2>비즈니스 모델 캔버스</h2>
-          <p>시장조사에서 <strong>관측된 근거로만</strong> 채운다. 근거가 없는 칸은 비워 두고 사유를 적는다.</p>
-        </div>
-        <div className="market-page__actions">
-          <Button variant="ghost" onClick={() => navigate(projectRoutes.market(projectId))}>
-            시장조사로
-          </Button>
-          <Button onClick={trigger} disabled={busy || active}>
-            {active ? '생성 중…' : result ? '다시 생성' : '캔버스 만들기'}
-          </Button>
-        </div>
-      </header>
+      <div className="pipeline-page-heading">
+        <p>5. BM 분석</p>
+        <h2>비즈니스 모델 캔버스</h2>
+        {!result ? (
+          <span>시장조사에서 관측된 근거로만 채운다. 근거가 없는 칸은 비워 두고 사유를 적는다.</span>
+        ) : null}
+      </div>
+
+      <div className="market-page__actions">
+        <Button variant="ghost" onClick={() => navigate(projectRoutes.market(projectId))}>
+          시장조사로
+        </Button>
+        <Button onClick={trigger} disabled={busy || active}>
+          {active ? '생성 중…' : result ? '다시 생성' : '캔버스 만들기'}
+        </Button>
+      </div>
 
       {error ? <Alert tone="danger">{error}</Alert> : null}
       {active ? <Alert tone="info">캔버스를 만드는 중이다 — {elapsed}초 경과.</Alert> : null}
@@ -71,53 +73,46 @@ export default function BmCanvasPage() {
         ) : null
       ) : (
         <>
-          {result.bm ? (
-            <Card title="판정">
-              <p className="market-decision">
-                {decision ? <Badge tone={decision.tone}>{decision.label}</Badge> : null}
-                <span>신뢰도 {result.bm.confidence ?? '—'}</span>
-              </p>
-              <p>{result.bm.summary}</p>
-              <dl className="market-fit">
-                <div><dt>시장 적합성</dt><dd>{result.bm.marketFitSummary}</dd></div>
-                <div><dt>내부 일관성</dt><dd>{result.bm.consistencySummary}</dd></div>
-              </dl>
-              {result.bm.legal && !result.bm.legal.used ? (
-                <Alert tone="warning">
-                  법률 검토 결과가 <strong>반영되지 않았다</strong>. 이 판정은 시장 근거만 본 것이다.
-                </Alert>
-              ) : null}
-            </Card>
+          {bm ? (
+            <div className="ui-card bm-verdict">
+              <h3>판정</h3>
+              {decision ? <Badge tone={decision.tone}>{decision.label}</Badge> : null}
+              <Badge tone="neutral">{CONFIDENCE_VIEW[bm.confidence] ?? bm.confidence ?? '신뢰도 미기재'}</Badge>
+              <p>{bm.consistencySummary ?? bm.marketFitSummary ?? bm.summary ?? ''}</p>
+            </div>
           ) : (
             <Alert tone="warning">
               BM 판정이 오지 않았다 — 시장조사 결과는 유효하다. 다시 생성해 볼 수 있다.
             </Alert>
           )}
 
-          {result.canvas ? (
-            <BmCanvas
-              cells={result.canvas}
-              onSelectEvidence={selectEvidence}
-              selectedEvidenceId={selected}
-            />
+          {result.canvas ? <BmCanvas cells={result.canvas} onJump={focus.jump} /> : null}
+
+          {bm ? (
+            <div className="bm-swr">
+              <SwrBox title="강점" items={bm.strengths} tone="var(--color-status-success)" />
+              <SwrBox title="약점" items={bm.weaknesses} tone="var(--color-status-warning)" />
+              <SwrBox title="위험" items={bm.risks} tone="var(--color-status-danger)" />
+            </div>
           ) : null}
 
-          <Card title={`근거 ${result.evidence.length}건`}>
-            <p className="market-note">칸의 근거 칩을 누르면 여기로 온다.</p>
-            <div className="market-evidence-list">
-              {result.evidence.map((item) => (
-                <EvidenceCard
-                  key={item.id}
-                  id={`evidence-${item.id}`}
-                  item={item}
-                  highlighted={selected === item.id}
-                />
-              ))}
-            </div>
-          </Card>
+          {result.canvas ? <BmCellDetails cells={result.canvas} active={focus.active} /> : null}
         </>
       )}
     </section>
+  );
+}
+
+function SwrBox({ title, items, tone }) {
+  return (
+    <div>
+      <h4 style={{ color: tone }}>{title}</h4>
+      <ul>
+        {items.length > 0
+          ? items.map((line) => <li key={line}>{line}</li>)
+          : <li className="bm-swr__none">없음</li>}
+      </ul>
+    </div>
   );
 }
 

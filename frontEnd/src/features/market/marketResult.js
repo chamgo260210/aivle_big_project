@@ -95,21 +95,77 @@ export const NOT_FOUND_VIEW = {
   skipped_checks: ['DIVERGED', '선행 규칙 위반으로 건너뛴 검사'],
 };
 
-/** 표준 BM 캔버스 배치 순서. 격자 area 이름과 짝이다. */
-export const CANVAS_LAYOUT = [
-  { cell: 'KEY_PARTNERS', area: 'partners', label: '핵심 파트너' },
-  { cell: 'KEY_ACTIVITIES', area: 'activities', label: '핵심 활동' },
-  { cell: 'KEY_RESOURCES', area: 'resources', label: '핵심 자원' },
-  { cell: 'VALUE_PROPOSITIONS', area: 'value', label: '가치 제안' },
-  { cell: 'CUSTOMER_RELATIONSHIPS', area: 'relations', label: '고객 관계' },
-  { cell: 'CHANNELS', area: 'channels', label: '채널' },
-  { cell: 'CUSTOMER_SEGMENTS', area: 'segments', label: '고객 세그먼트' },
-  { cell: 'COST_STRUCTURE', area: 'cost', label: '비용 구조' },
-  { cell: 'REVENUE_STREAMS', area: 'revenue', label: '수익원' },
+/**
+ * 9칸을 «의미»로 세 묶음 — 4·3·2.
+ *
+ * ⚠ 표준 BMC 5열 배치는 **포스터 판형**이다. 본문 폭 1150px 에서 칸당 195px 밖에 안 나와
+ * 한글이 10~12자마다 끊기고, 2행을 차지하는 칸 옆에는 250px 짜리 빈 구멍이 생긴다.
+ * 4·3·2 는 칸당 280px 이상을 주고 행 병합을 없앤다.
+ *
+ * 순서는 장식이 아니다 — 누구에게(고객·가치) → 어떻게 만들고(실행) → 돈은(수익·비용).
+ */
+export const CANVAS_BANDS = [
+  ['고객과 가치', ['CUSTOMER_SEGMENTS', 'VALUE_PROPOSITIONS', 'CHANNELS', 'CUSTOMER_RELATIONSHIPS']],
+  ['실행 구조', ['KEY_ACTIVITIES', 'KEY_RESOURCES', 'KEY_PARTNERS']],
+  ['수익과 비용', ['REVENUE_STREAMS', 'COST_STRUCTURE']],
+];
+
+const CANVAS_CELL_LABEL = {
+  KEY_PARTNERS: '핵심 파트너',
+  KEY_ACTIVITIES: '핵심 활동',
+  KEY_RESOURCES: '핵심 자원',
+  VALUE_PROPOSITIONS: '가치 제안',
+  CUSTOMER_RELATIONSHIPS: '고객 관계',
+  CHANNELS: '채널',
+  CUSTOMER_SEGMENTS: '고객 세그먼트',
+  COST_STRUCTURE: '비용 구조',
+  REVENUE_STREAMS: '수익원',
+};
+
+/** 배치 순서 = 밴드를 편 순서. 캔버스도 칸별 세부 목록도 이 순서를 따른다. */
+export const CANVAS_LAYOUT = CANVAS_BANDS
+  .flatMap(([, cells]) => cells)
+  .map((cell) => ({ cell, label: CANVAS_CELL_LABEL[cell] }));
+
+/**
+ * 칸의 «성격». 정본은 AI 쪽 `research2/harness/vocab.json` 의 canvas 라우팅 표다.
+ *
+ * ⚠ **9칸을 전부 근거로 채우는 것은 설계가 아니다.** 「계획」 칸은 조사 슬롯이 «불필요»하고
+ * 컨셉 서술·입력 제약에서 온다. 화면이 이 구분을 안 하면 정상 결과가 미완성으로 읽힌다.
+ */
+export const CELL_KIND = {
+  CUSTOMER_SEGMENTS: ['관측', '시장조사가 근거로 채운다'],
+  VALUE_PROPOSITIONS: ['관측', '시장조사가 근거로 채운다'],
+  CHANNELS: ['관측', '시장조사가 근거로 채운다'],
+  REVENUE_STREAMS: ['관측', '시장조사가 근거로 채운다'],
+  CUSTOMER_RELATIONSHIPS: ['계획', '컨셉 서술에서 온다'],
+  KEY_RESOURCES: ['계획', '컨셉 서술에서 온다'],
+  KEY_ACTIVITIES: ['계획', '컨셉 서술에서 온다'],
+  KEY_PARTNERS: ['계획', '컨셉 서술에서 온다'],
+  COST_STRUCTURE: ['계획', '입력 제약(예산·팀·기간)에서 온다'],
+};
+
+/** 캔버스 상태 → 점 색. 배지 라벨은 `CELL_STATUS_VIEW` 가 따로 갖는다. */
+export const CELL_DOT = {
+  VERIFIED: 'ok', PARTIAL: 'mid', UNVERIFIED: 'none', PLAN: 'off', BLOCKED: 'none',
+};
+
+/** 경쟁사 지표로 취급하는 계량. ⚠ 임시 — 봉투에 과목 필드가 생기면 이 표는 없어진다. */
+export const COMP_METRICS = [
+  '가입 매장 수', '누적 가입자 수', '매출액', '이용 요금', '월 활성 사용자',
 ];
 
 const list = (value) => (Array.isArray(value) ? value : []);
 const text = (value) => (typeof value === 'string' && value.trim() ? value : null);
+
+/** 출처 도메인. 건수와 독립성은 다르다 — 한 도메인에서 3건은 3중 확인이 아니다. */
+export function hostOf(url) {
+  try {
+    return new URL(url).host.replace(/^www\./, '');
+  } catch {
+    return null;
+  }
+}
 
 /**
  * 등급을 표시용으로 바꾼다.
@@ -213,13 +269,21 @@ export function normalizeMarketResult(raw) {
   const canvas = raw.canvas && Array.isArray(raw.canvas.cells)
     ? CANVAS_LAYOUT.map((slot) => {
       const found = raw.canvas.cells.find((cell) => cell?.canvasCell === slot.cell);
+      const [kind, origin] = CELL_KIND[slot.cell] ?? ['관측', ''];
+      const evidenceIds = list(found?.marketEvidenceIds);
       return {
         ...slot,
+        // 「관측」/「계획」 — 이 구분이 없으면 계획 칸의 «근거 없음» 이 조사 실패로 읽힌다.
+        kind,
+        origin,
         status: text(found?.status) ?? 'UNVERIFIED',
         content: list(found?.content),
         reason: text(found?.reason) ?? '사유가 오지 않았다',
         sourceLabels: list(found?.sourceLabels),
-        evidenceIds: list(found?.marketEvidenceIds),
+        evidenceIds,
+        // 근거를 «그것을 쓴 칸» 옆에 붙여 둔다. 화면이 id 로 다시 찾아 헤매지 않게.
+        // ⚠ 봉투에 없는 id 는 조용히 사라진다 — 그건 칸의 `missingEvidence` 가 말할 일이다.
+        evidence: evidenceIds.map((id) => byId.get(id)).filter(Boolean),
         missingEvidence: list(found?.missingEvidence),
         caveats: list(found?.caveats),
         // 칸이 아예 안 온 경우를 «미확인»과 구분한다 — 다른 사건이다.
@@ -323,4 +387,54 @@ function usedInIndex(raw, evidence) {
     for (const id of card.materialIds) add(id, card.id);
   }
   return index;
+}
+
+/**
+ * 근거를 성적표 «과목» 별로 가른다 — 과목이 곧 화면의 목차이기 때문이다.
+ *
+ * ⚠ **임시 분류다.** 봉투의 근거에 과목 필드가 없어서 화면이 되짚는다.
+ * 어느 과목에도 안 걸린 관측은 「수요 근거」로 떨어진다 — **버리지 않는다는 것이 요점**이다.
+ * 서버가 과목을 실어 주면 이 함수는 통째로 없어진다.
+ */
+export function bucketEvidence(result) {
+  const market = result?.market ?? {};
+  const idsOf = (...figures) => new Set(figures.flatMap((f) => list(f?.evidenceIds)));
+  const sizeIds = idsOf(market.tam, market.sam, market.som);
+  const growIds = idsOf(market.growth);
+  const priceIds = idsOf(market.price);
+
+  const buckets = { size: [], grow: [], comp: [], price: [], demand: [], calc: [] };
+  for (const item of list(result?.evidence)) {
+    if (item.kind === '계산') buckets.calc.push(item);
+    else if (COMP_METRICS.includes(item.metric)) buckets.comp.push(item);
+    else if (priceIds.has(item.id)) buckets.price.push(item);
+    else if (sizeIds.has(item.id)) buckets.size.push(item);
+    else if (growIds.has(item.id)) buckets.grow.push(item);
+    else buckets.demand.push(item);
+  }
+  return buckets;
+}
+
+/** 「S13 — 네이버 예약 · 매출액 (2025, 원) · …」 한 줄에서 (회사, 지표) 를 뽑는다. */
+const SLOT_LINE = /^\S+\s+—\s+([^·]+)·\s*([^(]+)\(/;
+
+/**
+ * **못 찾은 경쟁사 슬롯**을 (회사, 지표) 쌍으로 편다.
+ *
+ * 왜: 경쟁사 카드에 관측된 지표만 그리면 「이 회사는 이것만 알아냈다」가 아니라
+ * 「이 회사는 이게 전부다」로 읽힌다. 못 찾은 칸을 **같은 카드 안에** 세워야
+ * 조사 범위와 조사 결과가 구분된다.
+ */
+export function competitorGaps(notFound) {
+  const gaps = [];
+  for (const block of list(notFound)) {
+    if (block.key !== 'empty_slots' && block.key !== 'thin_slots') continue;
+    for (const line of list(block.entries)) {
+      const match = SLOT_LINE.exec(line);
+      if (!match) continue;
+      const [, subject, metric] = match;
+      if (COMP_METRICS.includes(metric.trim())) gaps.push([subject.trim(), metric.trim()]);
+    }
+  }
+  return gaps;
 }
