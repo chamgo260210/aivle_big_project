@@ -1,6 +1,7 @@
 # 패널 트윈 조사(TWIN_SURVEY) 인수인계
 
-작성: **2026-08-10** · 브랜치 `market-research-v2` · 트랙 A 완료, 트랙 B 미착수
+작성: **2026-08-10** · 브랜치 `market-research-v2` · **트랙 A·B 모두 완료**
+(커밋 `993b2b7`→`57427a6`. §4 의 체크박스는 착수 시점 기록이고, 실제 결과는 §8 을 볼 것)
 
 새 세션이 이어받기 위한 문서다. 사실만 적는다. 추정에는 「추정」이라고 쓴다.
 계획서 원본: `~/.claude/plans/downloads-20260729-cryptic-pumpkin.md`
@@ -234,8 +235,49 @@ n=50·2쌍이 12분 예산 안에 `COMPLETED` / 윤리형 자극이 **LLM 호출
 
 ## 7. 다음 세션이 할 일
 
-1. `git status` 로 현재 상태를 다시 셀 것 (다른 세션이 커밋 중이었다)
-2. 트윈 파일 27개를 **경로 명시**로 add 해서 별도 커밋
-3. §4 트랙 B 착수 — 등록 3곳부터, 원자적으로
-4. 사용자가 0단계를 돌렸는지 확인 → `INSTRUMENT_EQUIVALENCE_CONFIRMED` 결정
-5. 실스택 스모크
+1. **0단계(`_build/g3e/`)를 돌린다.** 아직 안 돌렸다. 통과하면
+   `ai/app/twin/caveats.py` 의 `INSTRUMENT_EQUIVALENCE_CONFIRMED` 를 `True` 로 바꾸는 것이
+   전부다 — 그 상수를 읽는 곳은 그 파일 하나다. 기능은 지금도 나간다.
+2. 게이트 앞단 연결: 지금 `PANEL_SURVEY` 는 `financialSnapshotId` 를 요구하지만,
+   자극은 사용자가 손으로 만든다. 컨셉/재무 결과에서 자극 초안을 채워 주는 다리는 없다.
+3. 물려받은 실패 2건(`ConceptFactoryReplacementIntegrationTests`·`IdeaBriefControllerTests`)은
+   여전히 빨갛다. 이 작업과 무관하고 손대지 않았다.
+
+---
+
+## 8. 트랙 B 결과 (2026-08-10)
+
+커밋 여섯 개. `993b2b7`(엔진·부품) → `1c6f1a8`(등록) → `955bca0`(뱅크) →
+`82b0ad0`(백엔드) → `bc6a004`(프론트) → `57427a6`(스모크·수정 3건).
+
+### 착수 전 문서가 틀렸던 곳
+
+- **등록은 3곳이 아니라 5곳이다.** `TaskType.java`(정합성 테스트가 파일로 읽는다),
+  `ProjectJobQueryService.module()`(exhaustive switch), `ActiveSurfaceCleanupTests`(enum 목록을
+  통째로 못박는다)가 더 있었다.
+- **`textContents` 봉투를 쓰지 않는다.** 그것은 시장조사 전용이고, 트윈 입력 모델은
+  `extra="forbid"` 라 넣으면 400 이다. 트윈 입력엔 실수가 없어 감쌀 이유도 없었다.
+
+### 실스택 스모크가 잡은 것 셋 (`scripts/twin-survey-smoke.ps1`)
+
+1. `task_runs.subject_id` 가 NOT NULL — 첫 POST 가 500.
+2. 거절 이유가 `AI_RESULT_INVALID` 로 접혔다. 화이트리스트 **두 곳**
+   (`InternalAiExecutionClient.ERROR_REASONS`, `TaskRunService.mapPublic`)에 등록해야 산다.
+3. 계약이 응답자 분류를 3종으로 못박았는데 실제는 5종이고 **나온 것만 실린다**.
+   전원 미결정 실행이 통째로 폐기됐다.
+
+스모크 자체도 한 번 거짓말을 했다 — PowerShell 5.1 이 본문을 ANSI 로 보내 한글 속성명이
+깨졌고, 윤리·가치형이 게이트를 그냥 통과해 **막혔어야 할 조사가 실제로 돌았다**(LLM 206회).
+본문을 UTF-8 바이트로 보내 고쳤다.
+
+### 실측 성적
+
+| 항목 | 결과 |
+|---|---|
+| 뱅크 | 컨테이너 안 카드 8,604 · 표집틀 8,604 |
+| 뱅크 미마운트 | `TWIN_BANK_UNAVAILABLE` (조용한 빈 표본 아님) |
+| 윤리·가치형 | `TWIN_TASK_TYPE_NOT_SERVICEABLE` · LLM 0회 |
+| n=50·2쌍 | **76초** COMPLETED (예산 780초) · 셀 432 · 형식 위반 0 · 실패 0 |
+| 응답 크기 | 14.5 KiB (상한 2 MiB) |
+| 경계 | 쌍마다 7개 · `caveatCount` 물질화 확인 |
+| 테스트 | ai 393 · backend 321 중 319(물려받은 2건 제외) · front 289 + 허용 22 |
