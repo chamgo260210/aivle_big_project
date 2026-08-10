@@ -35,6 +35,21 @@ public class AiServerClientConfiguration {
         return createRestClient(properties, longReadTimeout);
     }
 
+    /**
+     * 패널 트윈 조사 전용. 예산이 12분이라 {@code long-read-timeout}(420s)으로도 모자란다.
+     *
+     * <p>클라이언트를 또 나누는 이유는 시장조사와 트윈의 <b>시간 규모가 다르기</b> 때문이다.
+     * 하나로 합쳐 900초로 올리면 시장조사가 260초에 죽어야 할 자리에서 900초를 매달린다.
+     */
+    @Bean
+    @Qualifier("aiServerSurveyRestClient")
+    RestClient aiServerSurveyRestClient(
+        AiServerProperties properties,
+        @org.springframework.beans.factory.annotation.Value(
+            "${app.ai-server.survey-read-timeout:900s}") java.time.Duration surveyReadTimeout) {
+        return createRestClient(properties, surveyReadTimeout);
+    }
+
     RestClient createRestClient(AiServerProperties properties) {
         return createRestClient(properties, properties.readTimeout());
     }

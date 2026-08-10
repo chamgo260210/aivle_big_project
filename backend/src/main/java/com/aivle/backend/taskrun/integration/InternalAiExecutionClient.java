@@ -91,21 +91,25 @@ public class InternalAiExecutionClient {
     private final RestClient client;
     /** 오래 걸리는 작업 전용. read timeout 만 다르다. */
     private final RestClient longClient;
+    /** 패널 트윈 조사 전용. 12분 예산이라 longClient(420s)로도 모자란다. */
+    private final RestClient surveyClient;
     private final AiServerProperties properties;
     private final ObjectMapper mapper;
 
     /** 짧은 클라이언트 하나만 주는 형태 — 테스트용. 긴 호출도 같은 것을 쓴다. */
     public InternalAiExecutionClient(RestClient client, AiServerProperties properties,
                                      ObjectMapper mapper) {
-        this(client, client, properties, mapper);
+        this(client, client, client, properties, mapper);
     }
 
     @org.springframework.beans.factory.annotation.Autowired
     public InternalAiExecutionClient(@Qualifier("aiServerRestClient") RestClient client,
                                      @Qualifier("aiServerLongRestClient") RestClient longClient,
+                                     @Qualifier("aiServerSurveyRestClient") RestClient surveyClient,
                                      AiServerProperties properties, ObjectMapper mapper) {
         this.client = client;
         this.longClient = longClient;
+        this.surveyClient = surveyClient;
         this.properties = properties;
         this.mapper = mapper;
     }
@@ -118,8 +122,13 @@ public class InternalAiExecutionClient {
      * 다시 태운다</b> — 실패하면서 비용만 배가 된다.
      */
     private RestClient clientFor(ExecutionRequest run) {
-        return run.taskType() == com.aivle.backend.taskrun.domain.TaskType.MARKET_RESEARCH
-            ? longClient : client;
+        return switch (run.taskType()) {
+            case MARKET_RESEARCH -> longClient;
+            // 트윈 조사는 n=300·4쌍이면 셀이 7,200개다. 여기를 빠뜨리면 조용히 30초 클라이언트를
+            // 쓰고, 그 실패가 retryable 로 사상돼 재시도가 같은 값을 또 태운다.
+            case TWIN_SURVEY -> surveyClient;
+            default -> client;
+        };
     }
 
     public ExecutionResponse execute(TaskRun run, String attemptId, LocalDateTime deadline) {
