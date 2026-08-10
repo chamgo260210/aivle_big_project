@@ -244,7 +244,9 @@ def _full(source_run: str, concept_path: str, concept_id: str,
     market = serialize.market(
         verdict, cards,
         ((result.get("report") or {}).get("not_found") or {}),
-        result.get("coverage_caveat"), evidence_ids)
+        result.get("coverage_caveat"), evidence_ids,
+        # 슬롯 정의 — 「S2」를 사람이 읽는 문구로 옮기는 데 쓴다. 원장에 이미 있어 새 I/O 는 없다.
+        slots=((result.get("input") or {}).get("slots") or []))
 
     summary = _summary(ledger, budget, source_run, concept_path, evidence_ids, rescore)
 

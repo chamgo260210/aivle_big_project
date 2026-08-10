@@ -14,7 +14,6 @@
 """
 from __future__ import annotations
 
-import json
 from typing import Any
 
 # ── 계약이 허용하는 값 (자바 `MarketResearchContract` 와 같은 목록) ──────────────
@@ -48,6 +47,37 @@ _EVIDENCE = {
 #: 카드가 경계를 담는 칸들. **하나라도 빠뜨리면 §4 위반**이다 — 경계는 값과 같이 옮긴다.
 _CAVEAT_KEYS = ("경계", "경계_proxy", "상한_울타리")
 
+#: 「못 찾은 것」 갈래. **사용자의 다음 행동이 다르면 다른 갈래다.**
+#:   NOT_YET   더 찾으면 나올 수 있다        CONFIRMED_ABSENT  찾아도 없다 — 종착이다
+#:   ASSUMED   식을 가정으로 메웠다          SCREENED_OUT      찾았지만 규격 미달로 걸렀다
+#:   DIVERGED  값이 갈렸다 — 그 자체가 결과다
+#: 원장 키 목록의 정본은 `research2/schema.py:NOT_FOUND_KEYS` 이고, 여기 표와 갈리면
+#: `test_not_found_taxonomy` 가 빨개진다 — 사본을 두는 대신 **갈라지면 터지게** 한다.
+_NOT_FOUND = {
+    "empty_slots": "NOT_YET",
+    "thin_slots": "NOT_YET",
+    "retry_hints": "NOT_YET",
+    "url_filtered": "NOT_YET",
+    "unknown_error_codes": "NOT_YET",
+    "unfilled_vars": "ASSUMED",
+    "suspect_var": "ASSUMED",
+    "independent_topdown_blocked": "CONFIRMED_ABSENT",
+    "자료_부재_확정": "CONFIRMED_ABSENT",
+    "adapters": "CONFIRMED_ABSENT",
+    "off_slot": "SCREENED_OUT",
+    "contradictions": "DIVERGED",
+    "unit_mismatch": "DIVERGED",
+    "range_capped": "DIVERGED",
+    "skipped_checks": "DIVERGED",
+}
+
+#: ⑦행 한 줄 요약에 쓰는 갈래 이름.
+_NOT_FOUND_GROUP_LABEL = {
+    "NOT_YET": "아직 못 채운 것", "ASSUMED": "가정으로 메운 변수",
+    "CONFIRMED_ABSENT": "찾아도 없는 것", "SCREENED_OUT": "걸러낸 것",
+    "DIVERGED": "값이 갈린 것",
+}
+
 
 class ContractDrift(RuntimeError):
     """엔진이 계약 밖 값을 냈다. **조용히 고치지 않는다** — 고치면 어디서 갈라졌는지 잃는다."""
@@ -65,6 +95,31 @@ def _strings(value: Any) -> list[str]:
         return []
     items = value if isinstance(value, (list, tuple)) else [value]
     return [str(item).strip() for item in items if str(item).strip()]
+
+
+def _num(value: Any, digits: int = 0) -> str:
+    """숫자를 **사람이 읽는 꼴**로. f-string 이 float 를 그대로 뱉는 자리를 막는다 —
+    `TAM 1025336520.0000002` 이 실측이다. 값이 없으면 0 과 섞지 않고 「미확보」다."""
+    if value is None:
+        return "미확보"
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    return f"{number:,.{digits}f}"
+
+
+def slot_phrase(slot: dict) -> str:
+    """`S2` → 「두발 미용업 · 종사자 1인 사업체 비율 (2025, %)」.
+
+    슬롯에 사람이 읽는 이름 칸은 없다. 정체는 `주제 · 계량 (기간, 단위)` 조합이 전부다.
+    빈 칸은 지어내지 않고 건너뛴다.
+    """
+    head = " · ".join(str(slot.get(k)).strip() for k in ("subject", "metric")
+                      if str(slot.get(k) or "").strip())
+    tail = ", ".join(str(slot.get(k)).strip() for k in ("period", "unit")
+                     if str(slot.get(k) or "").strip())
+    return f"{head} ({tail})" if head and tail else head or tail
 
 
 def caveats_of_card(card: dict) -> list[str]:
@@ -137,7 +192,8 @@ def _detail(korean: str, row: dict) -> str:
     if korean == "1_시장크기":
         return f"TAM 밑동 관측 {row.get('n')}건 · 등급 {row.get('등급')}"
     if korean == "2_성장률":
-        return f"{row.get('값_퍼센트')}% · 갈래 {row.get('갈래')} · 단순 증감률이며 CAGR 아님"
+        return (f"{_num(row.get('값_퍼센트'), 2)}% · 갈래 {row.get('갈래')}"
+                " · 단순 증감률이며 CAGR 아님")
     if korean == "3_경쟁사":
         return f"URL 도메인 {row.get('n_url')}곳 — {', '.join(row.get('도메인') or []) or '없음'}"
     if korean == "4_가격":
@@ -145,9 +201,28 @@ def _detail(korean: str, row: dict) -> str:
     if korean == "5_수요":
         return f"근거 {row.get('n')}건 · 최고 등급 {row.get('최고_등급')}"
     if korean == "6_계산":
-        return f"TAM {row.get('TAM')} · 가정 {row.get('가정수')}개 명시"
-    counts = row.get("건수") or {}
-    return " · ".join(f"{k} {v}" for k, v in counts.items()) or "보고할 것 없음"
+        return f"TAM {_num(row.get('TAM'))}원 · 가정 {row.get('가정수')}개 명시"
+    # ⑦행. `건수` 는 이름과 달리 **원본 목록**을 담고 있다(`tools/scorecard.py`). 그대로 join
+    # 하면 파이썬 repr 수백 자가 표 한 칸에 쏟아진다 — 갈래별 건수로 접는다.
+    # 무엇이 없는지는 `market.notFound` 가 항목까지 적는다. 여기는 한 줄 요약이다.
+    per_group: dict[str, int] = {}
+    for key, value in (row.get("건수") or {}).items():
+        group = _NOT_FOUND.get(str(key))
+        if group is None:
+            raise ContractDrift(f"「못 찾은 것」 갈래에 없는 키다: {key!r}")
+        per_group[group] = per_group.get(group, 0) + _count_of(value)
+    return " · ".join(f"{_NOT_FOUND_GROUP_LABEL[g]} {n}건"
+                      for g, n in per_group.items() if n) or "보고할 것 없음"
+
+
+def _count_of(value: Any) -> int:
+    """진단 한 칸의 건수. `off_slot` 만 dict 안에 `count` 를 들고 온다."""
+    if isinstance(value, dict):
+        count = value.get("count")
+        return int(count) if isinstance(count, (int, float)) else len(value)
+    if isinstance(value, (list, tuple)):
+        return len(value)
+    return 1 if value else 0
 
 
 def _figure(estimate: dict | None, unit: str, grade: str | None) -> dict | None:
@@ -170,7 +245,8 @@ def _figure(estimate: dict | None, unit: str, grade: str | None) -> dict | None:
 
 
 def market(verdict: dict, cards: list[dict], not_found: dict,
-           coverage_caveat: str | None, evidence_ids: set[str]) -> dict:
+           coverage_caveat: str | None, evidence_ids: set[str],
+           slots: list[dict] | None = None) -> dict:
     estimates = verdict.get("시장_추정") or {}
     grade_of = {card.get("카드_id"): card.get("등급") for card in cards}
 
@@ -188,25 +264,68 @@ def market(verdict: dict, cards: list[dict], not_found: dict,
     return {
         **figures,
         "price": _price(cards),
-        "notFound": [{"item": str(key), "detail": _not_found_detail(value)}
-                     for key, value in (not_found or {}).items() if value],
+        "notFound": _not_found_blocks(not_found, slots),
         "coverageCaveat": coverage_caveat or None,
     }
 
 
-def _not_found_detail(value: Any) -> str:
-    """⑦행. 원장은 목록·dict 로 담는다 — **건수만 세지 않고 무엇이 없는지 적는다.**
+def _not_found_blocks(not_found: dict, slots: list[dict] | None) -> list[dict]:
+    """「못 찾은 것」을 **사람이 읽는 항목 목록**으로. §4: 절대 빼지 않는다.
 
-    §4: 「§7 「못 찾은 것」을 절대 빼지 않는다」. 사람이 읽을 수 있는 한 줄로 편다.
+    `detail` 은 줄바꿈으로 이어 붙인 문장들이다 — 화면이 `\\n` 으로 갈라 목록으로 그린다.
+    **자르지 않는다.** `unit_mismatch` 의 note 안에는 「가정이다 — 관측이 아니다」 같은
+    경계 문장이 들어 있어서, 잘라내면 경계 제거가 된다.
     """
+    by_slot = {str(s.get("slot_id")): s for s in (slots or []) if s.get("slot_id")}
+    by_var = {str(s.get("var_id")): s for s in (slots or []) if s.get("var_id")}
+    out = []
+    for key, value in (not_found or {}).items():
+        if str(key) not in _NOT_FOUND:
+            raise ContractDrift(f"「못 찾은 것」 갈래에 없는 키다: {key!r}")
+        entries = _not_found_entries(str(key), value, by_slot, by_var)
+        if entries:
+            out.append({"item": str(key), "detail": "\n".join(entries)})
+    return out
+
+
+def _not_found_entries(key: str, value: Any, by_slot: dict, by_var: dict) -> list[str]:
+    def with_slot(slot_id: Any, tail: str = "") -> str:
+        phrase = slot_phrase(by_slot.get(str(slot_id)) or {})
+        return f"{slot_id} — {phrase or '대응 슬롯 정의 없음'}{tail}"
+
+    if key == "empty_slots":
+        return [with_slot(v) for v in value or []]
+    if key == "thin_slots":
+        return [with_slot(v.get("slot_id"),
+                          f" · 확인 {v.get('confirmed')}건 / 기준 {v.get('min_facts')}건")
+                for v in value or [] if isinstance(v, dict)]
+    if key in ("unfilled_vars", "suspect_var"):
+        # 변수는 식의 칸이다. 슬롯이 없는 변수(연환산 같은 계수)는 지어내지 않고 그렇게 적는다.
+        return [f"{v} — {slot_phrase(by_var[str(v)])}" if str(v) in by_var
+                else f"{v} — 대응 슬롯 없음 (식의 계수)" for v in value or []]
+    if key == "adapters":
+        # `ok` 는 「못 찾은 것」이 아니다. 실어 보내면 잡음이자 거짓이다.
+        return [f"{name} — {status}" for name, status in (value or {}).items()
+                if str(status) != "ok"]
+    if key == "off_slot":
+        counts = (value or {}).get("by_reason") or {}
+        rows = [f"{reason} {n}건" for reason, n in counts.items() if n]
+        if (value or {}).get("unverified_quote"):
+            rows.append(f"인용 미검증 {value['unverified_quote']}건")
+        return rows
+    if key == "contradictions":
+        return [f"{v.get('slot_id')} ({v.get('fact_id')}) — {v.get('note')}"
+                for v in value or [] if isinstance(v, dict)]
+    if key == "unit_mismatch":
+        return [f"{v.get('formula_id')} — {v.get('note')}"
+                for v in value or [] if isinstance(v, dict)]
+    if key == "skipped_checks":
+        return [f"{v.get('rule_id')} — 선행 {v.get('skipped_by')} 위반으로 건너뜀"
+                for v in value or [] if isinstance(v, dict)]
+    # 나머지(`retry_hints`·`independent_topdown_blocked`·`자료_부재_확정` …)는 이미 사람 문장이다.
     if isinstance(value, dict):
-        return " · ".join(f"{k} {v}" for k, v in value.items()) or "—"
-    if isinstance(value, (list, tuple)):
-        items = [json.dumps(v, ensure_ascii=False) if isinstance(v, (dict, list)) else str(v)
-                 for v in value]
-        head = ", ".join(items[:12])
-        return f"{len(items)}건 — {head}" + (" …" if len(items) > 12 else "")
-    return _text(value, "—")
+        return [f"{k} {v}" for k, v in value.items() if v]
+    return _strings(value)
 
 
 def _price(cards: list[dict]) -> dict | None:
@@ -348,6 +467,7 @@ NOTES_FULL = (
     "등급은 evidence[].grade 에 있다. 값만 떼어 쓰면 추정이 확정처럼 읽힌다.",
     "caveats 를 떨어뜨리지 마라 — 값과 함께 옮겨야 하는 문장이다.",
     "법률 결과는 반영되지 않았다.",
+    "SOM 은 이 파이프라인이 산출하지 않는다 — som:null 은 0 이 아니라 «안 쟀다»다.",
 )
 NOTES_BM = (
     "칸의 caveats 는 인용한 근거에서 기계가 파생한 것이다 — 모델이 쓴 문장이 아니다.",

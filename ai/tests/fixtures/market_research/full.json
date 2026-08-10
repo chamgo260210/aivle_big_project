@@ -6,6 +6,7 @@
     "AI 가 맞다는데 백엔드가 거부하는 루프를 끊는 유일한 장치다."
   ],
   "_경계_실측": "evidence 2건에 caveats 가 있다. 이것이 최종까지 도달하는지가 이 프로젝트의 대표 검사다.",
+  "_notFound_왜_이_모양인가": "market.notFound[].detail 은 줄바꿈으로 이은 항목 목록이다 — 화면이 \\n 으로 갈라 그린다. 다섯 갈래(NOT_YET·ASSUMED·CONFIRMED_ABSENT·SCREENED_OUT·DIVERGED)가 최소 하나씩 나오도록 골랐다. 그래야 화면 분류가 실제로 검사된다.",
   "runId": "beauty-13b",
   "conceptId": "beauty-noshow",
   "asOf": "2026-08-09",
@@ -97,12 +98,12 @@
     {
       "subject": "CALCULATION",
       "state": "FILLED",
-      "detail": "TAM 10.25억 · 가정 6개 명시"
+      "detail": "TAM 1,025,336,520원 · 가정 6개 명시"
     },
     {
       "subject": "NOT_FOUND",
       "state": "REPORTED",
-      "detail": "공백 슬롯 11 · 재조사 힌트 12"
+      "detail": "아직 못 채운 것 26건 · 가정으로 메운 변수 14건 · 걸러낸 것 2건 · 값이 갈린 것 5건 · 찾아도 없는 것 5건"
     }
   ],
   "market": {
@@ -167,11 +168,35 @@
     "notFound": [
       {
         "item": "empty_slots",
-        "detail": "S2, S3, S4, S6, S7, S9, S10, S12, S14, S15, S17"
+        "detail": "S2 — 두발 미용업 · 종사자 1인 사업체 비율 (2025, %)\nS3 — 두발 미용업 · 도입률 (2025, %)\nS4 — 미용실 예약 관리 SaaS · 월 구독료 (2025, 원)"
+      },
+      {
+        "item": "thin_slots",
+        "detail": "S13 — 네이버 예약 · 매출액 (2025, 원) · 확인 1건 / 기준 2건\nS16 — 외식업 소상공인 · 노쇼 피해 경험률 (2025, %) · 확인 1건 / 기준 2건"
       },
       {
         "item": "retry_hints",
-        "detail": "12건 — 재조사 힌트는 자동 루프를 돌지 않는다"
+        "detail": "S2: 수집 0건 — 검색·fetch 로그를 볼 것\nS13: 확인된 사실 1건 < 기준 2건 — 소스를 늘려 재조사 권고"
+      },
+      {
+        "item": "unfilled_vars",
+        "detail": "V2 — 두발 미용업 · 종사자 1인 사업체 비율 (2025, %)\nV5 — 대응 슬롯 없음 (식의 계수)"
+      },
+      {
+        "item": "independent_topdown_blocked",
+        "detail": "상위권이 비상장이다 — 6사 모두 DART 상장 0건(corpCode 전수 조회).\n보도에서 관측되는 것은 거래액(GMV)이지 매출이 아니다. GMV 는 플랫폼을 통과한 거래 총액이고 그 회사의 수익이 아니다. 창업자가 가장 흔하게 속는 숫자이므로 매출로 바꿔 쓰지 않는다."
+      },
+      {
+        "item": "off_slot",
+        "detail": "단위 불일치 2건\n인용 미검증 1건"
+      },
+      {
+        "item": "contradictions",
+        "detail": "S8 (F001) — 값 갈림 — 같은 대상·단위(원)에 값 3종: 15,000 · 19,800 · 30,000"
+      },
+      {
+        "item": "unit_mismatch",
+        "detail": "F_TAM — V2: unit_mismatch: 슬롯 '%' vs 값 '비율' / **가정이다 — 관측이 아니다.** 관측된 부분은 상한뿐이다."
       }
     ],
     "coverageCaveat": "수집 조건이 다른 원장과 한 표에 두지 않는다."
@@ -395,6 +420,7 @@
   "notes": [
     "등급은 evidence[].grade 에 있다. 값만 떼어 쓰면 추정이 확정처럼 읽힌다.",
     "caveats 를 떨어뜨리지 마라 — 값과 함께 옮겨야 하는 문장이다.",
-    "법률 결과는 반영되지 않았다."
+    "법률 결과는 반영되지 않았다.",
+    "SOM 은 이 파이프라인이 산출하지 않는다 — som:null 은 0 이 아니라 «안 쟀다»다."
   ]
 }

@@ -3,24 +3,79 @@
 .market-page { display: flex; flex-direction: column; gap: 1.25rem; }
 .market-page__head { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap; }
 .market-page__head h2 { margin: 0 0 .25rem; }
-.market-page__head p { margin: 0; color: var(--text-muted, #5b6472); font-size: .9rem; }
+.market-page__head p { margin: 0; color: var(--color-text-secondary); font-size: .9rem; }
 .market-page__actions { display: flex; gap: .5rem; }
 .market-page__foot { display: flex; justify-content: flex-end; padding-top: .5rem; }
-.market-note { color: var(--text-muted, #5b6472); font-size: .85rem; margin: 0 0 .75rem; }
+.market-note { color: var(--color-text-secondary); font-size: .85rem; margin: 0 0 .75rem; }
+
+.market-identity { margin: .35rem 0 0; color: var(--color-text-secondary); font-size: .8rem; }
+.market-notes { margin: 0; padding-left: 1.1rem; color: var(--color-text-secondary); font-size: .8rem; }
+
+/* ── 첫 화면 — 결론 숫자 3장 + 신뢰 스트립 ──────────────── */
+.market-headline { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); }
+.market-headline__card { display: grid; gap: .3rem; justify-items: start; }
+.market-headline__label { color: var(--color-text-secondary); font-size: .8rem; font-weight: 600; }
+.market-headline__card b { font-size: 1.5rem; line-height: 1.2; }
+.market-headline__card small { color: var(--color-text-secondary); font-size: .78rem; }
+
+.market-trust { display: flex; flex-wrap: wrap; gap: .35rem 1.1rem; margin: 0; font-size: .82rem; color: var(--color-text-secondary); }
+.market-trust b { color: var(--color-text-primary); }
+
+/* ── 요약 ───────────────────────────────────────────────── */
+.market-summary { margin: 0; padding-left: 1.1rem; display: grid; gap: .4rem; font-size: .88rem; }
+.market-summary__cell { margin-right: .4rem; padding: .05rem .4rem; border-radius: 3px; background: var(--color-bg-subtle); font-size: .75rem; }
+.market-summary code { margin-left: .3rem; font-size: .72rem; }
+
+/* ── 퍼널 — TAM ⊃ SAM ⊃ SOM 의 «관계»를 계단으로 ────────── */
+.market-funnel { list-style: none; margin: 0; padding: 0; display: grid; gap: .5rem; }
+.market-funnel__growth { margin-top: .75rem; padding-top: .75rem; border-top: 1px solid var(--color-border-default); }
+.market-funnel__step { display: grid; gap: .3rem; padding: .55rem .7rem; border: 1px solid var(--color-border-default); border-radius: 8px; }
+/* 산출하지 않는 칸. 지우지 않는다 — 「못 구했다」와 「안 쟀다」는 다른 사건이다. */
+.market-funnel__step--absent { border-style: dashed; background: var(--color-bg-subtle); }
+.market-funnel__head { display: flex; flex-wrap: wrap; align-items: baseline; gap: .45rem; }
+.market-funnel__gloss { color: var(--color-text-secondary); font-size: .78rem; }
+.market-funnel__value { font-size: 1.05rem; }
+.market-funnel__short { color: var(--color-text-secondary); font-size: .82rem; }
+.market-funnel__note { margin: 0; color: var(--color-text-secondary); font-size: .82rem; }
+.market-funnel code { font-size: .78rem; color: var(--color-text-secondary); }
+
+/* ── 계산 해부 ──────────────────────────────────────────── */
+.market-breakdown { display: grid; gap: .5rem; padding: .7rem .8rem; margin-top: .75rem; border: 1px solid var(--color-border-default); border-radius: 8px; }
+.market-breakdown__head { display: flex; flex-wrap: wrap; align-items: baseline; gap: .5rem; }
+.market-breakdown__head b { font-size: 1.05rem; }
+.market-breakdown code { font-size: .78rem; color: var(--color-text-secondary); }
+.market-breakdown__count { margin: 0; font-size: .85rem; }
+.market-breakdown__materials { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem; margin: 0; font-size: .8rem; }
+.market-breakdown__link { margin: 0; font-size: .8rem; color: var(--color-text-secondary); }
+.market-breakdown__assumptions h4 { margin: 0 0 .25rem; font-size: .82rem; }
+.market-breakdown__assumptions ul { margin: 0; padding-left: 1.1rem; font-size: .82rem; display: grid; gap: .25rem; }
+
+/* ── 가격 밴드 ──────────────────────────────────────────── */
+.market-price__band { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin: 0 0 .5rem; }
+.market-price__band b { font-size: 1.15rem; }
+
+/* ── 못 찾은 것 — 갈래별 ────────────────────────────────── */
+.market-notfound__callout { margin: 0; padding-left: 1.1rem; display: grid; gap: .3rem; font-size: .85rem; }
+.market-notfound__group { margin-top: .9rem; }
+.market-notfound__group h4 { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; margin: 0 0 .35rem; font-size: .9rem; }
+.market-notfound__note { color: var(--color-text-secondary); font-size: .78rem; font-weight: 400; }
+.market-notfound__block { margin-bottom: .5rem; font-size: .84rem; }
+.market-notfound__block ul { margin: .2rem 0 0; padding-left: 1.1rem; display: grid; gap: .2rem; color: var(--color-text-secondary); }
+.market-degradations { margin: .5rem 0 0; padding-left: 1.1rem; font-size: .82rem; display: grid; gap: .25rem; }
 
 /* ── 성적표 ─────────────────────────────────────────────── */
 .market-scorecard { width: 100%; border-collapse: collapse; font-size: .9rem; }
-.market-scorecard th, .market-scorecard td { text-align: left; padding: .5rem .6rem; border-bottom: 1px solid var(--border, #e5e8ec); vertical-align: top; }
-.market-scorecard thead th { font-size: .8rem; color: var(--text-muted, #5b6472); }
+.market-scorecard th, .market-scorecard td { text-align: left; padding: .5rem .6rem; border-bottom: 1px solid var(--color-border-default); vertical-align: top; }
+.market-scorecard thead th { font-size: .8rem; color: var(--color-text-secondary); }
 .market-scorecard tbody th { white-space: nowrap; width: 8rem; }
 
 /* ── 시장 규모 ───────────────────────────────────────────── */
 .market-figures { display: grid; gap: .75rem; margin: 0; }
 .market-figures > div { display: grid; grid-template-columns: 7rem 1fr; gap: .75rem; align-items: baseline; }
-.market-figures dt { font-weight: 600; color: var(--text-muted, #5b6472); }
+.market-figures dt { font-weight: 600; color: var(--color-text-secondary); }
 .market-figures dd { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; }
 .market-figures dd b { font-size: 1.05rem; }
-.market-figures code { font-size: .78rem; color: var(--text-muted, #5b6472); }
+.market-figures code { font-size: .78rem; color: var(--color-text-secondary); }
 
 /* 경계 — 값 옆에 붙어 있어야 한다. 색으로도 구분한다. */
 .market-caveat,
@@ -28,28 +83,30 @@
   flex-basis: 100%;
   font-style: italic;
   font-size: .82rem;
-  color: #8a5a00;
-  background: #fff8e6;
-  border-left: 3px solid #e0a800;
+  color: var(--color-status-warning);
+  background: rgb(183 121 31 / 12%);
+  border-left: 3px solid var(--color-status-warning);
   padding: .25rem .5rem;
   border-radius: 3px;
 }
 
 /* ── 근거 카드 ───────────────────────────────────────────── */
 .market-evidence-list { display: grid; gap: .75rem; }
-.market-evidence { border: 1px solid var(--border, #e5e8ec); border-radius: 8px; padding: .75rem .9rem; background: #fff; }
-.market-evidence.is-highlighted { border-color: #2f6feb; box-shadow: 0 0 0 3px rgba(47, 111, 235, .15); }
+.market-evidence { border: 1px solid var(--color-border-default); border-radius: 8px; padding: .75rem .9rem; background: var(--color-surface); }
+.market-evidence.is-highlighted { border-color: var(--color-status-info); box-shadow: 0 0 0 3px rgb(49 107 203 / 25%); }
 .market-evidence__head { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; margin-bottom: .5rem; }
-.market-evidence__id { font-family: ui-monospace, monospace; font-size: .75rem; color: var(--text-muted, #5b6472); }
+.market-evidence__id { font-family: ui-monospace, monospace; font-size: .75rem; color: var(--color-text-secondary); }
 .market-evidence__metric { flex: 1; min-width: 10rem; }
 .market-evidence__value { display: flex; flex-wrap: wrap; align-items: baseline; gap: .5rem; margin-bottom: .5rem; }
 .market-evidence__value b { font-size: 1.1rem; }
-.market-evidence__period { font-size: .8rem; color: var(--text-muted, #5b6472); }
-.market-evidence blockquote { margin: .5rem 0; padding: .4rem .7rem; border-left: 3px solid var(--border, #e5e8ec); color: #333; font-size: .88rem; }
+.market-evidence__period { font-size: .8rem; color: var(--color-text-secondary); }
+.market-evidence blockquote { margin: .5rem 0; padding: .4rem .7rem; border-left: 3px solid var(--color-border-default); color: var(--color-text-primary); font-size: .88rem; }
 .market-evidence__calc code { display: block; font-size: .8rem; margin-bottom: .3rem; }
-.market-evidence__calc ul { margin: 0; padding-left: 1.1rem; font-size: .82rem; color: var(--text-muted, #5b6472); }
-.market-evidence__foot { display: flex; flex-wrap: wrap; gap: .75rem; font-size: .78rem; color: var(--text-muted, #5b6472); margin-top: .5rem; }
-.market-evidence__missing { color: #b4453c; }
+.market-evidence__calc ul { margin: 0; padding-left: 1.1rem; font-size: .82rem; color: var(--color-text-secondary); }
+.market-evidence__foot { display: flex; flex-wrap: wrap; gap: .75rem; font-size: .78rem; color: var(--color-text-secondary); margin-top: .5rem; }
+.market-evidence__missing { color: var(--color-status-danger); }
+.market-evidence__origin { font-size: .72rem; color: var(--color-text-secondary); }
+.market-evidence__used { margin: .4rem 0 0; font-size: .8rem; }
 
 /* ── BM 캔버스 9칸 ──────────────────────────────────────── */
 /* 저장소에 grid-template-areas 를 쓰는 곳이 없어서 여기서 처음 만든다.
@@ -64,10 +121,10 @@
     "cost     cost       cost  revenue   revenue";
 }
 .bmc-cell {
-  border: 1px solid var(--border, #e5e8ec);
+  border: 1px solid var(--color-border-default);
   border-radius: 8px;
   padding: .6rem .7rem;
-  background: #fff;
+  background: var(--color-surface);
   display: flex;
   flex-direction: column;
   gap: .4rem;
@@ -78,28 +135,31 @@
 .bmc-cell__content { margin: 0; padding-left: 1rem; font-size: .84rem; }
 .bmc-cell__content li { margin-bottom: .25rem; }
 .bmc-cell__empty,
-.bmc-cell__absent { margin: 0; font-size: .82rem; color: var(--text-muted, #5b6472); }
-.bmc-cell__absent { color: #b4453c; }
-.bmc-cell__reason { margin: 0; font-size: .78rem; color: var(--text-muted, #5b6472); }
-.bmc-cell__missing { margin: 0; font-size: .78rem; color: #b4453c; }
+.bmc-cell__absent { margin: 0; font-size: .82rem; color: var(--color-text-secondary); }
+.bmc-cell__absent { color: var(--color-status-danger); }
+.bmc-cell__reason { margin: 0; font-size: .78rem; color: var(--color-text-secondary); }
+.bmc-cell__missing { margin: 0; font-size: .78rem; color: var(--color-status-danger); }
 .bmc-cell__caveat {
   margin: 0; font-style: italic; font-size: .78rem;
-  color: #8a5a00; background: #fff8e6;
-  border-left: 3px solid #e0a800; padding: .2rem .45rem; border-radius: 3px;
+  color: var(--color-status-warning); background: rgb(183 121 31 / 12%);
+  border-left: 3px solid var(--color-status-warning); padding: .2rem .45rem; border-radius: 3px;
 }
 .bmc-cell__evidence { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem; font-size: .75rem; }
 .bmc-chip {
   font-family: ui-monospace, monospace; font-size: .72rem;
-  border: 1px solid var(--border, #e5e8ec); background: #f6f8fa;
+  border: 1px solid var(--color-border-default); background: var(--color-bg-subtle);
   border-radius: 999px; padding: .1rem .5rem; cursor: pointer;
 }
-.bmc-chip:hover { background: #e9eef5; }
-.bmc-chip.is-active { background: #2f6feb; color: #fff; border-color: #2f6feb; }
+.bmc-chip:hover { background: var(--color-surface-raised); }
+.bmc-chip.is-active {
+  background: var(--color-status-info); color: var(--color-text-inverse);
+  border-color: var(--color-status-info);
+}
 
 .market-decision { display: flex; align-items: center; gap: .6rem; margin: 0 0 .5rem; }
 .market-fit { display: grid; gap: .5rem; margin: .5rem 0 0; }
 .market-fit > div { display: grid; grid-template-columns: 7rem 1fr; gap: .75rem; }
-.market-fit dt { font-weight: 600; color: var(--text-muted, #5b6472); }
+.market-fit dt { font-weight: 600; color: var(--color-text-secondary); }
 .market-fit dd { margin: 0; font-size: .88rem; }
 
 /* 견본 컨셉 고르기 — 임시 다리. 컨셉이 DB 에서 오면 이 규칙도 같이 사라진다. */

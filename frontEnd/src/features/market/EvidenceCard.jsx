@@ -1,5 +1,5 @@
 import { Badge } from '../../shared/ui';
-import { formatValue, gradeView } from './marketResult.js';
+import { SOURCE_KIND_VIEW, formatValue, gradeView } from './marketResult.js';
 
 /**
  * 근거 카드 하나.
@@ -11,9 +11,11 @@ import { formatValue, gradeView } from './marketResult.js';
  * 마크업은 기존 `legal-evidence-list`(JourneyPages.jsx)를 따랐다 — 인용문·조회일·출처는
  * 이미 있던 패턴이고, **값·단위·등급 배지·경계**가 새로 얹은 것이다.
  */
-export default function EvidenceCard({ item, highlighted = false, id }) {
+export default function EvidenceCard({ item, highlighted = false, id, usedIn }) {
   const grade = gradeView(item.grade);
   const host = item.sourceUrl ? safeHost(item.sourceUrl) : null;
+  const origin = [item.kind, item.sourceKind ? SOURCE_KIND_VIEW[item.sourceKind] ?? item.sourceKind : null]
+    .filter(Boolean).join(' · ');
 
   return (
     <article
@@ -23,6 +25,7 @@ export default function EvidenceCard({ item, highlighted = false, id }) {
     >
       <header className="market-evidence__head">
         <span className="market-evidence__id">{item.id}</span>
+        {origin ? <span className="market-evidence__origin">{origin}</span> : null}
         <strong className="market-evidence__metric">
           {item.metric ?? '계량 미표기'}
           {item.subject ? ` · ${item.subject}` : ''}
@@ -50,6 +53,16 @@ export default function EvidenceCard({ item, highlighted = false, id }) {
             </ul>
           ) : null}
         </div>
+      ) : null}
+
+      {/* ⚠ 「쓰인 곳 없음」이 값보다 중요한 자리가 있다 — 네이버 전사 매출 12조가 그렇다.
+          이 줄이 없으면 읽는 사람은 그 12조를 시장 규모의 근거로 읽는다. */}
+      {usedIn ? (
+        <p className="market-evidence__used">
+          쓰인 곳: {usedIn.length > 0
+            ? usedIn.join(' · ')
+            : <span className="market-evidence__missing">없음 — 어느 값에도 들어가지 않았다</span>}
+        </p>
       ) : null}
 
       <footer className="market-evidence__foot">

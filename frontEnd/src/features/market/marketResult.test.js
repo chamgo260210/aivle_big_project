@@ -3,7 +3,8 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  CANVAS_LAYOUT, formatValue, gradeView, normalizeMarketResult,
+  CANVAS_LAYOUT, NOT_FOUND_GROUP, NOT_FOUND_VIEW,
+  formatValue, gradeView, normalizeMarketResult,
 } from './marketResult.js';
 
 /**
@@ -49,6 +50,54 @@ describe('normalizeMarketResult — FULL', () => {
   it('BM 쪽 칸은 비어 있다 — 모드가 섞이지 않는다', () => {
     expect(result.canvas).toBeNull();
     expect(result.bm).toBeNull();
+  });
+
+  it('「못 찾은 것」이 갈래와 항목으로 펴진다 — 원시 키가 화면에 안 나온다', () => {
+    const blocks = result.market.notFound;
+    expect(blocks.length).toBeGreaterThan(0);
+    // 갈래를 못 찾은 덩이가 하나라도 있으면 화면이 그걸 «분류 실패» 로 드러내야 한다.
+    expect(blocks.every((block) => block.group)).toBe(true);
+    expect(new Set(blocks.map((b) => b.group)).size).toBeGreaterThanOrEqual(4);
+
+    const empty = blocks.find((block) => block.key === 'empty_slots');
+    expect(empty.entries.length).toBeGreaterThan(1);   // \n 으로 갈렸다
+    expect(empty.entries[0]).toContain('두발 미용업');  // 슬롯 id 가 사람 말이 됐다
+  });
+
+  it('모르는 진단 키는 조용히 삼키지 않고 danger 로 드러낸다', () => {
+    const raw = fixture('full.json');
+    raw.market.notFound = [{ item: '아무도_모르는_진단', detail: 'x' }];
+    const [block] = normalizeMarketResult(raw).market.notFound;
+    expect(block.group).toBeNull();
+    expect(block.tone).toBe('danger');
+    expect(block.label).toBe('아무도_모르는_진단');
+  });
+
+  it('근거마다 «쓰인 곳» 을 알 수 있다 — 없으면 없다고 말할 수 있어야 한다', () => {
+    // 전사 매출 12조는 어느 값에도 안 들어갔다. 그 «없음» 이 값보다 중요하다.
+    expect(result.usedIn.get('C-F010') ?? []).toEqual([]);
+    expect(result.usedIn.get('C-F006')).toContain('TAM');
+  });
+
+  it('summary 를 떨어뜨리지 않는다 — 봉투에 있으면 화면까지 온다', () => {
+    const raw = fixture('full.json');
+    raw.summary = [{ cell: 'CUSTOMER_SEGMENTS', sentence: '사업체는 115,310개다.', cardIds: ['C-F006'] }];
+    expect(normalizeMarketResult(raw).summary).toHaveLength(1);
+    expect(normalizeMarketResult(raw).summary[0].sentence).toContain('115,310');
+  });
+});
+
+describe('「못 찾은 것」 갈래표', () => {
+  it('모든 진단 키가 갈래를 갖는다', () => {
+    Object.entries(NOT_FOUND_VIEW).forEach(([key, [group, label]]) => {
+      expect(NOT_FOUND_GROUP[group], `${key} 의 갈래 ${group}`).toBeTruthy();
+      expect(label).toBeTruthy();
+    });
+  });
+
+  it('픽스처가 내는 키는 전부 분류돼 있다 — 서버 표와 갈리면 여기서 잡힌다', () => {
+    const keys = fixture('full.json').market.notFound.map((block) => block.item);
+    keys.forEach((key) => expect(NOT_FOUND_VIEW[key], `분류되지 않은 키: ${key}`).toBeTruthy());
   });
 });
 

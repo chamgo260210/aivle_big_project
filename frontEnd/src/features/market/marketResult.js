@@ -52,6 +52,49 @@ export const SCORE_STATE_VIEW = {
   REPORTED: { label: '보고됨', tone: 'neutral' },
 };
 
+/** 계약이 쓰는 단위 코드 → 사람이 읽는 말. 모르는 코드는 **원문 그대로** 통과시킨다. */
+export const UNIT_VIEW = { KRW: '원', PERCENT_PER_YEAR: '%/년' };
+
+/** 출처의 기관 유형. 「어디서 온 숫자인가」는 등급만큼 중요하다. */
+export const SOURCE_KIND_VIEW = {
+  gov_stat: '정부 통계',
+  public_filing: '공시',
+  official_page: '공식 페이지',
+  news: '언론',
+  web: '웹',
+};
+
+/**
+ * 「못 찾은 것」의 갈래 — **사용자의 다음 행동이 다르면 다른 갈래다.**
+ * 서버 `serialize._NOT_FOUND` 와 같은 분류다. 갈리면 `marketResult.test.js` 가 잡는다.
+ */
+export const NOT_FOUND_GROUP = {
+  NOT_YET: { label: '아직 못 채운 것', note: '더 찾으면 나올 수 있다', tone: 'warning' },
+  ASSUMED: { label: '가정으로 메운 변수', note: '자료가 아니라 판단이 필요하다', tone: 'warning' },
+  CONFIRMED_ABSENT: { label: '찾아도 없는 것', note: '여기가 종착이다', tone: 'neutral' },
+  SCREENED_OUT: { label: '찾았지만 쓰지 않은 것', note: '규격 미달로 걸러냈다', tone: 'info' },
+  DIVERGED: { label: '값이 갈린 것', note: '그 자체가 조사 결과다', tone: 'info' },
+};
+
+/** 진단 키 → 갈래 + 사람이 읽는 이름. 모르는 키는 원문 노출 + `danger` 로 **드러낸다.** */
+export const NOT_FOUND_VIEW = {
+  empty_slots: ['NOT_YET', '근거를 하나도 못 찾은 조사 칸'],
+  thin_slots: ['NOT_YET', '근거가 기준에 못 미치는 조사 칸'],
+  retry_hints: ['NOT_YET', '재조사 힌트 — 자동으로 돌지 않는다'],
+  url_filtered: ['NOT_YET', '열지 않고 거른 후보'],
+  unknown_error_codes: ['NOT_YET', '분류하지 못한 외부 응답'],
+  unfilled_vars: ['ASSUMED', '관측 없이 가정으로 채운 변수'],
+  suspect_var: ['ASSUMED', '재조사 1순위 변수'],
+  independent_topdown_blocked: ['CONFIRMED_ABSENT', '위에서 아래로 재는 길이 막혔다'],
+  '자료_부재_확정': ['CONFIRMED_ABSENT', '그 형태로 발행되지 않는 자료'],
+  adapters: ['CONFIRMED_ABSENT', '설정되지 않은 수집 경로'],
+  off_slot: ['SCREENED_OUT', '조사 칸과 안 맞아 격리한 근거'],
+  contradictions: ['DIVERGED', '같은 대상·단위인데 값이 갈렸다'],
+  unit_mismatch: ['DIVERGED', '단위가 어긋나 멈춘 계산'],
+  range_capped: ['DIVERGED', '범위 상한에 부딪힌 추정'],
+  skipped_checks: ['DIVERGED', '선행 규칙 위반으로 건너뛴 검사'],
+};
+
 /** 표준 BM 캔버스 배치 순서. 격자 area 이름과 짝이다. */
 export const CANVAS_LAYOUT = [
   { cell: 'KEY_PARTNERS', area: 'partners', label: '핵심 파트너' },
@@ -82,7 +125,42 @@ export function gradeView(grade) {
 export function formatValue(value, unit) {
   if (value === null || value === undefined || Number.isNaN(value)) return '미확보';
   const number = typeof value === 'number' ? value.toLocaleString('ko-KR') : String(value);
-  return unit ? `${number} ${unit}` : number;
+  const label = unit ? (UNIT_VIEW[unit] ?? unit) : null;
+  return label ? `${number} ${label}` : number;
+}
+
+/**
+ * 큰 원화를 「10.25억원」처럼 줄인다. **원값을 대체하지 않고 곁들이는 용도**다 —
+ * 자릿수를 줄여 보여 주면 가정 4개가 곱해진 수가 정밀해 보인다.
+ */
+export function abbreviateKrw(value) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+  const units = [[1e12, '조'], [1e8, '억'], [1e4, '만']];
+  for (const [size, name] of units) {
+    if (Math.abs(value) >= size) {
+      return `${(value / size).toLocaleString('ko-KR', { maximumFractionDigits: 2 })}${name}원`;
+    }
+  }
+  return null;
+}
+
+/**
+ * 서버가 준 「못 찾은 것」 한 덩이를 갈래·항목으로 편다.
+ * `detail` 은 줄바꿈으로 이은 항목 목록이다(`serialize._not_found_blocks`).
+ */
+function normalizeNotFound(raw) {
+  const key = text(raw?.item) ?? '(항목 없음)';
+  const known = NOT_FOUND_VIEW[key];
+  const entries = (text(raw?.detail) ?? '').split('\n').map((s) => s.trim()).filter(Boolean);
+  return {
+    key,
+    // 모르는 키를 조용히 한 갈래에 밀어 넣지 않는다 — 다음 판에 잘못된 서랍에서 잠든다.
+    group: known ? known[0] : null,
+    label: known ? known[1] : key,
+    tone: known ? NOT_FOUND_GROUP[known[0]].tone : 'danger',
+    entries,
+    count: entries.length,
+  };
 }
 
 function normalizeEvidence(raw) {
@@ -185,7 +263,7 @@ export function normalizeMarketResult(raw) {
             evidenceIds: list(raw.market.price.evidenceIds),
           }
           : null,
-        notFound: list(raw.market.notFound),
+        notFound: list(raw.market.notFound).map(normalizeNotFound),
         coverageCaveat: text(raw.market.coverageCaveat),
       }
       : null,
@@ -205,8 +283,44 @@ export function normalizeMarketResult(raw) {
         legal: raw.bm.legal ?? null,
       }
       : null,
+    // 칸별 종합 요약. **예전엔 여기서 통째로 떨어뜨렸다** — 봉투엔 있는데 화면에 없었다.
+    summary: Array.isArray(raw.summary)
+      ? raw.summary.map((line) => ({
+        cell: text(line?.cell),
+        sentence: text(line?.sentence) ?? '요약 없음',
+        cardIds: list(line?.cardIds),
+      }))
+      : null,
     evidence,
     evidenceById: byId,
+    usedIn: usedInIndex(raw, evidence),
     notes: list(raw.notes),
   };
+}
+
+/**
+ * 근거 id → **그 근거가 실제로 쓰인 자리** 목록.
+ *
+ * 왜 필요한가: 화면에 12조짜리 「네이버 전사 매출」이 있는데 TAM 에는 안 들어가 있다.
+ * 이 열이 없으면 읽는 사람은 그 12조가 시장 규모의 근거라고 읽는다. **「쓰인 곳 없음」이
+ * 값 그 자체보다 중요한 정보**인 자리다.
+ */
+function usedInIndex(raw, evidence) {
+  const index = new Map();
+  const add = (id, where) => {
+    if (!id) return;
+    const seen = index.get(id) ?? [];
+    if (!seen.includes(where)) seen.push(where);
+    index.set(id, seen);
+  };
+  const market = raw?.market ?? {};
+  for (const [key, where] of [['tam', 'TAM'], ['sam', 'SAM'], ['som', 'SOM'], ['growth', '성장률']]) {
+    for (const id of list(market[key]?.evidenceIds)) add(id, where);
+  }
+  for (const id of list(market.price?.evidenceIds)) add(id, '가격');
+  // 계산 카드의 재료 — 「이 관측이 저 계산을 떠받쳤다」.
+  for (const card of evidence) {
+    for (const id of card.materialIds) add(id, card.id);
+  }
+  return index;
 }
