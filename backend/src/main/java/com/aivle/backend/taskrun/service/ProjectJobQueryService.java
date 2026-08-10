@@ -122,12 +122,13 @@ public class ProjectJobQueryService {
             case TECH_OPS_PROPOSAL -> JobModule.TECH_OPS;
             case FINANCE_ESTIMATE -> JobModule.FINANCE;
             case MARKETING_CONTENT_GENERATION -> JobModule.MARKETING;
+            case MARKET_RESEARCH -> JobModule.MARKET;
         };
     }
 
     private enum JobModule {
         IDEA("/idea"), CONCEPT_FACTORY("/concepts"), CONCEPT_SELECTION("/concepts/compare"),
-        TECH_OPS("/tech-ops"), FINANCE("/finance"), MARKETING("/marketing");
+        TECH_OPS("/tech-ops"), FINANCE("/finance"), MARKETING("/marketing"), MARKET("/market");
         private final String route;
         JobModule(String route) { this.route = route; }
     }

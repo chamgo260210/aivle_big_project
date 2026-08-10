@@ -37,7 +37,9 @@ class ActiveSurfaceCleanupTests {
     void jobCenterTaskTypesRemainBoundToCurrentPipelineWork() {
         assertThat(Arrays.stream(TaskType.values()).map(Enum::name)).containsExactly(
             "IDEA_ATTACHMENT_PARSE", "IDEA_BRIEF_DERIVATION", "CONCEPT_FACTORY_RUN",
-            "CONCEPT_CANDIDATE", "CONCEPT_LEGAL_REVIEW", "CONCEPT_REDESIGN",
-            "CONCEPT_HYPOTHESIS_ALTERNATIVE", "MARKETING_CONTENT_GENERATION");
+            "CONCEPT_CANDIDATE", "CONCEPT_DISTINCTNESS_JUDGE", "CONCEPT_LEGAL_REVIEW",
+            "CONCEPT_REDESIGN", "CONCEPT_HYPOTHESIS_ALTERNATIVE", "CONCEPT_DELTA_LEGAL_REVIEW",
+            "TECH_OPS_PROPOSAL", "FINANCE_ESTIMATE", "MARKETING_CONTENT_GENERATION",
+            "MARKET_RESEARCH");
     }
 }

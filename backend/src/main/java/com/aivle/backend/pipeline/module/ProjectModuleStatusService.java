@@ -2,6 +2,8 @@ package com.aivle.backend.pipeline.module;
 
 import com.aivle.backend.common.exception.BusinessException;
 import com.aivle.backend.common.exception.ErrorCode;
+import com.aivle.backend.journey.MarketResearchRun;
+import com.aivle.backend.journey.MarketResearchRunRepository;
 import com.aivle.backend.pipeline.concept.domain.ConceptFactoryRun;
 import com.aivle.backend.pipeline.concept.domain.ConceptFactoryRunStatus;
 import com.aivle.backend.pipeline.concept.domain.ConceptSlotStatus;
@@ -48,6 +50,7 @@ public class ProjectModuleStatusService {
     private final TechOpsInputSnapshotRepository techOpsSnapshotRepository;
     private final FinancialInputPreparationRepository financialPreparationRepository;
     private final FinancialInputSnapshotRepository financialSnapshotRepository;
+    private final MarketResearchRunRepository marketResearchRunRepository;
 
     public List<ProjectModuleStatusResponse> findAll(Long userId, Long projectId) {
         projectRepository.findByIdAndOwnerIdAndDeletedAtIsNull(projectId, userId)
@@ -60,8 +63,8 @@ public class ProjectModuleStatusService {
         var selection = selectionRepository.findByProjectIdAndCurrentSelectionTrueAndDeletedAtIsNull(projectId).orElse(null);
         MarketAnalysisSeedSnapshot selectedSnapshot = selection == null ? null
             : marketSeedSnapshotRepository.findBySelectionIdAndProjectIdAndDeletedAtIsNull(selection.getId(), projectId).orElse(null);
-        ModuleRun marketRun = latestRun(projectId, ModuleType.MARKET_ANALYSIS);
-        ModuleRun businessRun = latestRun(projectId, ModuleType.BUSINESS_MODEL);
+        MarketResearchRun marketRun = latestResearchRun(projectId, MarketResearchRun.Kind.FULL);
+        MarketResearchRun businessRun = latestResearchRun(projectId, MarketResearchRun.Kind.BM);
         ModuleRun techOpsRun = latestRun(projectId, ModuleType.TECH_OPS);
         ModuleRun financialRun = latestRun(projectId, ModuleType.FINANCIAL_ANALYSIS);
         MarketingContent marketing = marketingRepository.findFirstByProjectIdAndDeletedAtIsNullOrderByCreatedAtDesc(projectId).orElse(null);
@@ -83,12 +86,11 @@ public class ProjectModuleStatusService {
 
         String confirmedBriefId = brief == null ? null : brief.getConfirmedSnapshotId();
         PipelineModuleStatus conceptStatus = conceptStatus(conceptRun, confirmedBriefId);
-        PipelineModuleStatus marketStatus = selectedSnapshot == null
-            ? PipelineModuleStatus.NOT_READY
-            : externalStatus(marketRun, selectedSnapshot.getId());
-        PipelineModuleStatus businessModelStatus = selectedSnapshot == null
-            ? PipelineModuleStatus.NOT_READY
-            : externalStatus(businessRun, selectedSnapshot.getId());
+        // 시장조사·BM 은 외부 모듈 핸드오프가 아니라 자체 엔진(MARKET_RESEARCH TaskRun)이 돈다.
+        // ⚠ 실행이 있으면 **Seed 확정 여부와 무관하게** 그 실행 상태를 보여준다. 견본 컨셉으로도
+        //   돌 수 있어서, Seed 로 막아 두면 다 끝난 모듈이 「준비 전」으로 보이는 거짓말이 된다.
+        PipelineModuleStatus marketStatus = researchOrGate(marketRun, selectedSnapshot);
+        PipelineModuleStatus businessModelStatus = researchOrGate(businessRun, selectedSnapshot);
         PipelineModuleStatus marketingStatus = marketingStatus(marketing, marketingSource == null ? null : marketingSource.getId());
         PipelineModuleStatus techOpsStatus = selectedSnapshot == null ? PipelineModuleStatus.NOT_READY
             : techOpsPreparation == null ? PipelineModuleStatus.READY
@@ -120,15 +122,17 @@ public class ProjectModuleStatusService {
                 selectedSnapshot == null ? null : selectedSnapshot.getId(), null, null,
                 selection == null ? null : selection.getUpdatedAt()),
             response(projectId, PipelineModuleType.MARKET_ANALYSIS, marketStatus,
-                selectedSnapshot == null ? List.of("marketAnalysisSeedSnapshotId") : List.of("marketAnalysisConnection"),
-                new NextAction("시장분석 상태 확인", "/market"), marketRun == null ? null : marketRun.getId(), null,
+                selectedSnapshot == null ? List.of("marketAnalysisSeedSnapshotId") : List.of(),
+                new NextAction("시장조사 실행", "/market"),
+                marketRun == null ? null : String.valueOf(marketRun.getId()),
+                marketRun == null ? null : marketRun.getTaskRun().getId(),
                 selectedSnapshot == null ? null : selectedSnapshot.getId(), null, null,
                 marketRun == null ? null : marketRun.getUpdatedAt()),
             response(projectId, PipelineModuleType.BUSINESS_MODEL, businessModelStatus,
-                selectedSnapshot == null ? List.of("marketAnalysisSeedSnapshotId")
-                    : businessRun == null ? List.of("businessModelModuleConnection") : List.of(),
-                new NextAction("BM 분석 상태 확인", "/business-model"),
-                businessRun == null ? null : businessRun.getId(), null,
+                selectedSnapshot == null ? List.of("marketAnalysisSeedSnapshotId") : List.of(),
+                new NextAction("BM 캔버스 생성", "/business-model"),
+                businessRun == null ? null : String.valueOf(businessRun.getId()),
+                businessRun == null ? null : businessRun.getTaskRun().getId(),
                 selectedSnapshot == null ? null : selectedSnapshot.getId(), null, null,
                 businessRun == null ? null : businessRun.getUpdatedAt()),
             response(projectId, PipelineModuleType.TECH_OPS, techOpsStatus,
@@ -155,6 +159,25 @@ public class ProjectModuleStatusService {
 
     private ModuleRun latestRun(Long projectId, ModuleType type) {
         return moduleRunRepository.findFirstByProjectIdAndModuleAndDeletedAtIsNullOrderByCreatedAtDesc(projectId, type).orElse(null);
+    }
+
+    private MarketResearchRun latestResearchRun(Long projectId, MarketResearchRun.Kind kind) {
+        return marketResearchRunRepository
+            .findTopByProjectIdAndKindAndDeletedAtIsNullOrderByCreatedAtDescIdDesc(projectId, kind).orElse(null);
+    }
+
+    private PipelineModuleStatus researchOrGate(MarketResearchRun run, MarketAnalysisSeedSnapshot seed) {
+        if (run != null) return researchStatus(run);
+        return seed == null ? PipelineModuleStatus.NOT_READY : PipelineModuleStatus.READY;
+    }
+
+    private PipelineModuleStatus researchStatus(MarketResearchRun run) {
+        return switch (run.getState()) {
+            case QUEUED -> PipelineModuleStatus.QUEUED;
+            case RUNNING -> PipelineModuleStatus.RUNNING;
+            case SUCCEEDED -> PipelineModuleStatus.COMPLETED;
+            case FAILED -> PipelineModuleStatus.FAILED;
+        };
     }
 
     private PipelineModuleStatus ideaStatus(IdeaBrief brief) {

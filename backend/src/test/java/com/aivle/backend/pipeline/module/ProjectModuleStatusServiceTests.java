@@ -17,6 +17,7 @@ import com.aivle.backend.pipeline.concept.repository.ConceptSlotRepository;
 import com.aivle.backend.pipeline.idea.domain.IdeaBrief;
 import com.aivle.backend.pipeline.idea.domain.IdeaBriefStatus;
 import com.aivle.backend.pipeline.idea.repository.IdeaBriefRepository;
+import com.aivle.backend.journey.MarketResearchRunRepository;
 import com.aivle.backend.pipeline.integration.repository.ModuleRunRepository;
 import com.aivle.backend.pipeline.finance.repository.FinancialInputPreparationRepository;
 import com.aivle.backend.pipeline.finance.repository.FinancialInputSnapshotRepository;
@@ -51,9 +52,11 @@ class ProjectModuleStatusServiceTests {
     private final TechOpsInputSnapshotRepository techOpsSnapshots = mock(TechOpsInputSnapshotRepository.class);
     private final FinancialInputPreparationRepository financialPreparations = mock(FinancialInputPreparationRepository.class);
     private final FinancialInputSnapshotRepository financialSnapshots = mock(FinancialInputSnapshotRepository.class);
+    private final MarketResearchRunRepository marketResearchRuns = mock(MarketResearchRunRepository.class);
     private final ProjectModuleStatusService service = new ProjectModuleStatusService(
         projects, briefs, conceptRuns, slots, selections, snapshots, runs, marketing, marketingSources,
-        techOpsPreparations, techOpsSnapshots, financialPreparations, financialSnapshots);
+        techOpsPreparations, techOpsSnapshots, financialPreparations, financialSnapshots,
+        marketResearchRuns);
 
     @Test
     void derivesIdeaAndConceptFromCanonicalDomainsWithoutProjectDescription() {
