@@ -21,30 +21,20 @@ from app.models.contracts import HealthResponse
 from app.request_context import REQUEST_ID_HEADER, current_request_id, resolve_request_id
 from app.legal.registry import LegalRegistry, RegistryError
 
-output_directory = (
-    Path(__file__).resolve().parent
-    / "outputs"
-)
-
-output_directory.mkdir(
-    parents=True,
-    exist_ok=True
-)
-
-app.mount(
-    "/outputs",
-    StaticFiles(
-        directory=str(output_directory)
-    ),
-    name="outputs"
-)
-
-app.include_router(marketing_router)
-
 app = FastAPI(title="New Pipeline AI Server", version="1.0.0")
 logger = logging.getLogger(__name__)
 INTERNAL_JSON_MAX_BYTES = 2 * 1024 * 1024
 
+output_directory = Path(__file__).resolve().parent / "outputs"
+output_directory.mkdir(parents=True, exist_ok=True)
+
+app.mount(
+    "/outputs",
+    StaticFiles(directory=str(output_directory)),
+    name="outputs",
+)
+
+app.include_router(marketing_router)
 
 def internal_json_limit_exceeded(raw: bytes) -> bool:
     return len(raw) > INTERNAL_JSON_MAX_BYTES
