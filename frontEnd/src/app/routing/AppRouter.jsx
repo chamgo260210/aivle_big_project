@@ -16,6 +16,7 @@ import BmCanvasPage from '../../features/market/BmCanvasPage.jsx';
 import { MarketingContentPage } from '../../features/marketing-content/index.js';
 import { TechOpsPage } from '../../features/tech-ops/index.js';
 import { FinancePage } from '../../features/finance/index.js';
+import TwinSurveyPage from '../../features/twin-survey/TwinSurveyPage.jsx';
 import WorkspaceHomePage from '../../features/projects/WorkspaceHomePage.jsx';
 import { AccountSettingsLayout, AccountSettingsRedirect, ProfileSettingsPage, SecuritySettingsPage } from '../../features/settings/AccountSettingsPages.jsx';
 import ProjectSettingsSheet from '../../features/projects/ProjectSettingsSheet.jsx';
@@ -81,6 +82,7 @@ export default function AppRouter() {
             <Route path="business-model" element={<BmCanvasPage />} />
             <Route path="tech-ops" element={<TechOpsPage />} />
             <Route path="finance" element={<FinancePage />} />
+            <Route path="panel-survey" element={<TwinSurveyPage />} />
             <Route path="marketing" element={<MarketingContentPage />} />
             <Route path="settings" element={<ProjectSettingsSheet />} />
             <Route path="*" element={<ProjectRedirect />} />

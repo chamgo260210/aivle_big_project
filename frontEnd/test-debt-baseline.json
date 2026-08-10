@@ -32,10 +32,6 @@
       "name": "browser token storage policy stores only the refresh token in sessionStorage"
     },
     {
-      "file": "src/features/landing/__tests__/LandingPage.test.jsx",
-      "name": "LandingPage requires approvals and selections before completing the interactive demo"
-    },
-    {
       "file": "src/shared/async-events/formatLocalTime.test.js",
       "name": "formatLocalTime converts a UTC API timestamp to Asia/Seoul local time"
     },
@@ -94,10 +90,6 @@
     {
       "file": "src/test/App.test.jsx",
       "name": "application routing uses a single level-one heading in a protected page"
-    },
-    {
-      "file": "src/test/AuthProjectFlow.test.jsx",
-      "name": "auth and project integration flow logs in, shows the project hub, and creates a project without automatic analysis"
     }
   ],
   "grownAt": {

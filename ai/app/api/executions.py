@@ -29,6 +29,7 @@ TASK_TYPES = {
     "FINANCE_ESTIMATE",
     "MARKETING_CONTENT_GENERATION",
     "MARKET_RESEARCH",
+    "TWIN_SURVEY",
 }
 
 
@@ -191,6 +192,12 @@ async def execute(request: Request, body: InternalExecutionRequestV1):
             from app.research.pipeline import run_market_research
             budget = (deadline - datetime.now(timezone.utc)).total_seconds()
             result = await run_market_research(body.input, body.taskAttemptId, budget)
+        elif body.taskType == "TWIN_SURVEY":
+            # 트윈 조사도 프롬프트 1회가 아니라 수백~수천 셀이다. 남은 deadline 을 예산으로
+            # 넘기고, 예산이 마르면 러너가 거기까지 모은 셀로 집계한다(부분 결과가 정상이다).
+            from app.twin import execute_twin_survey
+            budget = (deadline - datetime.now(timezone.utc)).total_seconds()
+            result = await execute_twin_survey(body.input, budget)
         elif body.taskType == "CONCEPT_CANDIDATE":
             from app.tasks.concept_candidate import execute_concept_candidate
             result = await execute_concept_candidate(body.input)
