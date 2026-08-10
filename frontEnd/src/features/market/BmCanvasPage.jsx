@@ -1,7 +1,8 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useApiClient } from '../../shared/api/ApiClientProvider.jsx';
-import { createJourneyApi } from '../journey/journeyApi.js';
+import { createMarketApi } from './marketApi.js';
+import { projectRoutes } from '../../app/routing/projectRoutes.js';
 import { Alert, Badge, Button, Card, LoadingState } from '../../shared/ui';
 import BmCanvas from './BmCanvas.jsx';
 import EvidenceCard from './EvidenceCard.jsx';
@@ -19,7 +20,7 @@ export default function BmCanvasPage() {
   const { projectId } = useParams();
   const navigate = useNavigate();
   const client = useApiClient();
-  const api = useMemo(() => createJourneyApi(client, projectId), [client, projectId]);
+  const api = useMemo(() => createMarketApi(client, projectId), [client, projectId]);
   const [selected, setSelected] = useState(null);
 
   const load = useCallback(() => api.currentBusinessModel(), [api]);
@@ -46,7 +47,7 @@ export default function BmCanvasPage() {
           <p>시장조사에서 <strong>관측된 근거로만</strong> 채운다. 근거가 없는 칸은 비워 두고 사유를 적는다.</p>
         </div>
         <div className="market-page__actions">
-          <Button variant="ghost" onClick={() => navigate(`/app/projects/${projectId}/journey/market-research`)}>
+          <Button variant="ghost" onClick={() => navigate(projectRoutes.market(projectId))}>
             시장조사로
           </Button>
           <Button onClick={trigger} disabled={busy || active}>

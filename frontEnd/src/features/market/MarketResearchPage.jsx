@@ -1,7 +1,8 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useApiClient } from '../../shared/api/ApiClientProvider.jsx';
-import { createJourneyApi } from '../journey/journeyApi.js';
+import { createMarketApi } from './marketApi.js';
+import { projectRoutes } from '../../app/routing/projectRoutes.js';
 import { Accordion, Alert, Badge, Button, Card, LoadingState } from '../../shared/ui';
 import EvidenceCard from './EvidenceCard.jsx';
 import MarketFigures from './MarketFigures.jsx';
@@ -35,7 +36,7 @@ export default function MarketResearchPage() {
   const { projectId } = useParams();
   const navigate = useNavigate();
   const client = useApiClient();
-  const api = useMemo(() => createJourneyApi(client, projectId), [client, projectId]);
+  const api = useMemo(() => createMarketApi(client, projectId), [client, projectId]);
   const [conceptKey, setConceptKey] = useState(SAMPLE_CONCEPTS[0][0]);
   const [selected, setSelected] = useState(null);
 
@@ -157,7 +158,7 @@ export default function MarketResearchPage() {
           ) : null}
 
           <footer className="market-page__foot">
-            <Button onClick={() => navigate(`/app/projects/${projectId}/journey/business-model`)}>
+            <Button onClick={() => navigate(projectRoutes.businessModel(projectId))}>
               다음 — BM 캔버스 만들기
             </Button>
           </footer>

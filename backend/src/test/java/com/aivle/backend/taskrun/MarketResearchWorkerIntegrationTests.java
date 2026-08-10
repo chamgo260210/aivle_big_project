@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 
+import com.aivle.backend.journey.MarketResearchWorker;
 import com.aivle.backend.project.entity.Project;
 import com.aivle.backend.project.repository.ProjectRepository;
 import com.aivle.backend.taskrun.domain.TaskResultValidationState;
@@ -16,7 +17,6 @@ import com.aivle.backend.taskrun.integration.InternalAiExecutionClient.Execution
 import com.aivle.backend.taskrun.repository.TaskResultRepository;
 import com.aivle.backend.taskrun.service.CanonicalInputHasher;
 import com.aivle.backend.taskrun.service.TaskRunService;
-import com.aivle.backend.taskrun.service.TaskRunWorker;
 import com.aivle.backend.user.entity.User;
 import com.aivle.backend.user.repository.UserRepository;
 import java.nio.file.Files;
@@ -36,7 +36,7 @@ import tools.jackson.databind.node.ObjectNode;
 /**
  * <b>조용한 폐기를 잡는 검사.</b>
  *
- * <p>{@code TaskRunWorker.validateResult()} 에 {@code MARKET_RESEARCH} 분기가 없으면
+ * <p>{@code MarketResearchWorker} 의 결과 검증이 없으면
  * 결과가 {@code RESULT_DOMAIN_INVARIANT_VIOLATION} 으로 버려진다 —
  * <b>컴파일도 안 깨지고 다른 테스트도 안 깨진다.</b> AI 비용만 쓰고 조용히 사라진다.
  *
@@ -60,7 +60,7 @@ import tools.jackson.databind.node.ObjectNode;
 class MarketResearchWorkerIntegrationTests {
 
     @Autowired TaskRunService service;
-    @Autowired TaskRunWorker worker;
+    @Autowired MarketResearchWorker worker;
     @Autowired CanonicalInputHasher hasher;
     @Autowired UserRepository users;
     @Autowired ProjectRepository projects;
@@ -111,7 +111,7 @@ class MarketResearchWorkerIntegrationTests {
         TaskRun run = queue(owner, project, suffix);
         stub(fixture("full.json"));
 
-        assertThat(worker.executeOne(TaskType.MARKET_RESEARCH, "test-worker")).isTrue();
+        assertThat(worker.processOne()).isTrue();
 
         TaskRun completed = service.getOwned(owner.getId(), project.getId(), run.getId());
         assertThat(completed.getState()).isEqualTo(TaskRunState.SUCCEEDED);
@@ -129,7 +129,7 @@ class MarketResearchWorkerIntegrationTests {
         TaskRun run = queue(owner, project, suffix);
         stub(fixture("bm.json"));
 
-        assertThat(worker.executeOne(TaskType.MARKET_RESEARCH, "test-worker")).isTrue();
+        assertThat(worker.processOne()).isTrue();
         assertThat(service.getOwned(owner.getId(), project.getId(), run.getId()).getState())
             .isEqualTo(TaskRunState.SUCCEEDED);
     }
@@ -147,7 +147,7 @@ class MarketResearchWorkerIntegrationTests {
             broken.get("canvas").get("cells").get(0).get("caveats")).removeAll();
         stub(broken);
 
-        assertThat(worker.executeOne(TaskType.MARKET_RESEARCH, "test-worker")).isTrue();
+        assertThat(worker.processOne()).isTrue();
         TaskRun failed = service.getOwned(owner.getId(), project.getId(), run.getId());
         assertThat(failed.getState()).isEqualTo(TaskRunState.FAILED);
         assertThat(failed.getLastErrorCode()).isEqualTo("AI_RESULT_INVALID");
