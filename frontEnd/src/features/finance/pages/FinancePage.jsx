@@ -17,7 +17,7 @@ export default function FinancePage() {
   if (!finance.preparation) return <section className="finance-state"><h1>재무 분석 준비</h1>
     <p role="alert">{getUserErrorMessage(finance.error)}</p>
     <Link to={`/app/projects/${projectId}/business-model`}>BM 분석을 완료하고 재무 분석 시작</Link></section>;
-  return <FinanceWorkspace key={`${finance.preparation.preparationId}:${finance.preparation.revision}`} finance={finance} />;
+  return <FinanceWorkspace key={`${finance.preparation.preparationId}:${finance.preparation.revision}`} projectId={projectId} finance={finance} />;
 }
 
 function FinanceDemo({ projectId, finance }) {
@@ -113,7 +113,7 @@ function formatCompact(value) {
   return new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 0 }).format(number);
 }
 
-function FinanceWorkspace({ finance }) {
+function FinanceWorkspace({ projectId, finance }) {
   const preparation = finance.preparation;
   const fields = preparation.financialFields ?? {};
   const [draft, setDraft] = useState(() => createFinancialDraft(fields));
@@ -239,7 +239,10 @@ function FinanceWorkspace({ finance }) {
         {finance.busy === 'analysis' ? '재무 분석 실행 중...' : '재무 분석 및 보고서 생성'}
       </button>
     </section>}
-    {finance.analysis && <AnalysisReport analysis={finance.analysis} />}
+    {finance.analysis && <><AnalysisReport analysis={finance.analysis} />
+      <section className="finance-next-step" aria-label="다음 단계"><div><p>8. 패널 조사</p>
+        <h2>재무 가정을 패널 조사로 검증하세요.</h2><span>가격 수용도와 고객 반응을 확인해 재무 분석의 가정을 보완할 수 있습니다.</span></div>
+        <Link to={`/app/projects/${projectId}/panel-survey`}>다음 - 패널조사</Link></section></>}
   </main></FinanceRefreshContext.Provider>;
 }
 
