@@ -19,6 +19,9 @@ router = APIRouter(prefix="/internal/v1/ai", tags=["Internal AI Executions"])
 logger = logging.getLogger(__name__)
 TASK_TYPES = {
     "IDEA_BRIEF_DERIVATION",
+    "CONCEPT_PORTFOLIO_V2_RUN",
+    "CONCEPT_PORTFOLIO_V2_CONTINUE",
+    "CONCEPT_PORTFOLIO_V2_SELECTION_ACTION",
     "CONCEPT_CANDIDATE", "CONCEPT_DISTINCTNESS_JUDGE",
     "CONCEPT_LEGAL_REVIEW",
     "CONCEPT_REDESIGN",
@@ -116,7 +119,40 @@ async def execute(request: Request, body: InternalExecutionRequestV1):
     if calculated_hash != body.canonicalInputHash:
         return internal_error(correlation, "INVALID_REQUEST", "HASH_MISMATCH", 400, False,
                               body.taskRunId, body.taskAttemptId)
-    if body.taskType in {"CONCEPT_CANDIDATE", "CONCEPT_DISTINCTNESS_JUDGE", "CONCEPT_LEGAL_REVIEW", "CONCEPT_REDESIGN", "CONCEPT_HYPOTHESIS_ALTERNATIVE", "CONCEPT_DELTA_LEGAL_REVIEW"}:
+    if body.taskType == "CONCEPT_PORTFOLIO_V2_RUN":
+        from app.tasks.concept_portfolio_v2.models import ConceptPortfolioProductionInput
+        try:
+            portfolio_input = ConceptPortfolioProductionInput.model_validate(body.input)
+        except ValidationError as failure:
+            return internal_error(correlation, "INVALID_REQUEST", "FIELD_CONSTRAINT_VIOLATION",
+                                  400, False, body.taskRunId, body.taskAttemptId,
+                                  safe_validation_fields(failure))
+        text = json.dumps(portfolio_input.model_dump(mode="json"), ensure_ascii=False,
+                          sort_keys=True, separators=(",", ":"))
+        source_keys = ["concept-portfolio-v2-input"]
+    elif body.taskType == "CONCEPT_PORTFOLIO_V2_CONTINUE":
+        from app.tasks.concept_portfolio_v2 import ConceptPortfolioContinuationInput
+        try:
+            continuation_input = ConceptPortfolioContinuationInput.model_validate(body.input)
+        except ValidationError as failure:
+            return internal_error(correlation, "INVALID_REQUEST", "FIELD_CONSTRAINT_VIOLATION",
+                                  400, False, body.taskRunId, body.taskAttemptId,
+                                  safe_validation_fields(failure))
+        text = json.dumps(continuation_input.model_dump(mode="json"), ensure_ascii=False,
+                          sort_keys=True, separators=(",", ":"))
+        source_keys = ["concept-portfolio-v2-continuation-input"]
+    elif body.taskType == "CONCEPT_PORTFOLIO_V2_SELECTION_ACTION":
+        from app.tasks.concept_portfolio_v2 import ConceptPortfolioSelectionActionInput
+        try:
+            selection_input = ConceptPortfolioSelectionActionInput.model_validate(body.input)
+        except ValidationError as failure:
+            return internal_error(correlation, "INVALID_REQUEST", "FIELD_CONSTRAINT_VIOLATION",
+                                  400, False, body.taskRunId, body.taskAttemptId,
+                                  safe_validation_fields(failure))
+        text = json.dumps(selection_input.model_dump(mode="json"), ensure_ascii=False,
+                          sort_keys=True, separators=(",", ":"))
+        source_keys = ["concept-portfolio-v2-selection-action-input"]
+    elif body.taskType in {"CONCEPT_CANDIDATE", "CONCEPT_DISTINCTNESS_JUDGE", "CONCEPT_LEGAL_REVIEW", "CONCEPT_REDESIGN", "CONCEPT_HYPOTHESIS_ALTERNATIVE", "CONCEPT_DELTA_LEGAL_REVIEW"}:
         text = json.dumps(body.input, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
         source_keys = ["concept-factory-input"]
     elif body.taskType == "MARKETING_CONTENT_GENERATION":
@@ -142,7 +178,69 @@ async def execute(request: Request, body: InternalExecutionRequestV1):
                   "externalSourceReferences": [], "generatedAt": generated_at, "verificationNeeded": True}
     execution_warnings: list[dict[str, Any]] = []
     try:
-        if body.taskType == "CONCEPT_CANDIDATE":
+        if body.taskType == "CONCEPT_PORTFOLIO_V2_RUN":
+            from app.tasks.concept_portfolio_v2 import (
+                ConceptPortfolioProductionContractError,
+                execute_concept_portfolio_v2,
+            )
+            from app.tasks.concept_portfolio_v2.progress_sender import (
+                progress_sender_from_environment,
+            )
+            try:
+                async with progress_sender_from_environment(
+                    task_run_id=body.taskRunId,
+                    task_attempt_id=body.taskAttemptId,
+                    correlation_id=correlation,
+                ) as progress:
+                    result = await execute_concept_portfolio_v2(
+                        body.input,
+                        event_sink=progress.emit if progress.enabled else None,
+                    )
+            except ConceptPortfolioProductionContractError as failure:
+                logger.warning(
+                    "CPV2 production result contract invalid taskRunId=%s taskAttemptId=%s correlationId=%s",
+                    body.taskRunId,
+                    body.taskAttemptId,
+                    correlation,
+                    exc_info=True,
+                )
+                return internal_error(
+                    correlation, "RESULT_SCHEMA_INVALID", "AI_RESULT_INVALID", 502, False,
+                    body.taskRunId, body.taskAttemptId, failure.validation_fields,
+                )
+        elif body.taskType == "CONCEPT_PORTFOLIO_V2_CONTINUE":
+            from app.tasks.concept_portfolio_v2 import (
+                ConceptPortfolioProductionContractError,
+                execute_concept_portfolio_v2_continuation,
+            )
+            try:
+                result = await execute_concept_portfolio_v2_continuation(body.input)
+            except ConceptPortfolioProductionContractError as failure:
+                logger.warning(
+                    "CPV2 continuation result contract invalid taskRunId=%s taskAttemptId=%s correlationId=%s",
+                    body.taskRunId, body.taskAttemptId, correlation, exc_info=True,
+                )
+                return internal_error(
+                    correlation, "RESULT_SCHEMA_INVALID", "AI_RESULT_INVALID", 502, False,
+                    body.taskRunId, body.taskAttemptId, failure.validation_fields,
+                )
+        elif body.taskType == "CONCEPT_PORTFOLIO_V2_SELECTION_ACTION":
+            from app.tasks.concept_portfolio_v2 import (
+                ConceptPortfolioProductionContractError,
+                execute_concept_portfolio_v2_selection_action,
+            )
+            try:
+                result = await execute_concept_portfolio_v2_selection_action(body.input)
+            except ConceptPortfolioProductionContractError as failure:
+                logger.warning(
+                    "CPV2 selection action result contract invalid taskRunId=%s taskAttemptId=%s correlationId=%s",
+                    body.taskRunId, body.taskAttemptId, correlation, exc_info=True,
+                )
+                return internal_error(
+                    correlation, "RESULT_SCHEMA_INVALID", "AI_RESULT_INVALID", 502, False,
+                    body.taskRunId, body.taskAttemptId, failure.validation_fields,
+                )
+        elif body.taskType == "CONCEPT_CANDIDATE":
             from app.tasks.concept_candidate import execute_concept_candidate
             result = await execute_concept_candidate(body.input)
         elif body.taskType == "CONCEPT_DISTINCTNESS_JUDGE":

@@ -1,82 +1,63 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
-
 import JobCenter from './JobCenter.jsx';
 import { useProjectJobs } from './useProjectJobs.js';
 
 vi.mock('./useProjectJobs.js', () => ({ useProjectJobs: vi.fn() }));
 
-describe('JobCenter', () => {
-  it('shows server-restored categories and module navigation without route locking', () => {
-    useProjectJobs.mockReturnValue({
-      loading: false, error: null, notice: null,
-      active: [{ jobId: 'job-1', taskType: 'IDEA_BRIEF_DERIVATION', status: 'RUNNING', messageKey: 'job.status.running', targetRoute: '/idea' }],
-      recent: [{ jobId: 'job-2', taskType: 'MARKETING_CONTENT_GENERATION', status: 'FAILED', messageKey: 'job.status.failed', targetRoute: '/marketing' }],
-      selectedJobId: 'job-1', selectJob: vi.fn(), refresh: vi.fn(),
-      events: { transport: 'SSE', error: null, events: [], reconnect: vi.fn() },
-    });
-
-    render(<MemoryRouter><JobCenter projectId="41" /></MemoryRouter>);
-
-    expect(screen.getByText('진행 중인 작업')).toBeInTheDocument();
-    expect(screen.getByText('최근 실패')).toBeInTheDocument();
-    expect(screen.getAllByText('모듈로 이동')[0]).toHaveAttribute('href', '/app/projects/41/idea');
-    expect(screen.getByText('SSE')).toBeInTheDocument();
-    expect(screen.getByText(/IDEA BRIEF DERIVATION · 진행 중/)).toBeInTheDocument();
+describe('compact Work Center', () => {
+  it('uses product labels and opens actual event detail', () => {
+    useProjectJobs.mockReturnValue({ loading: false, error: null, notice: null,
+      active: [{ jobId: 'job-1', taskType: 'CONCEPT_PORTFOLIO_V2_RUN', status: 'RUNNING', targetRoute: '/concepts' }],
+      recent: [], selectedJobId: 'job-1', selectJob: vi.fn(), refresh: vi.fn(),
+      events: { transport: 'SSE', error: null, terminal: false, reconnect: vi.fn(), events: [{ eventId: '81', occurredAt: '2026-08-11T00:00:00Z', status: 'RUNNING', messageKey: 'job.concept-portfolio.running' }] } });
+    const onOpenList = vi.fn();
+    const onCloseSheet = vi.fn();
+    render(<MemoryRouter><JobCenter projectId="41" compact sheet={{ mounted: true, phase: 'open', view: 'detail', focusJobId: 'job-1', direction: 'forward' }} onOpenList={onOpenList} onCloseSheet={onCloseSheet} onShowList={vi.fn()} onOpenJob={vi.fn()} /></MemoryRouter>);
+    expect(screen.getAllByText('현재 진행')).toHaveLength(2);
+    expect(screen.getAllByText('사업안 검토').length).toBeGreaterThanOrEqual(1);
+    expect(screen.queryByText('CONCEPT_PORTFOLIO_V2_RUN')).not.toBeInTheDocument();
+    expect(screen.getByText('작업 상세')).toBeInTheDocument();
+    expect(screen.getAllByText('사업 방향을 탐색하고 있습니다.').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByRole('dialog')).toHaveAttribute('data-phase', 'open');
+    expect(screen.getByLabelText('작업 요약')).toHaveTextContent('현재 진행 1');
+    fireEvent.click(screen.getByRole('button', { name: '작업 센터 닫기' }));
+    expect(onCloseSheet).toHaveBeenCalled();
+    fireEvent.click(screen.getByText('전체 작업 보기'));
+    expect(onOpenList).toHaveBeenCalled();
   });
 
-  it('names the terminal task in the notice', () => {
-    useProjectJobs.mockReturnValue({
-      loading: false, error: null,
-      notice: { jobId: 'failed-1', status: 'FAILED', taskType: 'CONCEPT_FACTORY_RUN' },
-      active: [],
-      recent: [{ jobId: 'failed-1', taskType: 'CONCEPT_FACTORY_RUN', status: 'FAILED', targetRoute: '/concepts' }],
-      selectedJobId: 'failed-1', selectJob: vi.fn(), refresh: vi.fn(),
-      events: { transport: 'SSE', error: null, events: [], reconnect: vi.fn() },
-    });
-
-    render(<MemoryRouter><JobCenter projectId="41" /></MemoryRouter>);
-
-    expect(screen.getByText('CONCEPT FACTORY RUN 작업이 실패 상태로 종료되었습니다.')).toBeInTheDocument();
+  it('starts a fresh Portfolio run once from the failed detail retry', async () => {
+    useProjectJobs.mockReturnValue({ loading: false, error: null, notice: null,
+      active: [], recent: [{ jobId: 'failed-job', taskType: 'CONCEPT_PORTFOLIO_V2_RUN', status: 'FAILED', retryable: true, targetRoute: '/concepts', updatedAt: '2026-08-11T00:00:00Z' }],
+      selectedJobId: 'failed-job', selectJob: vi.fn(), refresh: vi.fn(),
+      events: { transport: 'SSE', error: null, terminal: true, reconnect: vi.fn(), events: [] } });
+    let release;
+    const onRetryJob = vi.fn(() => new Promise((resolve) => { release = resolve; }));
+    render(<MemoryRouter><JobCenter projectId="41" compact onRetryJob={onRetryJob}
+      sheet={{ mounted: true, phase: 'open', view: 'detail', focusJobId: 'failed-job', direction: 'forward' }}
+      onOpenList={vi.fn()} onCloseSheet={vi.fn()} onShowList={vi.fn()} onOpenJob={vi.fn()} /></MemoryRouter>);
+    const retry = screen.getByRole('button', { name: '다시 시도' });
+    fireEvent.click(retry);
+    fireEvent.click(retry);
+    expect(onRetryJob).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: '다시 시도 중' })).toBeDisabled();
+    release();
   });
 
-  it('separates current and resolved needs-input presentation', () => {
-    useProjectJobs.mockReturnValue({
-      loading: false, error: null, notice: null,
-      active: [{ jobId: 'job-current', taskType: 'IDEA_BRIEF_DERIVATION', status: 'NEEDS_INPUT',
-        rawStatus: 'NEEDS_INPUT', actionable: true, presentationStatus: 'NEEDS_INPUT', targetRoute: '/idea' }],
-      recent: [{ jobId: 'job-old', taskType: 'IDEA_BRIEF_DERIVATION', status: 'NEEDS_INPUT',
-        rawStatus: 'NEEDS_INPUT', actionable: false, presentationStatus: 'RESOLVED_INPUT', targetRoute: '/idea' }],
-      selectedJobId: 'job-current', selectJob: vi.fn(), refresh: vi.fn(),
-      events: { transport: 'SSE', error: null, events: [], reconnect: vi.fn() },
-    });
-
-    render(<MemoryRouter><JobCenter projectId="41" /></MemoryRouter>);
-
-    expect(screen.getByText('입력 필요')).toBeInTheDocument();
-    expect(screen.getByText('입력 반영 완료')).toBeInTheDocument();
-  });
-
-  it('shows failed initial and running retry as separate task runs', () => {
-    useProjectJobs.mockReturnValue({
-      loading: false, error: null, notice: null,
-      active: [{ jobId: 'retry-1', taskType: 'CONCEPT_FACTORY_RUN', status: 'RUNNING',
-        rawStatus: 'RUNNING', subjectType: 'CONCEPT_FACTORY_RUN', subjectId: 'run-1',
-        latestForSubject: true, startedAt: '2026-08-09T06:21:00Z', targetRoute: '/concepts' }],
-      recent: [{ jobId: 'initial', taskType: 'CONCEPT_FACTORY_RUN', status: 'FAILED',
-        rawStatus: 'FAILED', subjectType: 'CONCEPT_FACTORY_RUN', subjectId: 'run-1',
-        latestForSubject: false, startedAt: '2026-08-09T06:10:00Z', targetRoute: '/concepts' }],
-      selectedJobId: 'retry-1', selectJob: vi.fn(), refresh: vi.fn(),
-      events: { transport: 'SSE', error: null, events: [{ jobId: 'retry-1', sequence: 1,
-        status: 'RUNNING', eventType: 'job.concept.run.started',
-        messageKey: 'job.concept.run.started' }], reconnect: vi.fn() },
-    });
-
-    render(<MemoryRouter><JobCenter projectId="41" /></MemoryRouter>);
-
-    expect(screen.getByText(/현재 실행/)).toBeInTheDocument();
-    expect(screen.getByText(/이전 실행/)).toBeInTheDocument();
-    expect(screen.getByText('컨셉 생성과 법률 근거 확인을 시작했습니다.')).toBeInTheDocument();
+  it('offers an input route for NEEDS_INPUT and keeps diagnostics inside technical details', () => {
+    useProjectJobs.mockReturnValue({ loading: false, error: null, notice: null,
+      active: [{ jobId: 'input-job', taskType: 'CONCEPT_PORTFOLIO_V2_RUN', status: 'NEEDS_INPUT', targetRoute: '/concepts' }],
+      recent: [], selectedJobId: 'input-job', selectJob: vi.fn(), refresh: vi.fn(),
+      events: { transport: 'SSE', error: null, terminal: true, reconnect: vi.fn(), events: [{
+        eventId: '91', occurredAt: '2026-08-11T00:01:00Z', status: 'NEEDS_INPUT',
+        messageKey: 'job.concept-portfolio.needs-input', messageParams: {},
+      }] } });
+    render(<MemoryRouter><JobCenter projectId="41" compact
+      sheet={{ mounted: true, phase: 'open', view: 'detail', focusJobId: 'input-job', direction: 'forward' }}
+      onOpenList={vi.fn()} onCloseSheet={vi.fn()} onShowList={vi.fn()} onOpenJob={vi.fn()} /></MemoryRouter>);
+    expect(screen.getByRole('link', { name: '정보 입력하러 가기' }))
+      .toHaveAttribute('href', '/app/projects/41/concepts');
   });
 });
