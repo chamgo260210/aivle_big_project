@@ -2,6 +2,7 @@ package com.aivle.backend.pipeline.module;
 
 import com.aivle.backend.common.exception.BusinessException;
 import com.aivle.backend.common.exception.ErrorCode;
+import com.aivle.backend.finance.repository.FinancialAnalysisReportRepository;
 import com.aivle.backend.journey.MarketResearchRun;
 import com.aivle.backend.journey.MarketResearchRunRepository;
 import com.aivle.backend.journey.TwinSurveyRun;
@@ -52,6 +53,7 @@ public class ProjectModuleStatusService {
     private final TechOpsInputSnapshotRepository techOpsSnapshotRepository;
     private final FinancialInputPreparationRepository financialPreparationRepository;
     private final FinancialInputSnapshotRepository financialSnapshotRepository;
+    private final FinancialAnalysisReportRepository financialAnalysisReportRepository;
     private final MarketResearchRunRepository marketResearchRunRepository;
     private final TwinSurveyRunRepository twinSurveyRunRepository;
 
@@ -89,12 +91,12 @@ public class ProjectModuleStatusService {
         var techOpsSnapshot = selectedSnapshot == null ? null
             : techOpsSnapshotRepository.findBySourceMarketSeedSnapshotIdAndProjectIdAndDeletedAtIsNull(
                 selectedSnapshot.getId(), projectId).orElse(null);
-        var financialPreparation = techOpsSnapshot == null ? null
-            : financialPreparationRepository.findByProjectIdAndSourceTechOpsSnapshotIdAndDeletedAtIsNull(
-                projectId, techOpsSnapshot.getId()).orElse(null);
-        var financialSnapshot = techOpsSnapshot == null ? null
-            : financialSnapshotRepository.findBySourceTechOpsSnapshotIdAndProjectIdAndDeletedAtIsNull(
-                techOpsSnapshot.getId(), projectId).orElse(null);
+        var financialPreparation = businessRun == null ? null
+            : financialPreparationRepository.findByProjectIdAndSourceMarketResearchRunIdAndDeletedAtIsNull(
+                projectId, businessRun.getId()).orElse(null);
+        var financialSnapshot = businessRun == null ? null
+            : financialSnapshotRepository.findBySourceMarketResearchRunIdAndProjectIdAndDeletedAtIsNull(
+                businessRun.getId(), projectId).orElse(null);
 
         String confirmedBriefId = brief == null ? null : brief.getConfirmedSnapshotId();
         PipelineModuleStatus conceptStatus = conceptStatus(conceptRun, portfolioSelection, confirmedBriefId);
@@ -108,10 +110,12 @@ public class ProjectModuleStatusService {
             : techOpsPreparation == null ? PipelineModuleStatus.READY
             : techOpsSnapshot == null ? PipelineModuleStatus.NEEDS_INPUT
             : externalStatus(techOpsRun, techOpsSnapshot.getId());
-        PipelineModuleStatus financialStatus = techOpsSnapshot == null ? PipelineModuleStatus.NOT_READY
+        boolean financialReportCompleted = financialSnapshot != null && financialAnalysisReportRepository
+            .findFirstByProjectIdAndInputSnapshotIdAndDeletedAtIsNullOrderByCompletedAtDesc(projectId, financialSnapshot.getId()).isPresent();
+        PipelineModuleStatus financialStatus = businessRun == null || businessRun.getState() != MarketResearchRun.State.SUCCEEDED ? PipelineModuleStatus.NOT_READY
             : financialPreparation == null ? PipelineModuleStatus.READY
             : financialSnapshot == null ? PipelineModuleStatus.NEEDS_INPUT
-            : externalStatus(financialRun, financialSnapshot.getId());
+            : financialReportCompleted ? PipelineModuleStatus.COMPLETED : externalStatus(financialRun, financialSnapshot.getId());
 
         return List.of(
             response(projectId, PipelineModuleType.IDEA, ideaStatus(brief),
@@ -150,7 +154,7 @@ public class ProjectModuleStatusService {
                 techOpsSnapshot == null ? null : techOpsSnapshot.getId(), null, null,
                 techOpsRun == null ? techOpsPreparation == null ? null : techOpsPreparation.getUpdatedAt() : techOpsRun.getUpdatedAt()),
             response(projectId, PipelineModuleType.FINANCE, financialStatus,
-                techOpsSnapshot == null ? List.of("techOpsInputSnapshotId")
+                businessRun == null || businessRun.getState() != MarketResearchRun.State.SUCCEEDED ? List.of("businessModelResult")
                     : financialSnapshot == null ? List.of("financialRequiredInputs")
                     : financialRun == null ? List.of("financialModuleConnection") : List.of(),
                 new NextAction("재무 입력 준비", "/finance"), financialRun == null ? null : financialRun.getId(), null,

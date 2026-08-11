@@ -23,6 +23,7 @@ import com.aivle.backend.journey.TwinSurveyRunRepository;
 import com.aivle.backend.pipeline.integration.repository.ModuleRunRepository;
 import com.aivle.backend.pipeline.finance.repository.FinancialInputPreparationRepository;
 import com.aivle.backend.pipeline.finance.repository.FinancialInputSnapshotRepository;
+import com.aivle.backend.finance.repository.FinancialAnalysisReportRepository;
 import com.aivle.backend.pipeline.marketing.repository.MarketingContentRepository;
 import com.aivle.backend.pipeline.marketing.repository.MarketingSourceSnapshotRepository;
 import com.aivle.backend.pipeline.marketseed.repository.MarketAnalysisSeedSnapshotRepository;
@@ -54,11 +55,13 @@ class ProjectModuleStatusServiceTests {
     private final TechOpsInputSnapshotRepository techOpsSnapshots = mock(TechOpsInputSnapshotRepository.class);
     private final FinancialInputPreparationRepository financialPreparations = mock(FinancialInputPreparationRepository.class);
     private final FinancialInputSnapshotRepository financialSnapshots = mock(FinancialInputSnapshotRepository.class);
+    private final FinancialAnalysisReportRepository financialAnalysisReports = mock(FinancialAnalysisReportRepository.class);
     private final MarketResearchRunRepository marketResearchRuns = mock(MarketResearchRunRepository.class);
     private final TwinSurveyRunRepository twinSurveyRuns = mock(TwinSurveyRunRepository.class);
     private final ProjectModuleStatusService service = new ProjectModuleStatusService(
         projects, briefs, conceptRuns, portfolioSelections, selections, snapshots, runs, marketing, marketingSources,
         techOpsPreparations, techOpsSnapshots, financialPreparations, financialSnapshots,
+        financialAnalysisReports,
         marketResearchRuns, twinSurveyRuns);
 
     @Test
