@@ -72,6 +72,12 @@ public class FinancialInputPreparation extends BaseEntity {
         updatedByUserId = userId;
     }
 
+    public void updateUpstreamReferences(String json, Long userId) {
+        if (blank(json) || userId == null) throw new IllegalArgumentException("Financial upstream references are invalid.");
+        upstreamReferencesJson = json;
+        updatedByUserId = userId;
+    }
+
     private static boolean blank(String value) { return value == null || value.isBlank(); }
     private static boolean hash(String value) { return value != null && value.matches("sha256:[0-9a-f]{64}"); }
 }

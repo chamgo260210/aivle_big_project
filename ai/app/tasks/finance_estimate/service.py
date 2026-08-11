@@ -1,4 +1,5 @@
 import json
+import math
 from pydantic import ValidationError
 from app.providers import ProviderFailure, execute_structured_prompt
 from app.tasks.finance_estimate.models import FinanceEstimateInput, FinanceEstimateResult
@@ -72,7 +73,7 @@ async def execute_finance_estimate(task_input:dict)->dict:
     prompt_input["tavilyEvidence"] = tavily_evidence
     raw=await execute_structured_prompt(MARKET_BM_FINANCE_PROMPT + ECONOMIC_SANITY_RULES + THREE_YEAR_TARGET_RULES,json.dumps(prompt_input,ensure_ascii=False,sort_keys=True),
         response_schema=FinanceEstimateResult.model_json_schema(),schema_name="finance_estimate_v1",task_type="FINANCE_ESTIMATE")
-    try: return FinanceEstimateResult.model_validate(raw).model_dump(mode="json")
+    try: return _apply_price_guardrails(FinanceEstimateResult.model_validate(raw), value).model_dump(mode="json")
     except ValidationError as failure:
         if value.fieldKey != "threeYearTargets":
             raise ProviderFailure("RESULT_SCHEMA_INVALID","AI_RESULT_INVALID",502,False) from failure
@@ -80,6 +81,41 @@ async def execute_finance_estimate(task_input:dict)->dict:
             "Return only a valid finance_estimate_v1 result for fieldKey threeYearTargets. proposedValue must contain metric, unit, and exactly years 1, 2, 3; never return Money.",
             json.dumps(prompt_input, ensure_ascii=False, sort_keys=True),
             response_schema=FinanceEstimateResult.model_json_schema(), schema_name="finance_estimate_v1_repair", task_type="FINANCE_ESTIMATE")
-        try: return FinanceEstimateResult.model_validate(repair).model_dump(mode="json")
+        try: return _apply_price_guardrails(FinanceEstimateResult.model_validate(repair), value).model_dump(mode="json")
         except ValidationError as repair_failure:
             raise ProviderFailure("RESULT_SCHEMA_INVALID","AI_RESULT_INVALID",502,False) from repair_failure
+
+
+def _apply_price_guardrails(result: FinanceEstimateResult, request: FinanceEstimateInput) -> FinanceEstimateResult:
+    """Keep an otherwise valid LLM recommendation compatible with the backend's per-unit safeguards."""
+    caps = {
+        "unitVariableCost": 0.45,
+        "paymentFee": 0.05,
+        "partnerPayout": 0.30,
+        "customerIncrementalInfraCost": 0.20,
+        "shippingCost": 1.00,
+    }
+    cap_ratio = caps.get(request.fieldKey)
+    if cap_ratio is None or not hasattr(result.proposedValue, "amount"):
+        return result
+    try:
+        context = json.loads(request.contextJson)
+        fields = context.get("financialFields", {})
+        primary_price_key = "unitPrice" if fields.get("revenueModel", {}).get("value") == "ONE_TIME" else "monthlySubscriptionPrice"
+        secondary_price_key = "monthlySubscriptionPrice" if primary_price_key == "unitPrice" else "unitPrice"
+        field_price = (fields.get(primary_price_key, {}).get("value", {}) or {}).get("amount") \
+            or (fields.get(secondary_price_key, {}).get("value", {}) or {}).get("amount")
+        market_price = context.get("marketAndBmReferences", {}).get("marketAnalysis", {}).get("price", {}).get("base")
+        price = float(field_price or market_price or 0)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return result
+    if price <= 0 or result.proposedValue.amount <= price * cap_ratio:
+        return result
+    conservative_amount = max(1, math.floor(price * cap_ratio * 0.8))
+    result.proposedValue.amount = conservative_amount
+    result.assumptions.append("가격 가설 대비 단위원가 상한을 적용한 보수적 추정입니다.")
+    result.explanation = (
+        f"가격 가설 {price:,.0f}원 기준의 단위 비용으로 보정했습니다. "
+        f"{request.fieldKey}는 건당 또는 구독자당 월 {conservative_amount:,.0f}원으로 검토하세요."
+    )
+    return result

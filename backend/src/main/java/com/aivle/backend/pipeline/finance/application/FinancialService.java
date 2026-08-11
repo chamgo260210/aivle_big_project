@@ -57,13 +57,24 @@ public class FinancialService {
     public PreparationView initialize(Long ownerId, Long projectId) {
         requireOwnedForUpdate(ownerId, projectId);
         MarketResearchVersion source = currentBusinessModel(projectId);
-        var existing = preparations.findByProjectIdAndSourceMarketResearchRunIdAndDeletedAtIsNull(projectId, source.getSourceRun().getId());
-        if (existing.isPresent()) return view(existing.get());
         JsonNode bmResult = mapper.readTree(source.getResultJson());
-        JsonNode marketResult = source.getSourceRun().getSourceRun() == null ? mapper.createObjectNode()
-            : marketResearchVersions.findBySourceRunIdAndDeletedAtIsNull(source.getSourceRun().getSourceRun().getId())
-                .map(value -> mapper.readTree(value.getResultJson())).orElseGet(mapper::createObjectNode);
-        var initial = preparationFactory.createFromBusinessModel(marketResult, bmResult, source.getSourceRun().getId());
+        JsonNode marketResult = marketResult(source);
+        var existing = preparations.findByProjectIdAndSourceMarketResearchRunIdAndDeletedAtIsNull(projectId, source.getSourceRun().getId());
+        JsonNode conceptHypotheses = currentConceptHypotheses(projectId);
+        if (existing.isPresent()) {
+            FinancialInputPreparation preparation = existing.get();
+            if (!snapshots.findByPreparationIdAndProjectIdAndDeletedAtIsNull(preparation.getId(), projectId).isPresent()) {
+                ObjectNode fields = (ObjectNode) mapper.readTree(preparation.getFinancialFieldsJson());
+                ObjectNode references = (ObjectNode) mapper.readTree(preparation.getUpstreamReferencesJson());
+                if (applyUpstreamDefaults(fields, references, conceptHypotheses, marketResult, bmResult)) {
+                    preparation.updateFinancialFields(mapper.writeValueAsString(fields), ownerId);
+                    preparation.updateUpstreamReferences(mapper.writeValueAsString(references), ownerId);
+                }
+            }
+            return view(preparation);
+        }
+        var initial = preparationFactory.createFromBusinessModel(marketResult, bmResult, conceptHypotheses,
+            source.getSourceRun().getId());
         String id = UUID.randomUUID().toString();
         var saved = preparations.save(FinancialInputPreparation.createFromBusinessModel(id, projectId,
             source.getSourceRun().getId(), snapshotHasher.hash(mapper.readTree(source.getResultJson())),
@@ -72,10 +83,21 @@ public class FinancialService {
         return view(saved);
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public PreparationView current(Long ownerId, Long projectId) {
         requireOwned(ownerId, projectId);
-        return view(requireCurrent(projectId));
+        MarketResearchVersion source = currentBusinessModel(projectId);
+        FinancialInputPreparation preparation = requireCurrent(projectId);
+        if (!snapshots.findByPreparationIdAndProjectIdAndDeletedAtIsNull(preparation.getId(), projectId).isPresent()) {
+            ObjectNode fields = (ObjectNode) mapper.readTree(preparation.getFinancialFieldsJson());
+            ObjectNode references = (ObjectNode) mapper.readTree(preparation.getUpstreamReferencesJson());
+            if (applyUpstreamDefaults(fields, references, currentConceptHypotheses(projectId), marketResult(source),
+                    mapper.readTree(source.getResultJson()))) {
+                preparation.updateFinancialFields(mapper.writeValueAsString(fields), ownerId);
+                preparation.updateUpstreamReferences(mapper.writeValueAsString(references), ownerId);
+            }
+        }
+        return view(preparation);
     }
 
     @Transactional
@@ -340,6 +362,26 @@ public class FinancialService {
         FinancialInputPreparation current = requireCurrent(projectId);
         return preparations.findLocked(current.getId(), projectId)
             .orElseThrow(() -> new BusinessException(ErrorCode.FINANCIAL_PREPARATION_REQUIRED));
+    }
+
+    private JsonNode currentConceptHypotheses(Long projectId) {
+        return marketSeeds.findFirstByProjectIdAndDeletedAtIsNullOrderByFinalizedAtDesc(projectId)
+            .map(seed -> mapper.readTree(seed.getSnapshotJson()).path("finalHypotheses").deepCopy())
+            .orElseGet(mapper::createObjectNode);
+    }
+
+    private JsonNode marketResult(MarketResearchVersion businessModel) {
+        return businessModel.getSourceRun().getSourceRun() == null ? mapper.createObjectNode()
+            : marketResearchVersions.findBySourceRunIdAndDeletedAtIsNull(businessModel.getSourceRun().getSourceRun().getId())
+                .map(value -> mapper.readTree(value.getResultJson())).orElseGet(mapper::createObjectNode);
+    }
+
+    private boolean applyUpstreamDefaults(ObjectNode fields, ObjectNode references, JsonNode conceptHypotheses,
+            JsonNode marketResult, JsonNode businessModelResult) {
+        boolean changed = preparationFactory.applyConceptDefaults(fields, references, conceptHypotheses);
+        changed |= preparationFactory.applyMarketDefaults(fields, marketResult);
+        changed |= preparationFactory.applyBusinessModelDefaults(fields, businessModelResult);
+        return changed;
     }
 
     private TechOpsInputSnapshot currentTechOpsSnapshot(Long projectId) {
