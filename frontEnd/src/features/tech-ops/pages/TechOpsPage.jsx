@@ -29,7 +29,7 @@ function TechOpsWorkspace({ techOps }) {
   const safe = async (action) => { try { await action(); } catch { /* hook가 안전한 오류 상태를 제공한다. */ } };
 
   return <main className="tech-ops-page">
-    <header className="tech-ops-heading"><p>6. 기술·운영 분석</p><h1>분석에 전달할 입력을 확정합니다</h1>
+    <header className="tech-ops-heading"><p>5. 기술·운영 분석</p><h1>분석에 전달할 입력을 확정합니다</h1>
       <span>상위 단계에서 이미 확정된 값은 다시 입력하지 않습니다. 실제 분석 알고리즘은 외부 모듈이 담당합니다.</span></header>
     {techOps.error && <p className="tech-ops-error" role="alert">{getUserErrorMessage(techOps.error)}</p>}
     {['QUEUED', 'RUNNING'].includes(preparation.proposalGenerationStatus) && <p role="status">

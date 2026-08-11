@@ -61,7 +61,7 @@ export default function BmCanvasPage() {
   return (
     <section className="market-page">
       <div className="pipeline-page-heading">
-        <p>5. BM 분석</p>
+        <p>4. BM 분석</p>
         <h2>비즈니스 모델 캔버스</h2>
         {!result ? (
           <span>시장조사에서 관측된 근거로만 채운다. 근거가 없는 칸은 비워 두고 사유를 적는다.</span>
@@ -180,7 +180,7 @@ function PlanPhase({ projectId, navigate, plan, error, run, onBack }) {
   return (
     <section className="market-page">
       <div className="pipeline-page-heading">
-        <p>5. BM 분석</p>
+        <p>4. BM 분석</p>
         <h2>실행 계획 확인</h2>
         <span>
           BM 분석에 <strong>이것만 더 필요하다.</strong> 수익모델·채널·차별점·가격은

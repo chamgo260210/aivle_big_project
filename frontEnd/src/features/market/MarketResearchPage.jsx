@@ -54,7 +54,7 @@ export default function MarketResearchPage() {
   return (
     <section className="market-page">
       <div className="pipeline-page-heading">
-        <p>4. 시장분석·기획 확정</p>
+        <p>3. 시장분석·기획 확정</p>
         <h2>시장조사 결과</h2>
         {!result ? (
           <span>공개 통계·공시·언론에서 관측된 것만 모은다.</span>
