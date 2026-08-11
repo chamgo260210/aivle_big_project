@@ -38,16 +38,18 @@ public class MarketResearchService {
     private final TaskRunService taskRuns;
     private final com.aivle.backend.taskrun.service.CanonicalInputHasher hasher;
     private final MarketResearchInputFactory inputs;
+    private final BmPlanPreparationService bmPlans;
     private final ObjectMapper mapper;
 
     public MarketResearchService(ProjectRepository projects, MarketResearchRunRepository runs,
                                  MarketResearchVersionRepository versions, TaskResultRepository taskResults,
                                  TaskRunService taskRuns,
                                  com.aivle.backend.taskrun.service.CanonicalInputHasher hasher,
-                                 MarketResearchInputFactory inputs, ObjectMapper mapper) {
+                                 MarketResearchInputFactory inputs,
+                                 BmPlanPreparationService bmPlans, ObjectMapper mapper) {
         this.projects = projects; this.runs = runs; this.versions = versions;
         this.taskResults = taskResults; this.taskRuns = taskRuns; this.hasher = hasher;
-        this.inputs = inputs; this.mapper = mapper;
+        this.inputs = inputs; this.bmPlans = bmPlans; this.mapper = mapper;
     }
 
     /** 1단계 — 시장조사 전 구간. 90~266초 걸린다. */
@@ -82,8 +84,32 @@ public class MarketResearchService {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND,
                 "1단계 결과에 conceptId 가 없다 — 이어붙일 컨셉을 알 수 없다");
         }
-        String input = inputs.bm(label, asOf);
+        // 사용자가 앞 화면에서 채운 실행 계획. 없으면 기존 경로 그대로다 —
+        // 계획 칸은 견본의 `_bm_plan` 이 있으면 그것으로, 없으면 빈 채로 나간다.
+        var plan = bmPlans.forExecution(projectId).orElse(null);
+        String input = plan == null
+            ? inputs.bm(label, asOf)
+            : inputs.bm(label, asOf, plan.plan(), plan.constraints());
         return start(ownerId, project, MarketResearchRun.Kind.BM, source.getSourceRun(), input, label);
+    }
+
+    /**
+     * BM 앞 단계의 실행 계획 — 읽기.
+     *
+     * <p>소유 검사를 여기서 한 번 하고 보관은 {@link BmPlanPreparationService} 가 한다.
+     * 준비물의 정규화 규칙을 이 서비스가 또 갖게 하면 「비었다」의 정의가 두 곳이 된다.
+     */
+    @Transactional(readOnly = true)
+    public BmPlanPreparationService.PlanView currentPlan(Long ownerId, Long projectId) {
+        owned(ownerId, projectId);
+        return bmPlans.current(projectId);
+    }
+
+    @Transactional
+    public BmPlanPreparationService.PlanView savePlan(Long ownerId, Long projectId,
+                                                      JsonNode plan, JsonNode constraints) {
+        owned(ownerId, projectId);
+        return bmPlans.save(projectId, ownerId, plan, constraints);
     }
 
     private RunView start(Long ownerId, Project project, MarketResearchRun.Kind kind,

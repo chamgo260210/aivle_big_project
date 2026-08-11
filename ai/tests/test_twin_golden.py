@@ -18,8 +18,10 @@ from app.twin.stimuli import DIRECTIONS
 
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "twin_survey" / "survey.json"
 
-# 쌍별 «내용층 비율, X 선호 비율» — 우열형은 강하게, 가격형은 팽팽하게 만든다.
+# 쌍별 «내용층 비율, X 선호 비율» — 한 쌍은 강하게(잰다), 한 쌍은 팽팽하게(못 잰다).
+# 둘 다 **우열형**이다. 가격형은 2026-08-10 부터 실행 전에 거절된다.
 SHAPE = {"P1": (0.94, 0.93), "P2": (0.82, 0.58)}
+ABSTAIN = 0.06                 # «없음» 응답 비율 — 미결정 인터뷰가 나오게 한다
 
 FRAME = [{"pid_hash": f"h{i:04d}",
           "gender": "남" if i % 2 else "여",
@@ -27,8 +29,18 @@ FRAME = [{"pid_hash": f"h{i:04d}",
           "band": ["20대", "30대", "40대", "50대", "60+"][i % 5],
           "weight": "1.0", "screen_exclude": "0"}
          for i in range(400)]
-CARDS = {row["pid_hash"]: f"저는 만 {row['age']}세 {row['gender']}성입니다. 가상의 카드입니다."
-         for row in FRAME}
+#: 프로필 파서가 읽는 문장 모양을 그대로 흉내 낸다 — 6필드가 다 채워져야 인터뷰 카드가
+#: 실제와 같은 모양으로 나온다. 실물 카드는 재배포 금지라 여기 넣지 않는다.
+REGIONS = ["서울", "경기", "부산", "인천", "대구"]
+JOBS = ["일반 지원 사무직", "영업직", "교육 전문가 및 관련직", "매장 판매 및 상품 대여직", "제조 관련직"]
+INCOMES = ["200~300만 원", "300~400만 원", "400~500만 원", "500만 원 이상"]
+CARDS = {row["pid_hash"]: (
+    f"저는 만 {row['age']}세 {row['gender']}성입니다. "
+    f"{REGIONS[i % len(REGIONS)]} 시 지역에 살고 있습니다. "
+    f"2세대가구(부부+자녀) 형태의 {1 + i % 4}인 가구이고, 아파트에 거주합니다. "
+    f"일은 {JOBS[i % len(JOBS)]} 쪽 일을 임금 근로자로 하고 있습니다. "
+    f"개인 월소득은 {INCOMES[i % len(INCOMES)]} 미만 수준입니다.")
+    for i, row in enumerate(FRAME)}
 
 PAYLOAD = {
     "situation": "가게에서 연어를 하나 고릅니다. 진열대에 아래 두 상품이 있습니다.",
@@ -37,9 +49,10 @@ PAYLOAD = {
         {"pairId": "P1",
          "X": {"label": "신선 냉장", "attrs": {"형태": "신선(냉장)"}, "priceKrw": 4500},
          "Y": {"label": "냉동", "attrs": {"형태": "냉동"}, "priceKrw": 4500}},
+        # 가격을 양쪽 같게 두고 속성 하나만 바꾼다 — 가격이 다르면 지불의사가 되어 거절된다.
         {"pairId": "P2",
-         "X": {"label": "신선 냉장(비쌈)", "attrs": {"형태": "신선(냉장)"}, "priceKrw": 6600},
-         "Y": {"label": "냉동", "attrs": {"형태": "냉동"}, "priceKrw": 4500}},
+         "X": {"label": "노르웨이산", "attrs": {"원산지": "노르웨이산"}, "priceKrw": 4500},
+         "Y": {"label": "칠레산", "attrs": {"원산지": "칠레산"}, "priceKrw": 4500}},
     ],
 }
 
@@ -60,8 +73,11 @@ async def _fake_run_survey(cards, pairs, situation, budget_seconds):
         for subject in sorted(cards):
             content = _unit(subject, pair["pairId"], "content") < lam
             picks_x = _unit(subject, pair["pairId"], "side") < prefers
+            abstains = _unit(subject, pair["pairId"], "abstain") < ABSTAIN
             for direction in DIRECTIONS:
-                if content:
+                if abstains:
+                    choice = "없음"                             # 미결정 — 분모에서 빠진다
+                elif content:
                     xy = "X" if picks_x else "Y"
                     choice = ("A" if xy == "X" else "B") if direction == "fwd" \
                         else ("B" if xy == "X" else "A")
@@ -104,7 +120,7 @@ def test_every_pair_carries_caveats(monkeypatch):
 
 
 def test_unmeasurable_pair_says_not_measured(monkeypatch):
-    """n=100 의 가격형은 MDE 가 커서 «못 잼» 으로 떨어진다 — 그게 정직한 결과다."""
+    """팽팽한 쌍은 MDE 가 |Δ| 보다 커서 «못 잼» 으로 떨어진다 — 그게 정직한 결과다."""
     pairs = {p["pairId"]: p for p in build(monkeypatch)["pairs"]}
     assert pairs["P2"]["measurable"] is False
     assert pairs["P2"]["winner"] == "TIE"
@@ -123,4 +139,4 @@ def test_no_raw_ledger_leaks_into_the_result(monkeypatch):
     assert "rows" not in result and "cells" not in result
     for pair in result["pairs"]:
         assert "rows" not in pair
-        assert len(pair["rationaleExcerpts"]) <= twin.EXCERPTS_PER_PAIR
+        assert len(pair["interviews"]) <= twin.INTERVIEWS_PER_PAIR

@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
@@ -98,42 +99,29 @@ public class InternalAiExecutionClient {
     private final RestClient longClient;
     /** 패널 트윈 조사 전용. 12분 예산이라 longClient(420s)로도 모자란다. */
     private final RestClient surveyClient;
+    /** 컨셉 포트폴리오 전용. 15분 예산이다. */
+    private final RestClient conceptPortfolioClient;
     private final AiServerProperties properties;
     private final ObjectMapper mapper;
 
     /** 짧은 클라이언트 하나만 주는 형태 — 테스트용. 긴 호출도 같은 것을 쓴다. */
     public InternalAiExecutionClient(RestClient client, AiServerProperties properties,
                                      ObjectMapper mapper) {
-        this(client, client, client, properties, mapper);
+        this(client, client, client, client, properties, mapper);
     }
 
-    @org.springframework.beans.factory.annotation.Autowired
+    @Autowired
     public InternalAiExecutionClient(@Qualifier("aiServerRestClient") RestClient client,
                                      @Qualifier("aiServerLongRestClient") RestClient longClient,
                                      @Qualifier("aiServerSurveyRestClient") RestClient surveyClient,
+                                     @Qualifier("conceptPortfolioAiServerRestClient") RestClient conceptPortfolioClient,
                                      AiServerProperties properties, ObjectMapper mapper) {
         this.client = client;
         this.longClient = longClient;
         this.surveyClient = surveyClient;
+        this.conceptPortfolioClient = conceptPortfolioClient;
         this.properties = properties;
         this.mapper = mapper;
-    }
-
-    /**
-     * 어느 클라이언트로 부를지는 <b>작업 종류가 정한다</b>.
-     *
-     * <p>시장조사는 90~266초 걸린다. 기본 30s 로 부르면 read timeout 이 나고, 그 실패는
-     * {@code REQUEST_DEADLINE_EXCEEDED}(retryable) 로 사상돼 <b>자동 재시도가 260초짜리를
-     * 다시 태운다</b> — 실패하면서 비용만 배가 된다.
-     */
-    private RestClient clientFor(ExecutionRequest run) {
-        return switch (run.taskType()) {
-            case MARKET_RESEARCH -> longClient;
-            // 트윈 조사는 n=300·4쌍이면 셀이 7,200개다. 여기를 빠뜨리면 조용히 30초 클라이언트를
-            // 쓰고, 그 실패가 retryable 로 사상돼 재시도가 같은 값을 또 태운다.
-            case TWIN_SURVEY -> surveyClient;
-            default -> client;
-        };
     }
 
     public ExecutionResponse execute(TaskRun run, String attemptId, LocalDateTime deadline) {
@@ -152,7 +140,8 @@ public class InternalAiExecutionClient {
         byte[] requestBytes = mapper.writeValueAsBytes(requestEnvelope(run, attemptId, deadline));
         enforceSize(requestBytes, "REQUEST_BYTES_EXCEEDED");
         try {
-            byte[] responseBytes = clientFor(run).post().uri("/internal/v1/ai/executions")
+            RestClient selectedClient = clientFor(run.taskType());
+            byte[] responseBytes = selectedClient.post().uri("/internal/v1/ai/executions")
                 .contentType(MediaType.APPLICATION_JSON)
                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + properties.internalApiKey())
                 .header("X-Correlation-Id", run.correlationId())
@@ -168,6 +157,25 @@ public class InternalAiExecutionClient {
                 "DEADLINE_EXCEEDED", "REQUEST_DEADLINE_EXCEEDED", true
             );
         }
+    }
+
+    /**
+     * 어느 클라이언트로 부를지는 <b>작업 종류가 정한다</b>.
+     *
+     * <p>시장조사는 90~266초 걸린다. 기본 30s 로 부르면 read timeout 이 나고, 그 실패는
+     * {@code REQUEST_DEADLINE_EXCEEDED}(retryable) 로 사상돼 <b>자동 재시도가 260초짜리를
+     * 다시 태운다</b> — 실패하면서 비용만 배가 된다.
+     */
+    RestClient clientFor(TaskType taskType) {
+        return switch (taskType) {
+            case MARKET_RESEARCH -> longClient;
+            // 트윈 조사는 n=300·4쌍이면 셀이 7,200개다. 여기를 빠뜨리면 조용히 30초 클라이언트를
+            // 쓰고, 그 실패가 retryable 로 사상돼 재시도가 같은 값을 또 태운다.
+            case TWIN_SURVEY -> surveyClient;
+            case CONCEPT_PORTFOLIO_V2_RUN, CONCEPT_PORTFOLIO_V2_CONTINUE,
+                 CONCEPT_PORTFOLIO_V2_SELECTION_ACTION -> conceptPortfolioClient;
+            default -> client;
+        };
     }
 
     JsonNode requestPayload(TaskRunWorkerContext run, String attemptId, LocalDateTime deadline) {

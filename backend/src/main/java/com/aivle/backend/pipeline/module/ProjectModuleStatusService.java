@@ -7,11 +7,10 @@ import com.aivle.backend.journey.MarketResearchRun;
 import com.aivle.backend.journey.MarketResearchRunRepository;
 import com.aivle.backend.journey.TwinSurveyRun;
 import com.aivle.backend.journey.TwinSurveyRunRepository;
-import com.aivle.backend.pipeline.concept.domain.ConceptFactoryRun;
-import com.aivle.backend.pipeline.concept.domain.ConceptFactoryRunStatus;
-import com.aivle.backend.pipeline.concept.domain.ConceptSlotStatus;
-import com.aivle.backend.pipeline.concept.repository.ConceptFactoryRunRepository;
-import com.aivle.backend.pipeline.concept.repository.ConceptSlotRepository;
+import com.aivle.backend.pipeline.conceptportfolio.domain.ConceptPortfolioRun;
+import com.aivle.backend.pipeline.conceptportfolio.repository.ConceptPortfolioRunRepository;
+import com.aivle.backend.pipeline.conceptportfolio.selection.domain.ConceptPortfolioSelection;
+import com.aivle.backend.pipeline.conceptportfolio.selection.repository.ConceptPortfolioSelectionRepository;
 import com.aivle.backend.pipeline.idea.domain.IdeaBrief;
 import com.aivle.backend.pipeline.idea.domain.IdeaBriefStatus;
 import com.aivle.backend.pipeline.idea.repository.IdeaBriefRepository;
@@ -31,6 +30,7 @@ import com.aivle.backend.pipeline.techops.repository.TechOpsInputPreparationRepo
 import com.aivle.backend.pipeline.techops.repository.TechOpsInputSnapshotRepository;
 import com.aivle.backend.project.repository.ProjectRepository;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -42,8 +42,8 @@ import org.springframework.transaction.annotation.Transactional;
 public class ProjectModuleStatusService {
     private final ProjectRepository projectRepository;
     private final IdeaBriefRepository ideaBriefRepository;
-    private final ConceptFactoryRunRepository conceptRunRepository;
-    private final ConceptSlotRepository conceptSlotRepository;
+    private final ConceptPortfolioRunRepository conceptPortfolioRunRepository;
+    private final ConceptPortfolioSelectionRepository conceptPortfolioSelectionRepository;
     private final ConceptSelectionRepository selectionRepository;
     private final MarketAnalysisSeedSnapshotRepository marketSeedSnapshotRepository;
     private final ModuleRunRepository moduleRunRepository;
@@ -62,12 +62,19 @@ public class ProjectModuleStatusService {
             .orElseThrow(() -> new BusinessException(ErrorCode.PROJECT_NOT_FOUND));
 
         IdeaBrief brief = ideaBriefRepository.findCurrentOwned(userId, projectId).orElse(null);
-        ConceptFactoryRun conceptRun = conceptRunRepository.findCurrentOwned(userId, projectId).orElse(null);
-        long eligibleCount = conceptRun == null ? 0
-            : conceptSlotRepository.countByRunIdAndStatusAndDeletedAtIsNull(conceptRun.getId(), ConceptSlotStatus.ELIGIBLE);
-        var selection = selectionRepository.findByProjectIdAndCurrentSelectionTrueAndDeletedAtIsNull(projectId).orElse(null);
-        MarketAnalysisSeedSnapshot selectedSnapshot = selection == null ? null
-            : marketSeedSnapshotRepository.findBySelectionIdAndProjectIdAndDeletedAtIsNull(selection.getId(), projectId).orElse(null);
+        ConceptPortfolioRun conceptRun = conceptPortfolioRunRepository.findCurrentOwned(userId, projectId).orElse(null);
+        long eligibleCount = conceptRun == null ? 0 : conceptRun.getProducedConceptCount();
+        ConceptPortfolioSelection portfolioSelection = conceptPortfolioSelectionRepository
+            .findByProjectIdAndIsCurrentTrueAndDeletedAtIsNull(projectId).orElse(null);
+        var legacySelection = portfolioSelection == null
+            ? selectionRepository.findByProjectIdAndCurrentSelectionTrueAndDeletedAtIsNull(projectId).orElse(null)
+            : null;
+        MarketAnalysisSeedSnapshot selectedSnapshot = portfolioSelection != null
+            ? marketSeedSnapshotRepository
+                .findByPortfolioSelectionIdAndStaleAtIsNullAndDeletedAtIsNull(portfolioSelection.getId()).orElse(null)
+            : legacySelection == null ? null
+                : marketSeedSnapshotRepository.findBySelectionIdAndProjectIdAndDeletedAtIsNull(
+                    legacySelection.getId(), projectId).orElse(null);
         TwinSurveyRun twinRun = twinSurveyRunRepository
             .findTopByProjectIdAndDeletedAtIsNullOrderByCreatedAtDescIdDesc(projectId).orElse(null);
         MarketResearchRun marketRun = latestResearchRun(projectId, MarketResearchRun.Kind.FULL);
@@ -92,7 +99,7 @@ public class ProjectModuleStatusService {
                 businessRun.getId(), projectId).orElse(null);
 
         String confirmedBriefId = brief == null ? null : brief.getConfirmedSnapshotId();
-        PipelineModuleStatus conceptStatus = conceptStatus(conceptRun, confirmedBriefId);
+        PipelineModuleStatus conceptStatus = conceptStatus(conceptRun, portfolioSelection, confirmedBriefId);
         // 시장조사·BM 은 외부 모듈 핸드오프가 아니라 자체 엔진(MARKET_RESEARCH TaskRun)이 돈다.
         // ⚠ 실행이 있으면 **Seed 확정 여부와 무관하게** 그 실행 상태를 보여준다. 견본 컨셉으로도
         //   돌 수 있어서, Seed 로 막아 두면 다 끝난 모듈이 「준비 전」으로 보이는 거짓말이 된다.
@@ -116,20 +123,15 @@ public class ProjectModuleStatusService {
                 new NextAction("아이디어 정리", "/idea"), null,
                 brief == null ? null : brief.getActiveTaskRunId(), null, confirmedBriefId, null,
                 brief == null ? null : brief.getUpdatedAt()),
-            response(projectId, PipelineModuleType.CONCEPT_FACTORY, conceptStatus,
+            response(projectId, PipelineModuleType.CONCEPT_PORTFOLIO, conceptStatus,
                 confirmedBriefId == null ? List.of("ideaBriefSnapshotId") : List.of(),
-                new NextAction("컨셉 생성·법률검토", "/concepts"),
-                conceptRun == null ? null : conceptRun.getId(), conceptRun == null ? null : conceptRun.getTaskRunId(),
-                conceptRun == null ? null : conceptRun.getSourceIdeaBriefSnapshotId(), confirmedBriefId, eligibleCount,
+                new NextAction("사업안 검토", "/concepts"),
+                conceptRun == null ? null : conceptRun.getId(),
+                portfolioSelection != null && portfolioSelection.getActiveTaskRunId() != null
+                    ? portfolioSelection.getActiveTaskRunId()
+                    : conceptRun == null ? null : conceptRun.getActiveTaskRunId(),
+                conceptRun == null ? null : conceptRun.getSourceIdeaBrief().getId(), confirmedBriefId, eligibleCount,
                 conceptRun == null ? null : conceptRun.getUpdatedAt()),
-            response(projectId, PipelineModuleType.CONCEPT_SELECTION,
-                selection == null ? PipelineModuleStatus.NOT_READY
-                    : selectedSnapshot == null ? PipelineModuleStatus.READY : PipelineModuleStatus.COMPLETED,
-                selection == null ? List.of("eligibleConcepts")
-                    : selectedSnapshot == null ? List.of("hypothesisDecisions") : List.of(),
-                new NextAction("컨셉 비교·선택", "/concepts/compare"), null, null,
-                selectedSnapshot == null ? null : selectedSnapshot.getId(), null, null,
-                selection == null ? null : selection.getUpdatedAt()),
             response(projectId, PipelineModuleType.MARKET_ANALYSIS, marketStatus,
                 selectedSnapshot == null ? List.of("marketAnalysisSeedSnapshotId") : List.of(),
                 new NextAction("시장조사 실행", "/market"),
@@ -161,10 +163,14 @@ public class ProjectModuleStatusService {
             // ⚠ 이 게이트는 **새로 만든 것**이다. 재무와 마케팅은 원래 데이터로 이어져 있지 않았다
             //   (마케팅 게이트는 selectedSnapshot 기반). 트윈 조사는 재무 다음에 서므로
             //   앞 단계의 확정물인 financialSnapshotId 를 요구한다.
+            //   ⚠ **컨셉도 같이 본다.** 자극 초안이 마켓 시드 스냅샷에서 나오므로 재무만 있고
+            //   컨셉이 없으면 READY 라고 말해 놓고 초안을 만들지 못한다.
+            //   requiredInputs 는 **없는 것부터** 센다 — 앞 단계를 먼저 가리켜야 길이 된다.
             //   시장조사와 같은 규칙으로, **실행이 있으면 게이트와 무관하게 그 상태를 보여준다** —
             //   막아 두면 다 끝난 모듈이 「준비 전」으로 보이는 거짓말이 된다.
-            response(projectId, PipelineModuleType.PANEL_SURVEY, twinOrGate(twinRun, financialSnapshot != null),
-                financialSnapshot == null ? List.of("financialSnapshotId") : List.of(),
+            response(projectId, PipelineModuleType.PANEL_SURVEY,
+                twinOrGate(twinRun, selectedSnapshot != null && financialSnapshot != null),
+                twinRequiredInputs(selectedSnapshot != null, financialSnapshot != null),
                 new NextAction("패널 트윈 조사", "/panel-survey"),
                 twinRun == null ? null : String.valueOf(twinRun.getId()),
                 twinRun == null ? null : twinRun.getTaskRun().getId(),
@@ -192,14 +198,22 @@ public class ProjectModuleStatusService {
         return seed == null ? PipelineModuleStatus.NOT_READY : PipelineModuleStatus.READY;
     }
 
-    private PipelineModuleStatus twinOrGate(TwinSurveyRun run, boolean financialReady) {
+    private PipelineModuleStatus twinOrGate(TwinSurveyRun run, boolean inputsReady) {
         if (run != null) return switch (run.getState()) {
             case QUEUED -> PipelineModuleStatus.QUEUED;
             case RUNNING -> PipelineModuleStatus.RUNNING;
             case SUCCEEDED -> PipelineModuleStatus.COMPLETED;
             case FAILED -> PipelineModuleStatus.FAILED;
         };
-        return financialReady ? PipelineModuleStatus.READY : PipelineModuleStatus.NOT_READY;
+        return inputsReady ? PipelineModuleStatus.READY : PipelineModuleStatus.NOT_READY;
+    }
+
+    /** 빠진 것을 여정 순서대로 센다 — 컨셉이 재무보다 앞이라 먼저 나온다. */
+    private List<String> twinRequiredInputs(boolean conceptReady, boolean financialReady) {
+        List<String> missing = new ArrayList<>();
+        if (!conceptReady) missing.add("marketAnalysisSeedSnapshotId");
+        if (!financialReady) missing.add("financialSnapshotId");
+        return missing;
     }
 
     private PipelineModuleStatus researchStatus(MarketResearchRun run) {
@@ -226,16 +240,27 @@ public class ProjectModuleStatusService {
         };
     }
 
-    private PipelineModuleStatus conceptStatus(ConceptFactoryRun run, String currentBriefSnapshotId) {
+    private PipelineModuleStatus conceptStatus(ConceptPortfolioRun run,
+            ConceptPortfolioSelection selection, String currentBriefSnapshotId) {
         if (run == null) return currentBriefSnapshotId == null ? PipelineModuleStatus.NOT_READY : PipelineModuleStatus.READY;
-        if (currentBriefSnapshotId != null && !currentBriefSnapshotId.equals(run.getSourceIdeaBriefSnapshotId())) {
+        if (currentBriefSnapshotId != null && !currentBriefSnapshotId.equals(run.getSourceIdeaBrief().getId())) {
             return PipelineModuleStatus.STALE;
         }
-        return switch (run.getStatus()) {
+        if (selection != null) {
+            if (selection.getActiveTaskRunId() != null) return PipelineModuleStatus.RUNNING;
+            return switch (selection.getStatus()) {
+                case PENDING_HYPOTHESIS_CONFIRMATION, DELTA_LEGAL_FAILED -> PipelineModuleStatus.NEEDS_INPUT;
+                case READY_FOR_MARKET -> PipelineModuleStatus.COMPLETED;
+                case FAILED -> PipelineModuleStatus.FAILED;
+                case STALE -> PipelineModuleStatus.STALE;
+                default -> PipelineModuleStatus.READY;
+            };
+        }
+        return switch (run.getProductStatus()) {
             case QUEUED -> PipelineModuleStatus.QUEUED;
-            case GENERATING, VALIDATING, REPLACING -> PipelineModuleStatus.RUNNING;
+            case RUNNING -> PipelineModuleStatus.RUNNING;
             case NEEDS_INPUT -> PipelineModuleStatus.NEEDS_INPUT;
-            case COMPLETED -> PipelineModuleStatus.COMPLETED;
+            case RESULTS_AVAILABLE, RESULTS_WITH_OPEN_INPUT -> PipelineModuleStatus.READY;
             case FAILED -> PipelineModuleStatus.FAILED;
             case STALE -> PipelineModuleStatus.STALE;
         };

@@ -24,7 +24,27 @@ import tools.jackson.databind.JsonNode;
 public class TwinSurveyController {
 
     private final TwinSurveyService service;
+    private final TwinSurveyStimulusDraftService drafts;
     private final CurrentUserProvider currentUser;
+
+    /**
+     * 자극 초안. <b>동기 200</b> 이다 — 프롬프트 1회라 폴링할 것이 없고,
+     * 버튼을 누른 자리에서 카드가 나와야 고르고 다듬는 흐름이 이어진다.
+     *
+     * <p>{@code conceptId} 는 <b>견본 컨셉 이름표</b>이고 시장조사와 같은 규율이다
+     * ({@code MarketResearchController.StartRequest}) — 확정된 컨셉이 있으면
+     * <b>그것이 이긴다</b>. 이름표는 컨셉 파이프라인이 아직 안 찬 환경에서 이 단계를
+     * 시연·시험하기 위한 길이다.
+     */
+    @PostMapping("/twin-survey/stimulus-draft")
+    public ApiResponse<JsonNode> stimulusDraft(@PathVariable Long projectId,
+            @RequestBody(required = false) DraftRequest body, HttpServletRequest request) {
+        return ApiResponse.success(drafts.draft(currentUser.currentUserId(), projectId,
+            body == null ? null : body.conceptId()), id(request));
+    }
+
+    /** 아는 이름표인지는 <b>AI 가</b> 정한다 — 백엔드가 목록을 들면 둘이 갈라진다. */
+    public record DraftRequest(String conceptId) { }
 
     @PostMapping("/twin-survey")
     public ResponseEntity<ApiResponse<TwinSurveyService.RunView>> start(

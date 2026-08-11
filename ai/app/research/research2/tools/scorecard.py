@@ -120,9 +120,15 @@ def build(run: str, concept: str, verdict: dict | None = None) -> dict:
                    "상태": 상태(len(정량), 항목["5_수요"]["정량_채워짐"])}
 
     # ⑥ 계산 — TAM 산출 + 가정 명시
+    # ⚠ 가정은 **요인 표에서 센다**(`assumption_count`). 문장 수를 세면 한 요인이 세
+    # 문장이던 시절의 수(6)와 실제 가정 수(4)가 갈라진다 — 실제로 갈라져 있었다.
+    # `가정` 문장 폴백은 요인이 없는 옛 판정 출력용이다.
     tam = m.get("TAM_추정") or {}
-    out["6_계산"] = {"TAM": tam.get("값"), "가정수": len(tam.get("가정") or []),
-                   "상태": ("채워짐" if tam.get("값") is not None and tam.get("가정")
+    가정수 = tam.get("assumption_count")
+    if 가정수 is None:
+        가정수 = len(tam.get("가정") or [])
+    out["6_계산"] = {"TAM": tam.get("값"), "가정수": 가정수,
+                   "상태": ("채워짐" if tam.get("값") is not None and 가정수
                           else ("부분" if tam.get("값") is not None else "미확보"))}
 
     # ⑦ 못 찾은 것 — **항상**
