@@ -9,8 +9,7 @@ import AdminRoute from '../../features/auth/AdminRoute.jsx';
 import PublicOnlyRoute from '../../features/auth/PublicOnlyRoute.jsx';
 import { ProjectCreatePage, ProjectListPage } from '../../features/projects/ProjectPages.jsx';
 import { IdeaIntakePage } from '../../features/idea-intake/index.js';
-import { ConceptFactoryPage } from '../../features/concept-factory/index.js';
-import { ConceptComparisonPage } from '../../features/concept-selection/index.js';
+import { BusinessProposalWorkspace } from '../../features/concept-portfolio/index.js';
 import MarketResearchPage from '../../features/market/MarketResearchPage.jsx';
 import BmCanvasPage from '../../features/market/BmCanvasPage.jsx';
 import { MarketingContentPage } from '../../features/marketing-content/index.js';
@@ -73,8 +72,8 @@ export default function AppRouter() {
             <Route index element={<ProjectRedirect />} />
             <Route path="overview" element={<ProjectOverviewPage />} />
             <Route path="idea" element={<IdeaIntakePage />} />
-            <Route path="concepts" element={<ConceptFactoryPage />} />
-            <Route path="concepts/compare" element={<ConceptComparisonPage />} />
+            <Route path="concepts" element={<BusinessProposalWorkspace />} />
+            <Route path="concepts/compare" element={<BusinessProposalWorkspace initialMode="compare" />} />
             <Route path="market" element={<MarketResearchPage />} />
             <Route path="business-model" element={<BmCanvasPage />} />
             <Route path="tech-ops" element={<TechOpsPage />} />

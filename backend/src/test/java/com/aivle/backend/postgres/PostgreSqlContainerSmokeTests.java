@@ -42,14 +42,19 @@ class PostgreSqlContainerSmokeTests extends PostgreSqlIntegrationTestSupport {
         assertThat(version).contains("PostgreSQL 17.10");
         assertThat(timezone).isEqualTo("UTC");
         assertThat(encoding).isEqualTo("UTF8");
-        assertThat(flyway.info().applied()).hasSize(1);
-        assertThat(flyway.info().current().getVersion().getVersion())
-            .isEqualTo("1");
+        // ⚠ 개수를 손으로 박지 않는다. 예전에는 `hasSize(1)` · 버전 `"1"` 이었고
+        //   V2 부터 계속 stale 이었다 — `postgres` 태그라 기본 test 에서 빠져 안 보였다.
+        //   재려는 것은 「몇 개인가」가 아니라 **「선언한 것이 전부 적용됐나」**다.
+        int declared = flyway.info().all().length;
+        String latest = String.valueOf(declared);
+        assertThat(flyway.info().applied()).hasSize(declared);
+        assertThat(flyway.info().pending()).isEmpty();
+        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo(latest);
         System.out.printf(
-            "R7_PG_FRESH postgres=\"%s\" flywayLatest=1 "
-                + "applied=1 applicationContext=PASS "
+            "R7_PG_FRESH postgres=\"%s\" flywayLatest=%s "
+                + "applied=%d applicationContext=PASS "
                 + "ddlAutoValidate=PASS%n",
-            version
+            version, latest, declared
         );
     }
 

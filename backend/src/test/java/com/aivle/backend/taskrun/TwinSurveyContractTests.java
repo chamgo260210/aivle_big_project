@@ -59,6 +59,65 @@ class TwinSurveyContractTests {
     }
 
     @Test
+    @DisplayName("가격형도 거부한다 — 계기 재측정에서 방향이 반전됐다(2026-08-10)")
+    void priceTaskTypeRejected() throws Exception {
+        ObjectNode result = payload();
+        ((ObjectNode) result.get("pairs").get(0)).put("taskType", "PRICE");
+        assertThatThrownBy(() -> TwinSurveyContract.validate(result))
+            .isInstanceOf(ExecutionFailure.class);
+    }
+
+    @Test
+    @DisplayName("인용이 빈 인터뷰는 거부한다 — 프로필만 있으면 화면에 얼굴만 앉는다")
+    void interviewWithoutQuoteRejected() throws Exception {
+        ObjectNode result = payload();
+        ((ObjectNode) result.get("pairs").get(0).get("interviews").get(0)).put("quote", "  ");
+        assertThatThrownBy(() -> TwinSurveyContract.validate(result))
+            .isInstanceOf(ExecutionFailure.class);
+    }
+
+    @Test
+    @DisplayName("모르는 선택 라벨은 거부한다")
+    void unknownInterviewChoiceRejected() throws Exception {
+        ObjectNode result = payload();
+        ((ObjectNode) result.get("pairs").get(0).get("interviews").get(0)).put("choice", "MAYBE");
+        assertThatThrownBy(() -> TwinSurveyContract.validate(result))
+            .isInstanceOf(ExecutionFailure.class);
+    }
+
+    @Test
+    @DisplayName("프로필에 모르는 칸이 있으면 거부한다 — 카드 원문이 새어 오는 회귀를 막는다")
+    void unknownProfileFieldRejected() throws Exception {
+        ObjectNode result = payload();
+        ((ObjectNode) result.get("pairs").get(0).get("interviews").get(0).get("profile"))
+            .put("education", "대졸 이하");
+        assertThatThrownBy(() -> TwinSurveyContract.validate(result))
+            .isInstanceOf(ExecutionFailure.class);
+    }
+
+    @Test
+    @DisplayName("못 읽은 프로필 칸이 null 인 것은 통과한다 — 파서 실패가 조사를 죽이지 않는다")
+    void nullProfileFieldsAreAllowed() throws Exception {
+        ObjectNode result = payload();
+        ObjectNode profile = (ObjectNode) result.get("pairs").get(0)
+            .get("interviews").get(0).get("profile");
+        profile.putNull("job");
+        profile.putNull("region");
+        assertThatCode(() -> TwinSurveyContract.validate(result)).doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("인터뷰가 5장을 넘으면 거부한다 — 봉투 상한과 화면 설계가 5장이다")
+    void tooManyInterviewsRejected() throws Exception {
+        ObjectNode result = payload();
+        var interviews = (tools.jackson.databind.node.ArrayNode)
+            result.get("pairs").get(0).get("interviews");
+        interviews.add(interviews.get(0).deepCopy());
+        assertThatThrownBy(() -> TwinSurveyContract.validate(result))
+            .isInstanceOf(ExecutionFailure.class);
+    }
+
+    @Test
     @DisplayName("«못 잼»인데 이긴 쪽이 있으면 거부한다 — 두 문장이 서로를 부정한다")
     void measurableAndWinnerMustAgree() throws Exception {
         ObjectNode result = payload();

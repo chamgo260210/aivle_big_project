@@ -6,6 +6,9 @@ from app.api.executions import TASK_TYPES
 
 EXPECTED_TASK_TYPES = {
     "IDEA_BRIEF_DERIVATION",
+    "CONCEPT_PORTFOLIO_V2_RUN",
+    "CONCEPT_PORTFOLIO_V2_CONTINUE",
+    "CONCEPT_PORTFOLIO_V2_SELECTION_ACTION",
     "CONCEPT_CANDIDATE",
     "CONCEPT_DISTINCTNESS_JUDGE",
     "CONCEPT_LEGAL_REVIEW",
@@ -17,6 +20,7 @@ EXPECTED_TASK_TYPES = {
     "MARKETING_CONTENT_GENERATION",
     "MARKET_RESEARCH",
     "TWIN_SURVEY",
+    "TWIN_STIMULUS_DRAFT",
 }
 
 
@@ -38,4 +42,4 @@ def test_java_and_fastapi_task_types_are_aligned_with_internal_worker_types():
 
     assert TASK_TYPES == EXPECTED_TASK_TYPES
     assert java_task_types == EXPECTED_TASK_TYPES | NON_AI_TASK_TYPES
-    assert len(java_task_types) == 14
+    assert len(java_task_types) == 18

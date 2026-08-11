@@ -61,6 +61,15 @@ task_input = {
 }
 if MODE == "BM":
     task_input["llmBudget"] = 2
+    # 사용자가 앞 화면에서 채우는 실행 계획. 여기서 같이 태워야 **배선이 실제로 도는지**를
+    # 본다 — 층마다 따로 통과해도 사이가 끊기면 캔버스는 그대로 빈다.
+    # ⚠ 값은 정수여야 한다(canonical hash 가 부동소수점을 거부한다).
+    if os.environ.get("SMOKE_PLAN", "1") != "0":
+        task_input["planMaterial"] = {
+            "key_partners": ["스모크 — 결제 처리 대행"],
+            "customer_relationship": "스모크 — 예약 확인 자동 발송으로 접점 유지",
+        }
+        task_input["executionConstraints"] = {"budget_krw": 7000000, "months": 6, "team": 3}
 
 correlation = "smoke-" + uuid.uuid4().hex[:8]
 body = {"contractVersion": "1.0", "taskType": "MARKET_RESEARCH", "taskSchemaVersion": "1.0",
@@ -120,11 +129,63 @@ if result.get("mode") == "FULL":
         problems.append("⑦행(못 찾은 것)이 비었다 — 절대 빼지 않는 칸이다")
     if result.get("canvas") is not None or result.get("bm") is not None:
         problems.append("FULL 인데 canvas·bm 이 null 이 아니다")
+
+    # ── 요인 원장 — 계산식의 항이 «값으로» 나왔는지 ─────────────────────
+    #   여기서 봐야 하는 이유: 파이썬 검사는 「골든 픽스처와 키 집합이 같다」까지만 보고,
+    #   실제 원장 위에서 요인이 정말 서는지는 실스택에서만 드러난다.
+    seen, prose = 0, 0
+    for name in ("tam", "sam", "som", "growth"):
+        figure = (result.get("market") or {}).get(name)
+        if not figure:
+            continue
+        factors = figure.get("factors")
+        if not isinstance(factors, list):
+            problems.append(f"market.{name}.factors 가 배열이 아니다")
+            continue
+        seen += len(factors)
+        for factor in factors:
+            if factor.get("basis") not in ("관측", "가정", "가설"):
+                problems.append(f"{name}: 요인 판정이 어휘 밖 — {factor.get('basis')!r}")
+            if factor.get("basis") == "관측" and not factor.get("sourceCount"):
+                problems.append(f"{name}/{factor.get('name')}: 관측인데 출처 0곳")
+            # 잘린 문장은 «…» 없이 문장 한가운데서 끝난다. 길이로만 재면 못 잡으니
+            # 규칙 파일의 서술과 대조하는 건 파이썬 검사에 맡기고, 여기서는 표가
+            # **서는지**만 본다.
+        prose += len(figure.get("assumptions") or [])
+    print(f"요인    : {seen}줄   표 밖 해석 경계 {prose}문장")
+    if not seen:
+        problems.append("요인이 0줄이다 — 계산식의 항이 표로 서지 않았다")
 else:
     cells = ((result.get("canvas") or {}).get("cells")) or []
     print(f"canvas  : {len(cells)}칸   decision={(result.get('bm') or {}).get('decision')}")
     if len(cells) != 9:
         problems.append(f"캔버스가 9칸이 아니다: {len(cells)}")
+
+    # ── 사용자 실행 계획이 칸까지 갔는가 ─────────────────────────────
+    #   자바·파이썬 단위 검사는 각 층만 본다. 「요청에 실은 문장이 캔버스 칸에
+    #   글자 그대로 섰는가」는 실스택에서만 드러난다.
+    plan = task_input.get("planMaterial") or {}
+    if plan:
+        by_cell = {cell["canvasCell"]: cell for cell in cells}
+        want = {"KEY_PARTNERS": plan.get("key_partners", [None])[0],
+                "CUSTOMER_RELATIONSHIPS": plan.get("customer_relationship")}
+        for name, text in want.items():
+            cell = by_cell.get(name) or {}
+            body_text = " ".join(cell.get("content") or [])
+            mark = "✔" if text and text in body_text else "✘"
+            print(f"계획    : {mark} {name} status={cell.get('status')} "
+                  f"labels={cell.get('sourceLabels')} content={cell.get('content')}")
+            if not text or text not in body_text:
+                problems.append(f"{name}: 사용자가 쓴 문장이 칸에 없다")
+                continue
+            # 사용자가 쓴 칸은 **계획**이다. 근거를 인용하지 않았는데 VERIFIED 면
+            # 「꽉 찬 캔버스」가 「검증된 캔버스」로 읽힌다.
+            if not cell.get("marketEvidenceIds") and cell.get("status") != "PLAN":
+                problems.append(f"{name}: 근거 0인데 status={cell.get('status')} — PLAN 이어야 한다")
+            if not any("관측이 아니다" in line for line in (cell.get("caveats") or [])):
+                problems.append(f"{name}: 「관측이 아니다」 경계가 칸에 없다")
+        cost = by_cell.get("COST_STRUCTURE") or {}
+        print(f"비용    : status={cost.get('status')} content={cost.get('content')}")
 
 # ── 경계 불변식 — 이 프로젝트의 대표 검사 ─────────────────────────────
 by_id = {item["id"]: item for item in (result.get("evidence") or [])}

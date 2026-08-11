@@ -30,7 +30,7 @@ function FinanceWorkspace({ finance }) {
   const editedValues = () => financialValuesFromDraft(draft, fields);
 
   return <main className="finance-page">
-    <header className="finance-heading"><p>7. 재무 분석</p><h1>이미 확인된 값은 이어받고, 부족한 값만 입력합니다</h1>
+    <header className="finance-heading"><p>6. 재무 분석</p><h1>이미 확인된 값은 이어받고, 부족한 값만 입력합니다</h1>
       <span>재무 계산 알고리즘이 아니라 외부 모듈에 전달할 불변 입력 Snapshot을 준비하는 화면입니다.</span></header>
     {finance.error && <p className="finance-error" role="alert">{getUserErrorMessage(finance.error)}</p>}
 

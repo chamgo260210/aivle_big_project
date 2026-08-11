@@ -25,7 +25,12 @@ class PostgreSqlBaselineMigrationTests extends PostgreSqlIntegrationTestSupport 
             .locations("classpath:db/migration")
             .load();
 
-        assertThat(flyway.migrate().migrationsExecuted).isEqualTo(9);
+        // ⚠ 개수를 **손으로 박지 않는다.** 예전에는 `isEqualTo(9)` 였고, V10·V11 이
+        //   들어오자 이 검사가 조용히 stale 이 됐다(`postgres` 태그라 기본 test 에서 빠져
+        //   아무도 못 봤다). 「몇 개인가」가 아니라 **「전부 적용됐고 번호에 구멍이 없나」**
+        //   를 재면 다음 마이그레이션마다 여기를 고칠 필요가 없다.
+        int declared = flyway.info().all().length;
+        assertThat(flyway.migrate().migrationsExecuted).isEqualTo(declared);
         flyway.validate();
 
         var appliedVersions = Arrays.stream(flyway.info().applied())
@@ -33,8 +38,11 @@ class PostgreSqlBaselineMigrationTests extends PostgreSqlIntegrationTestSupport 
             .map(info -> info.getVersion().getVersion())
             .toList();
 
-        assertThat(appliedVersions).containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9");
-        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("9");
+        var expected = java.util.stream.IntStream.rangeClosed(1, declared)
+            .mapToObj(String::valueOf).toList();
+        assertThat(appliedVersions).containsExactlyElementsOf(expected);
+        assertThat(flyway.info().current().getVersion().getVersion())
+            .isEqualTo(String.valueOf(declared));
 
         try (Connection connection = DriverManager.getConnection(
                  POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())) {
@@ -49,7 +57,9 @@ class PostgreSqlBaselineMigrationTests extends PostgreSqlIntegrationTestSupport 
                 "market_analysis_seed_snapshots", "module_handoffs", "module_runs", "module_results",
                 "tech_ops_input_preparations", "tech_ops_evidence_references",
                 "tech_ops_input_snapshots", "marketing_source_snapshots", "pipeline_marketing_contents",
-                "pipeline_marketing_content_revisions", "pipeline_marketing_assets");
+                "pipeline_marketing_content_revisions", "pipeline_marketing_assets",
+                // V10~V12 — 목록에 없어서 새 테이블이 생겨도 이 검사가 아무 말을 안 했다.
+                "market_research_runs", "market_research_versions", "bm_plan_preparations");
 
             assertTablesAbsent(connection, schema,
                 "project_documents", "document_versions", "structured_plans",
@@ -72,7 +82,10 @@ class PostgreSqlBaselineMigrationTests extends PostgreSqlIntegrationTestSupport 
         Flyway latest = Flyway.configure()
             .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
             .defaultSchema(schema).schemas(schema).locations("classpath:db/migration").load();
-        assertThat(latest.migrate().migrationsExecuted).isEqualTo(2);
+        // 남은 것 전부. 개수를 박으면 마이그레이션이 늘 때마다 여기가 깨진다.
+        // ⚠ `info().all()` 은 스키마 생성 항목을 하나 더 세므로 그걸로 빼면 안 된다.
+        int remaining = latest.info().pending().length;
+        assertThat(latest.migrate().migrationsExecuted).isEqualTo(remaining);
         latest.validate();
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())) {
@@ -93,7 +106,8 @@ class PostgreSqlBaselineMigrationTests extends PostgreSqlIntegrationTestSupport 
         Flyway latest = Flyway.configure()
             .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
             .defaultSchema(schema).schemas(schema).locations("classpath:db/migration").load();
-        assertThat(latest.migrate().migrationsExecuted).isOne();
+        int remaining = latest.info().pending().length;
+        assertThat(latest.migrate().migrationsExecuted).isEqualTo(remaining);
         latest.validate();
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
