@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo, useState } from 'react';
+import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { getUserErrorMessage } from '../../../shared/api/apiError.js';
 import useFinance from '../hooks/useFinance.js';
@@ -9,6 +9,7 @@ import {
 import '../styles/finance.css';
 
 const FinanceRefreshContext = createContext(null);
+const EMPTY_ESTIMATE = Object.freeze({ estimateStatus: 'NONE', proposalValue: null });
 
 export default function FinancePage() {
   const { projectId } = useParams();
@@ -121,6 +122,9 @@ function FinanceWorkspace({ projectId, finance }) {
   const [draft, setDraft] = useState(() => applyAiProposals(
     createFinancialDraft(fields), fields, preparation.assistance,
   ));
+  useEffect(() => {
+    setDraft((current) => applyAiProposals(current, fields, preparation.assistance));
+  }, [fields, preparation.assistance]);
   const locked = Boolean(preparation.inputSnapshotId);
   const missing = useMemo(() => new Set(preparation.missingRequiredInputs ?? []), [preparation.missingRequiredInputs]);
   const safe = async (action) => { try { await action(); } catch { /* hook이 사용자용 오류 상태를 제공한다. */ } };
@@ -169,7 +173,7 @@ function FinanceWorkspace({ projectId, finance }) {
           <input type="number" min="0" disabled={locked || fields.threeYearTargets?.readOnly} value={draft.targetYears[year - 1]}
             onChange={(event) => { const values = [...draft.targetYears]; values[year - 1] = event.target.value; change('targetYears', values); }} /></label>)}
       </div><SourceNote field={fields.threeYearTargets} />
-      {canShowInlineEstimate(fields.threeYearTargets, preparation.assistance?.threeYearTargets, draft.targetYears.join('')) && <EstimateControls fieldKey="threeYearTargets" item={preparation.assistance?.threeYearTargets} field={fields.threeYearTargets}
+      {canShowInlineEstimate(fields.threeYearTargets, preparation.assistance?.threeYearTargets ?? EMPTY_ESTIMATE, draft.targetYears.join('')) && <EstimateControls fieldKey="threeYearTargets" item={preparation.assistance?.threeYearTargets ?? EMPTY_ESTIMATE} field={fields.threeYearTargets}
         locked={locked} busy={finance.busy === 'estimate:threeYearTargets'} generate={finance.generateEstimate}
         decide={finance.decideEstimate} editedValue={editedValues().threeYearTargets} safe={safe} />}</section>
 
@@ -249,7 +253,7 @@ function FinanceWorkspace({ projectId, finance }) {
 
 function estimateLabel(item) {
   if (['QUEUED', 'RUNNING'].includes(item?.estimateStatus)) return '추천 생성 중';
-  if (item?.estimateStatus === 'FAILED') return '추천 생성 실패';
+  if (item?.estimateStatus === 'FAILED') return `추천 생성 실패${item?.safeError ? ` · ${item.safeError}` : ''} — 다시 요청할 수 있습니다.`;
   if (item?.estimateStatus === 'ACCEPTED' || ['ACCEPTED', 'USER_EDITED_ACCEPTED'].includes(item?.decision)) return '채택됨';
   if (item?.proposalValue != null && item?.estimateStatus === 'SUCCEEDED') return 'AI 추천';
   return '추천 없음';
@@ -284,9 +288,11 @@ function RefreshButton() {
   return <button className="finance-container-refresh" type="button" onClick={refresh}>새로고침</button>;
 }
 function SectionHeading({ eyebrow, title }) { return <div className="finance-section__heading"><div><p>{eyebrow}</p><h2>{title}</h2></div><div><span>KRW 기준</span><RefreshButton /></div></div>; }
-function MoneyInput({ fieldKey, label, value, onChange, field, missing, locked, assistance, finance, safe, editedValue }) {
+function MoneyInput({ fieldKey, label, value, onChange, field, missing, locked, assistance = EMPTY_ESTIMATE, finance, safe, editedValue }) {
+  const proposedAmount = assistance?.proposalValue?.amount;
+  const displayedValue = isEmptyOrZeroDraft(value) && proposedAmount != null ? String(proposedAmount) : value;
   return <label data-missing={Boolean(missing)}><span>{label}</span><input type="number" min="0" disabled={locked || field?.readOnly}
-    value={value} onChange={(event) => onChange(fieldKey, event.target.value)} /><SourceNote field={field} />
+    value={displayedValue} onChange={(event) => onChange(fieldKey, event.target.value)} /><SourceNote field={field} />
     {assistance && canShowInlineEstimate(field, assistance, value) && <EstimateControls fieldKey={fieldKey} item={assistance} field={field} locked={locked}
       busy={finance?.busy === `estimate:${fieldKey}`} generate={finance?.generateEstimate}
       decide={finance?.decideEstimate} editedValue={editedValue} safe={safe} />}</label>;
@@ -304,15 +310,15 @@ function applyAiProposals(draft, fields, assistance = {}) {
   let changed = false;
   const next = { ...draft };
   for (const [key, item] of Object.entries(assistance)) {
-    if (!isEmptyOrZeroField(fields[key]?.value) || item?.estimateStatus !== 'SUCCEEDED' || item?.proposalValue == null) continue;
+    if (item?.proposalValue == null) continue;
     const proposal = item.proposalValue;
-    if (proposal.amount != null && isEmptyOrZeroDraft(next[key])) {
+    if (proposal.amount != null && canApplyProposal(next[key], fields[key]?.value?.amount)) {
       next[key] = String(proposal.amount); changed = true;
     }
-    if (key === 'monthlyChurnRate' && proposal.percent != null && isEmptyOrZeroDraft(next.monthlyChurnRate)) {
+    if (key === 'monthlyChurnRate' && proposal.percent != null && canApplyProposal(next.monthlyChurnRate, fields.monthlyChurnRate?.value)) {
       next.monthlyChurnRate = String(proposal.percent); changed = true;
     }
-    if (key === 'newCustomerCount' && proposal.count != null && isEmptyOrZeroDraft(next.newCustomerCount)) {
+    if (key === 'newCustomerCount' && proposal.count != null && canApplyProposal(next.newCustomerCount, fields.newCustomerCount?.value)) {
       next.newCustomerCount = String(proposal.count); changed = true;
     }
     if (key === 'threeYearTargets' && proposal.years && next.targetYears.every((value) => String(value ?? '').trim() === '')) {
@@ -326,6 +332,9 @@ function applyAiProposals(draft, fields, assistance = {}) {
 function isEmptyOrZeroField(value) {
   if (value == null) return true;
   return value.amount === 0 || value === 0;
+}
+function canApplyProposal(draftValue, storedValue) {
+  return isEmptyOrZeroDraft(draftValue) || String(draftValue ?? '') === String(storedValue ?? '');
 }
 function isEmptyOrZeroDraft(value) {
   return String(value ?? '').trim() === '' || Number(value) === 0;
