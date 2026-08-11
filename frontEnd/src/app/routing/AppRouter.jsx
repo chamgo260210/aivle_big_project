@@ -22,6 +22,8 @@ import ProjectSettingsSheet from '../../features/projects/ProjectSettingsSheet.j
 import { ProjectProvider } from '../../features/projects/ProjectContext.jsx';
 import { AuthPlaceholderPage, NotFoundPage } from '../../pages/FoundationPages.jsx';
 import LandingPage from '../../features/landing/LandingPage.jsx';
+import FinancialModulePage from '../../features/financial/module/FinancialModulePage.jsx';
+import '../../features/financial/module/financialModule.css';
 import AdminShell from '../layouts/AdminShell.jsx';
 import AdminOverviewPage from '../../features/admin/pages/AdminOverviewPage.jsx';
 import AdminOperationsPage from '../../features/admin/pages/AdminOperationsPage.jsx';
@@ -50,6 +52,7 @@ export default function AppRouter() {
     <Routes location={backgroundLocation || location}>
       <Route element={<PublicLayout />}>
         <Route index element={<LandingPage />} />
+        <Route path="module" element={<FinancialModulePage />} />
         <Route element={<PublicOnlyRoute />}>
           <Route path="auth/login" element={<LoginPage />} />
           <Route path="auth/signup" element={<SignupPage />} />

@@ -4,6 +4,9 @@ import com.aivle.backend.pipeline.techops.domain.TechOpsInputSnapshot;
 import com.aivle.backend.pipeline.shared.ThreeYearTargetsContract;
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Locale;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -18,17 +21,20 @@ public class FinancialPreparationFactory {
     public static final List<String> INITIAL_INVESTMENT_KEYS = List.of("initialDevelopmentAndRnDCost",
         "initialEquipmentAndInfrastructureCost", "initialPatentAndLicensingCost");
     public static final List<String> CAC_INPUT_KEYS = List.of("totalMarketingCost", "totalSalesCost", "newCustomerCount");
+    public static final List<String> REVENUE_INPUT_KEYS = List.of("revenueModel", "unitPrice",
+        "monthlySubscriptionPrice", "monthlyChurnRate");
     public static final List<String> CONDITIONAL_COST_KEYS = List.of("unitVariableCost", "paymentFee",
         "partnerPayout", "shippingCost", "customerIncrementalInfraCost");
     public static final List<String> REQUIRED_KEYS = List.of("annualFixedLaborCost",
         "annualFixedRentAndManagementCost", "annualFixedInfrastructureCost", "initialDevelopmentAndRnDCost",
         "initialEquipmentAndInfrastructureCost", "initialPatentAndLicensingCost", "threeYearTargets",
-        "totalMarketingCost", "totalSalesCost", "newCustomerCount");
+        "totalMarketingCost", "totalSalesCost", "newCustomerCount", "revenueModel");
     public static final List<String> ALL_KEYS = List.of("annualFixedLaborCost",
         "annualFixedRentAndManagementCost", "annualFixedInfrastructureCost", "initialDevelopmentAndRnDCost",
         "initialEquipmentAndInfrastructureCost", "initialPatentAndLicensingCost", "threeYearTargets",
         "totalMarketingCost", "totalSalesCost", "newCustomerCount", "unitVariableCost", "paymentFee",
-        "partnerPayout", "shippingCost", "customerIncrementalInfraCost");
+        "partnerPayout", "shippingCost", "customerIncrementalInfraCost", "revenueModel", "unitPrice",
+        "monthlySubscriptionPrice", "monthlyChurnRate");
 
     private final ObjectMapper mapper;
     public FinancialPreparationFactory(ObjectMapper mapper) { this.mapper = mapper; }
@@ -45,6 +51,7 @@ public class FinancialPreparationFactory {
         inheritTargetsOrOpen(fields, facts.path("threeYearTargets"), provenance.path("threeYearTargets"), snapshot);
         for (String key : CAC_INPUT_KEYS) inheritDirectOrOpen(fields, key, facts, provenance, snapshot);
         for (String key : CONDITIONAL_COST_KEYS) inheritDirectOrOpen(fields, key, facts, provenance, snapshot);
+        for (String key : REVENUE_INPUT_KEYS) open(fields, key);
 
         ObjectNode references = mapper.createObjectNode();
         reference(references, "fixedOperatingCost", facts.path("fixedOperatingCost"),
@@ -66,9 +73,191 @@ public class FinancialPreparationFactory {
         assistance(assistance, "conditionalCosts", "외부 분석 계약에 필요한 경우에만 조건부 단위원가를 입력하세요.",
             "배송이 없는 서비스라면 shippingCost는 비워 둡니다.");
         for (String key : ALL_KEYS) {
-            if (!"newCustomerCount".equals(key)) estimateAssistance(assistance, key);
+            estimateAssistance(assistance, key);
         }
         return new InitialPreparation(fields, references, assistance);
+    }
+
+    /** Carries market/BM evidence forward; market assumptions stay editable until the user confirms them. */
+    public InitialPreparation createFromBusinessModel(JsonNode marketResult, JsonNode businessModelResult,
+            JsonNode conceptHypotheses, Long businessModelRunId) {
+        ObjectNode fields = mapper.createObjectNode();
+        for (String key : ALL_KEYS) open(fields, key);
+        JsonNode price = marketResult.path("market").path("price");
+        if (price.path("base").isNumber() && price.path("base").asDouble() > 0) {
+            assumedMoney(fields, "monthlySubscriptionPrice", price.path("base"), price,
+                "market.price.base", "시장 가격 가설 — 확인 후 재무 가정으로 확정 필요");
+            assumedText(fields, "revenueModel", "SUBSCRIPTION", "market.price", "시장 가격 구조를 바탕으로 한 구독 모델 가설");
+        }
+        ObjectNode references = mapper.createObjectNode();
+        ObjectNode market = references.putObject("marketAnalysis");
+        market.set("tam", marketResult.path("market").path("tam").deepCopy());
+        market.set("sam", marketResult.path("market").path("sam").deepCopy());
+        market.set("growth", marketResult.path("market").path("growth").deepCopy());
+        market.set("price", price.deepCopy());
+        market.put("label", "시장 규모·성장률·가격·계산 근거");
+        market.put("provenance", "marketResearchVersion.result.market");
+        ObjectNode bm = references.putObject("businessModel");
+        bm.put("sourceRunId", businessModelRunId);
+        bm.set("value", businessModelResult.deepCopy());
+        bm.put("label", "시장→BM 분석 결과");
+        bm.put("provenance", "marketResearchVersion.result");
+        applyConceptDefaults(fields, references, conceptHypotheses);
+        applyMarketDefaults(fields, marketResult);
+        applyBusinessModelDefaults(fields, businessModelResult);
+        ObjectNode assistance = mapper.createObjectNode();
+        for (String key : ALL_KEYS) estimateAssistance(assistance, key);
+        return new InitialPreparation(fields, references, assistance);
+    }
+
+    /** Applies the second-level default: market analysis overrides a concept hypothesis, never a user value. */
+    public boolean applyMarketDefaults(ObjectNode fields, JsonNode marketResult) {
+        JsonNode price = marketResult.path("market").path("price");
+        if (!price.path("base").isNumber() || price.path("base").asDouble() <= 0) return false;
+        boolean changed = false;
+        if (canApplyMarketDefault(fields.path("monthlySubscriptionPrice"))) {
+            assumedMoney(fields, "monthlySubscriptionPrice", price.path("base"), price,
+                "market.price.base", "시장 분석의 가격 가설이며 재무 입력에서 수정할 수 있습니다.");
+            changed = true;
+        }
+        if (canApplyMarketDefault(fields.path("revenueModel"))) {
+            assumedText(fields, "revenueModel", "SUBSCRIPTION", "market.price",
+                "시장 분석의 가격 가설을 바탕으로 한 수익 모델 가정입니다.");
+            changed = true;
+        }
+        return changed;
+    }
+
+    /** Applies the highest automatic default when BM supplies an explicit price or revenue stream. */
+    public boolean applyBusinessModelDefaults(ObjectNode fields, JsonNode businessModelResult) {
+        String revenueModel = businessModelRevenueModel(businessModelResult);
+        BigDecimal price = businessModelPrice(businessModelResult);
+        boolean changed = false;
+        if (revenueModel != null && canApplyBusinessModelDefault(fields.path("revenueModel"))) {
+            assumedText(fields, "revenueModel", revenueModel, "businessModel.revenueModel",
+                "BM 분석에서 제안한 수익 모델 가정이며 재무 입력에서 수정할 수 있습니다.");
+            fields.withObject("revenueModel").put("source", "BUSINESS_MODEL_ASSUMPTION");
+            changed = true;
+        }
+        if (price == null || price.signum() <= 0) return changed;
+        String effectiveModel = revenueModel == null ? fields.path("revenueModel").path("value").asText("") : revenueModel;
+        String priceField = "ONE_TIME".equals(effectiveModel) ? "unitPrice" : "monthlySubscriptionPrice";
+        if (canApplyBusinessModelDefault(fields.path(priceField))) {
+            assumedMoney(fields, priceField, mapper.valueToTree(price), mapper.createObjectNode(),
+                "businessModel.price", "BM 분석에서 제안한 가격 가정이며 재무 입력에서 수정할 수 있습니다.");
+            fields.withObject(priceField).put("source", "BUSINESS_MODEL_ASSUMPTION");
+            changed = true;
+        }
+        return changed;
+    }
+
+    /** Uses accepted concept hypotheses without overwriting a user-entered or accepted finance value. */
+    public boolean applyConceptDefaults(ObjectNode fields, ObjectNode references, JsonNode conceptHypotheses) {
+        if (conceptHypotheses == null || !conceptHypotheses.isObject() || conceptHypotheses.isEmpty()) return false;
+        boolean changed = !references.path("conceptHypotheses").isObject();
+        ObjectNode reference = references.putObject("conceptHypotheses");
+        reference.set("values", conceptHypotheses.deepCopy());
+        reference.put("label", "컨셉 단계에서 확정한 검증 가정");
+        reference.put("provenance", "marketAnalysisSeedSnapshot.finalHypotheses");
+
+        String revenueModel = financialRevenueModel(conceptHypotheses.path("revenueModel").path("value").asText(""));
+        if (revenueModel != null && canApplyConceptDefault(fields.path("revenueModel"))) {
+            assumedText(fields, "revenueModel", revenueModel, "concept.finalHypotheses.revenueModel",
+                "컨셉 단계에서 확정한 수익 모델 가정이며 재무 입력에서 수정할 수 있습니다.");
+            fields.withObject("revenueModel").put("source", "CONCEPT_HYPOTHESIS");
+            changed = true;
+        }
+        BigDecimal price = conceptPrice(conceptHypotheses.path("price").path("value"));
+        if (price == null || price.signum() <= 0) return changed;
+        if (("ONE_TIME".equals(revenueModel) || "HYBRID".equals(revenueModel))
+                && canApplyConceptDefault(fields.path("unitPrice"))) {
+            assumedMoney(fields, "unitPrice", mapper.valueToTree(price), conceptHypotheses.path("price").path("value"),
+                "concept.finalHypotheses.price", "컨셉 단계에서 확정한 가격 가정이며 재무 입력에서 수정할 수 있습니다.");
+            fields.withObject("unitPrice").put("source", "CONCEPT_HYPOTHESIS");
+            changed = true;
+        }
+        if (("SUBSCRIPTION".equals(revenueModel) || "HYBRID".equals(revenueModel))
+                && canApplyConceptDefault(fields.path("monthlySubscriptionPrice"))) {
+            assumedMoney(fields, "monthlySubscriptionPrice", mapper.valueToTree(price), conceptHypotheses.path("price").path("value"),
+                "concept.finalHypotheses.price", "컨셉 단계에서 확정한 가격 가정이며 재무 입력에서 수정할 수 있습니다.");
+            fields.withObject("monthlySubscriptionPrice").put("source", "CONCEPT_HYPOTHESIS");
+            changed = true;
+        }
+        return changed;
+    }
+
+    private boolean canApplyConceptDefault(JsonNode field) {
+        if (!field.isObject() || field.path("readOnly").asBoolean(false)) return false;
+        String source = field.path("source").asText("");
+        return !present(field.path("value"));
+    }
+
+    private boolean canApplyMarketDefault(JsonNode field) {
+        if (!field.isObject() || field.path("readOnly").asBoolean(false)) return false;
+        String source = field.path("source").asText("");
+        return !present(field.path("value")) || "CONCEPT_HYPOTHESIS".equals(source);
+    }
+
+    private boolean canApplyBusinessModelDefault(JsonNode field) {
+        if (!field.isObject() || field.path("readOnly").asBoolean(false)) return false;
+        String source = field.path("source").asText("");
+        return !present(field.path("value")) || "CONCEPT_HYPOTHESIS".equals(source)
+            || "MARKET_ANALYSIS_ASSUMPTION".equals(source);
+    }
+
+    private String businessModelRevenueModel(JsonNode result) {
+        String direct = result.path("revenueModel").asText("");
+        if (!direct.isBlank()) return financialRevenueModel(direct);
+        for (JsonNode cell : result.path("canvas").path("cells")) {
+            if (!"REVENUE_STREAMS".equals(cell.path("canvasCell").asText())) continue;
+            StringBuilder content = new StringBuilder();
+            for (JsonNode item : cell.path("content")) content.append(item.asText()).append(' ');
+            String model = financialRevenueModel(content.toString());
+            if (model != null) return model;
+        }
+        return null;
+    }
+
+    private BigDecimal businessModelPrice(JsonNode result) {
+        JsonNode candidate = result.path("pricing").path("price");
+        if (candidate.isMissingNode() || candidate.isNull()) candidate = result.path("price");
+        if (candidate.isMissingNode() || candidate.isNull()) candidate = result.path("market").path("price");
+        if (candidate.path("base").isNumber()) return candidate.path("base").decimalValue();
+        if (candidate.path("amount").isNumber()) return candidate.path("amount").decimalValue();
+        return conceptPrice(candidate);
+    }
+
+    private String financialRevenueModel(String conceptValue) {
+        String value = conceptValue.toLowerCase(Locale.ROOT);
+        if (value.isBlank()) return null;
+        boolean subscription = value.contains("구독") || value.contains("subscription") || value.contains("saas");
+        boolean oneTime = value.contains("직접 판매") || value.contains("일회") || value.contains("판매")
+            || value.contains("구매") || value.contains("product");
+        if (subscription && oneTime) return "HYBRID";
+        if (subscription) return "SUBSCRIPTION";
+        return oneTime ? "ONE_TIME" : null;
+    }
+
+    private BigDecimal conceptPrice(JsonNode value) {
+        if (value.isNumber()) return value.decimalValue();
+        if (!value.isTextual()) return null;
+        Matcher matcher = Pattern.compile("([0-9][0-9,]*)").matcher(value.asText());
+        if (!matcher.find()) return null;
+        try { return new BigDecimal(matcher.group(1).replace(",", "")); }
+        catch (NumberFormatException ignored) { return null; }
+    }
+
+    private void assumedMoney(ObjectNode fields, String key, JsonNode amount, JsonNode source, String path, String note) {
+        ObjectNode item = fields.putObject(key); ObjectNode value = item.putObject("value");
+        value.put("amount", amount.decimalValue()); value.put("currency", source.path("currency").asText("KRW"));
+        item.put("source", "MARKET_ANALYSIS_ASSUMPTION"); item.put("decision", "ASSUMPTION"); item.put("readOnly", false);
+        item.put("provenance", path); item.put("sourceNote", note);
+    }
+
+    private void assumedText(ObjectNode fields, String key, String value, String path, String note) {
+        ObjectNode item = fields.putObject(key); item.put("value", value);
+        item.put("source", "MARKET_ANALYSIS_ASSUMPTION"); item.put("decision", "ASSUMPTION"); item.put("readOnly", false);
+        item.put("provenance", path); item.put("sourceNote", note);
     }
 
     private void inheritMoneyOrOpen(ObjectNode fields, String key, JsonNode aggregate, JsonNode provenance,
