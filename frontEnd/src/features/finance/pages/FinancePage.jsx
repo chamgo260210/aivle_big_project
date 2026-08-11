@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useContext, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { getUserErrorMessage } from '../../../shared/api/apiError.js';
 import useFinance from '../hooks/useFinance.js';
@@ -119,12 +119,11 @@ function formatCompact(value) {
 function FinanceWorkspace({ projectId, finance }) {
   const preparation = finance.preparation;
   const fields = useMemo(() => preparation.financialFields ?? {}, [preparation.financialFields]);
-  const [draft, setDraft] = useState(() => applyAiProposals(
+  const [draftState, setDraft] = useState(() => applyAiProposals(
     createFinancialDraft(fields), fields, preparation.assistance,
   ));
-  useEffect(() => {
-    setDraft((current) => applyAiProposals(current, fields, preparation.assistance));
-  }, [fields, preparation.assistance]);
+  const draft = useMemo(() => applyAiProposals(draftState, fields, preparation.assistance),
+    [draftState, fields, preparation.assistance]);
   const locked = Boolean(preparation.inputSnapshotId);
   const missing = useMemo(() => new Set(preparation.missingRequiredInputs ?? []), [preparation.missingRequiredInputs]);
   const safe = async (action) => { try { await action(); } catch { /* hook이 사용자용 오류 상태를 제공한다. */ } };
@@ -328,10 +327,6 @@ function applyAiProposals(draft, fields, assistance = {}) {
     }
   }
   return changed ? next : draft;
-}
-function isEmptyOrZeroField(value) {
-  if (value == null) return true;
-  return value.amount === 0 || value === 0;
 }
 function canApplyProposal(draftValue, storedValue) {
   return isEmptyOrZeroDraft(draftValue) || String(draftValue ?? '') === String(storedValue ?? '');
