@@ -10,5 +10,12 @@ export function createTwinSurveyApi(client, projectId) {
         { timeoutMs: 30000 })).data;
     },
     async currentSurvey() { return (await client.get(`${root}/twin-survey/current`)).data; },
+    // 자극 초안은 **동기 200** 이다 — 프롬프트 1회라 폴링할 것이 없다.
+    // 서버 예산이 90초라 그보다 넉넉히 기다린다.
+    // conceptId 는 **견본 컨셉 이름표**다. 확정된 컨셉이 있으면 서버가 그것을 쓴다.
+    async draftStimulus(conceptId) {
+      return (await client.post(`${root}/twin-survey/stimulus-draft`, { conceptId },
+        { timeoutMs: 120000 })).data;
+    },
   };
 }

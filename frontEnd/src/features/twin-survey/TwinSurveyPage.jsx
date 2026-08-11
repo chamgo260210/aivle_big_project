@@ -3,7 +3,10 @@ import { useParams } from 'react-router-dom';
 
 import { useApiClient } from '../../shared/api/ApiClientProvider.jsx';
 import { Alert, Button, Card, LoadingState } from '../../shared/ui';
+import { draftFailureText } from './draftFailureText.js';
+import PairEditorDialog from './PairEditorDialog.jsx';
 import SampleSizePicker from './SampleSizePicker.jsx';
+import StimulusDraftPicker from './StimulusDraftPicker.jsx';
 import StimulusEditor from './StimulusEditor.jsx';
 import { createTwinSurveyApi } from './twinSurveyApi.js';
 import { interviewLines } from './twinSurveyResult.js';
@@ -11,12 +14,31 @@ import { gateSurvey } from './taskTypeGate.js';
 import useTwinSurveyPolling from './useTwinSurveyPolling.js';
 import './twin-survey.css';
 
-/** 빈 쌍 하나로 시작한다. 속성 한 줄이 있어야 편집기가 표를 그린다. */
-const INITIAL_PAIRS = [{
+/**
+ * 견본 컨셉. **정본은 AI 서버**(`ai/app/research/pipeline.py` 의 `CONCEPTS`)이고 여기는
+ * 이름표만 든다 — 시장조사 화면(`MarketResearchPage`)이 같은 셋을 같은 방식으로 쓴다.
+ *
+ * 확정된 컨셉이 있으면 서버가 그것을 쓰고 이 고름은 무시된다. 이 목록이 있는 이유는
+ * 컨셉 파이프라인이 아직 안 찬 환경에서도 이 단계를 시연·시험할 수 있어야 하기 때문이다.
+ */
+const SAMPLE_CONCEPTS = [
+  ['beauty-noshow', '미용실 노쇼 관리'],
+  ['household-ledger', '가계부 앱'],
+  ['pet-treat', '반려동물 수제 간식'],
+];
+
+/**
+ * 손으로 만드는 길에 쓰는 빈 쌍.
+ *
+ * ⚠ **첫 화면의 기본값이 아니다.** 이 빈 칸이 기본이던 것이 이 기능을 못 쓰게 만든
+ * 원인이었다 — 속성명·양쪽 값·라벨·가격을 다 치고 「가격은 양쪽 같게, 속성은 하나만」이라는
+ * 규칙까지 사용자가 지켜야 했다. 이제 초안이 그 자리를 채우고, 이 길은 남겨만 둔다.
+ */
+const BLANK_PAIR = {
   pairId: 'P1',
   X: { label: 'A안', attrs: { 형태: '' }, priceKrw: null },
   Y: { label: 'B안', attrs: { 형태: '' }, priceKrw: null },
-}];
+};
 
 /**
  * 패널 트윈 조사 화면.
@@ -39,8 +61,37 @@ export default function TwinSurveyPage() {
   const api = useMemo(() => createTwinSurveyApi(client, projectId), [client, projectId]);
 
   const [situation, setSituation] = useState('가게에서 하나를 고릅니다. 아래 두 상품이 있습니다.');
-  const [pairs, setPairs] = useState(INITIAL_PAIRS);
+  const [pairs, setPairs] = useState([]);
   const [sampleSize, setSampleSize] = useState(100);
+  const [draft, setDraft] = useState(null);
+  const [drafting, setDrafting] = useState(false);
+  const [draftError, setDraftError] = useState(null);
+  const [conceptKey, setConceptKey] = useState(SAMPLE_CONCEPTS[0][0]);
+  /** 편집 중인 쌍의 인덱스. null 이면 창이 닫혀 있다. */
+  const [editing, setEditing] = useState(null);
+
+  const savePair = useCallback((next) => {
+    setPairs((current) => current.map((pair, index) => (index === editing ? next : pair)));
+    setEditing(null);
+  }, [editing]);
+
+  const makeDraft = useCallback(async () => {
+    setDrafting(true);
+    setDraftError(null);
+    try {
+      setDraft(await api.draftStimulus(conceptKey));
+    } catch (failure) {
+      setDraftError(draftFailureText(failure));
+    } finally {
+      setDrafting(false);
+    }
+  }, [api, conceptKey]);
+
+  const useDraft = useCallback((draftSituation, chosen) => {
+    setSituation(draftSituation);
+    setPairs(chosen);
+    setDraft(null);
+  }, []);
 
   const load = useCallback(() => api.currentSurvey(), [api]);
   const start = useCallback(() => api.startSurvey(situation, pairs, sampleSize),
@@ -55,46 +106,90 @@ export default function TwinSurveyPage() {
 
   return (
     <section className="twin-page">
-      <div className="pipeline-page-heading">
-        <p>8. 패널 트윈 조사</p>
-        <h2>두 상품안 중 어느 쪽이 이기나</h2>
-        <span>
-          한국미디어패널조사 실측 프로파일로 만든 디지털 트윈에게 묻는다.
-          답은 <strong>방향과 신뢰구간까지</strong>다 — 크기·점유율·선택확률은 내지 않는다.
-        </span>
-      </div>
+      {/* 모듈 이름은 셸(`ProjectLayout`)이 이미 그린다 — 여기서 다시 그리면 껍데기가 두 겹이다.
+          그 자리에 산문 대신 «지금 어디까지 왔나»를 둔다. */}
+      <TwinSteps pairCount={pairs.length} active={active} done={Boolean(result)} elapsed={elapsed} />
 
-      <Alert tone="warning">
-        이 결과는 <strong>실존 인물의 응답이 아니다</strong>. 실측 프로파일 기반 시뮬레이션이며,
-        검증 성적이 유지되는 <strong>명백한 우열형</strong>에서만 제공한다 —
-        가격이 걸린 질문(지불의사)은 실행 모델에 따라 방향이 뒤집혀 제공하지 않는다.
-      </Alert>
+      <Card title="무엇을 비교할까">
+        {pairs.length === 0 && !draft ? (
+          /* 첫 화면은 버튼 하나다. 빈 표를 먼저 보이면 그 표를 채우는 것이 일이 된다. */
+          <div className="twin-page__draft-start">
+            <p>
+              확정한 컨셉에서 <strong>비교할 두 안</strong>을 뽑아 준다.
+              「가격은 양쪽 같게, 속성은 하나만」이라는 규칙은 초안이 지킨 채로 나온다.
+            </p>
+            {/* 확정된 컨셉이 있으면 서버가 그것을 쓴다 — 이 고름은 그때 무시된다. */}
+            <div className="twin-page__samples" role="group" aria-label="견본 컨셉">
+              {SAMPLE_CONCEPTS.map(([key, label]) => (
+                <Button
+                  key={key}
+                  variant={key === conceptKey ? 'primary' : 'outline'}
+                  aria-pressed={key === conceptKey}
+                  disabled={drafting}
+                  onClick={() => setConceptKey(key)}
+                >
+                  {label}
+                </Button>
+              ))}
+            </div>
+            <div className="twin-page__draft-actions">
+              <Button onClick={makeDraft} disabled={drafting}>
+                {drafting ? '초안 만드는 중…' : '자극 초안 만들기'}
+              </Button>
+              {/* 손으로 만드는 길은 남긴다 — 초안이 안 나오는 컨셉이 있다. */}
+              <button type="button" className="twin-page__manual"
+                      onClick={() => setPairs([BLANK_PAIR])} disabled={drafting}>
+                직접 만들기
+              </button>
+            </div>
+            {draftError ? <Alert tone="danger">{draftError}</Alert> : null}
+          </div>
+        ) : null}
 
-      <Card title="자극">
-        <StimulusEditor
-          situation={situation}
-          pairs={pairs}
-          onSituationChange={setSituation}
-          onChange={setPairs}
-          disabled={busy || active}
-        />
+        {draft ? (
+          <StimulusDraftPicker draft={draft} disabled={busy || active} onUse={useDraft} />
+        ) : null}
+
+        {pairs.length > 0 ? (
+          <StimulusEditor
+            situation={situation}
+            pairs={pairs}
+            onSituationChange={setSituation}
+            onEdit={setEditing}
+            disabled={busy || active}
+          />
+        ) : null}
       </Card>
 
-      <Card title="표본">
-        <SampleSizePicker
-          pairs={pairs}
-          value={sampleSize}
-          onChange={setSampleSize}
-          disabled={busy || active}
-        />
-      </Card>
+      <PairEditorDialog
+        /* 쌍이 바뀌면 다시 마운트돼 그 쌍의 값으로 시작한다 — 창 안의 초기화를 effect 로
+           하지 않는 이유다(부품 주석 참조). */
+        key={editing}
+        open={editing !== null}
+        pair={editing === null ? null : pairs[editing]}
+        onClose={() => setEditing(null)}
+        onSave={savePair}
+      />
 
-      <div className="twin-page__actions">
-        {active ? <span className="twin-page__elapsed">{elapsed}초 경과</span> : null}
-        <Button onClick={trigger} disabled={!canRun}>
-          {active ? '조사 중…' : result ? '다시 조사' : '조사 실행'}
-        </Button>
-      </div>
+      {pairs.length > 0 ? (
+        <>
+          <Card title="표본">
+            <SampleSizePicker
+              pairs={pairs}
+              value={sampleSize}
+              onChange={setSampleSize}
+              disabled={busy || active}
+            />
+          </Card>
+
+          <div className="twin-page__actions">
+            {active ? <span className="twin-page__elapsed">{elapsed}초 경과</span> : null}
+            <Button onClick={trigger} disabled={!canRun}>
+              {active ? '조사 중…' : result ? '다시 조사' : '조사 실행'}
+            </Button>
+          </div>
+        </>
+      ) : null}
 
       {error ? <Alert tone="danger">{error}</Alert> : null}
       {run?.state === 'FAILED' && run?.errorCode ? (
@@ -102,7 +197,73 @@ export default function TwinSurveyPage() {
       ) : null}
 
       {result ? <TwinResult result={result} /> : null}
+
+      <TwinFootnote result={result} />
     </section>
+  );
+}
+
+/**
+ * 맨 아래 각주 — 일반 면책 + **결과가 있으면 쌍별 경계 문구까지**.
+ *
+ * ⚠ 이 저장소는 경계 표시를 지우지 않는다(CLAUDE.md 규칙 7). 카드 안에서 뺀 것은
+ * **지운 게 아니라 중복을 걷어 여기로 모은 것**이다 — 쌍마다 같은 문장이 9줄씩 반복돼
+ * 정작 인터뷰와 측정치를 밀어냈다. 문장은 서버가 값과 함께 실어 보낸 그대로다
+ * (`ai/app/twin/caveats.py`). 빠진 쌍이 있으면 그 카드 안에서 크게 운다.
+ */
+export function TwinFootnote({ result }) {
+  const notes = [...new Set((result?.pairs ?? []).flatMap((pair) => pair.caveats))];
+  return (
+    <footer className="twin-footnote">
+      <p>
+        이 결과는 실존 인물의 응답이 아니라 한국미디어패널조사(KISDI) 실측 프로파일로 만든
+        디지털 트윈의 시뮬레이션이다. 답은 방향과 신뢰구간까지이며 크기·점유율·선택확률은
+        내지 않는다. 검증 성적이 유지되는 명백한 우열형에서만 제공하고, 가격이 걸린
+        질문(지불의사)은 실행 모델에 따라 방향이 뒤집혀 제공하지 않는다.
+      </p>
+      {notes.length > 0 ? (
+        <details>
+          <summary>이 결과를 읽는 법 {notes.length}가지</summary>
+          <ul>{notes.map((note) => <li key={note}>{note}</li>)}</ul>
+        </details>
+      ) : null}
+    </footer>
+  );
+}
+
+/**
+ * 이 모듈 안에서 사용자가 하는 일은 둘이다. 왼쪽 사이드바가 «어느 모듈인가»를 말하므로
+ * 여기는 «그 모듈 안 어디인가»만 말한다.
+ *
+ * 각 단계 밑의 한 줄은 장식이 아니라 **지금 값**이다 — 몇 쌍을 고랐는지, 몇 초 걸렸는지.
+ * 단계 이름만 있으면 진행 표시는 읽을 이유가 없는 그림이 된다.
+ */
+function TwinSteps({ pairCount, active, done, elapsed }) {
+  const chosen = pairCount > 0;
+  const steps = [
+    {
+      title: '비교안 정하기',
+      state: chosen ? 'done' : 'current',
+      detail: chosen ? `${pairCount}쌍` : null,
+    },
+    {
+      title: '조사 실행',
+      state: done ? 'done' : active ? 'current' : chosen ? 'next' : 'waiting',
+      detail: done ? '완료' : active ? `${elapsed}초` : null,
+    },
+  ];
+  return (
+    <ol className="twin-steps" aria-label="진행 단계">
+      {steps.map((step, index) => (
+        <li key={step.title} className="twin-steps__step" data-state={step.state}>
+          <span className="twin-steps__dot" aria-hidden="true">
+            {step.state === 'done' ? '✓' : index + 1}
+          </span>
+          <span className="twin-steps__title">{step.title}</span>
+          {step.detail ? <span className="twin-steps__detail">{step.detail}</span> : null}
+        </li>
+      ))}
+    </ol>
   );
 }
 
@@ -136,17 +297,33 @@ function TwinResult({ result }) {
  * <b>수치를 접어 두는 이유</b>는 감추려는 것이 아니라 순서 때문이다. 「어느 쪽이 이겼나」와
  * 「사람들이 왜 그렇게 말했나」가 먼저 오고, Δ·MDE 는 그 판단을 확인하려는 사람이 편다.
  */
-function PairPanel({ pair, result }) {
+export function PairPanel({ pair, result }) {
   const c = pair.composition;
   return (
     <section className="twin-panel">
       <header className="twin-panel__head">
         <div>
-          <p className="twin-panel__title">패널 트윈 조사</p>
-          <p className="twin-panel__subtitle">{pair.labels.X} vs {pair.labels.Y}</p>
+          <p className="twin-panel__title">{pair.labels.X} ↔ {pair.labels.Y}</p>
+          <p className="twin-panel__subtitle">{result.situation}</p>
         </div>
         <span className="twin-panel__done">{result.sampling.drawn}명 완료</span>
       </header>
+
+      {/* 무엇을 비교했는가. 뷰모델이 `profiles` 를 정규화해 두고도 화면이 한 번도 안 그려서,
+          결과가 「A안이 이겼다」라고만 말하고 A안이 무엇이었는지는 어디에도 없었다.
+          `data-lead` 를 문자열로 못박는 이유: React 는 `data-*={false}` 를 아예 안 그려서
+          「이긴 쪽이 아니다」와 「표시가 없다」가 같아진다. */}
+      <dl className="twin-compare">
+        <div data-lead={String(pair.measurable && pair.winner === 'X')}>
+          <dt>{pair.labels.X}</dt>
+          <dd>{pair.profiles.X || '자극 문장이 결과에 실려오지 않았다'}</dd>
+        </div>
+        <span className="twin-compare__vs" aria-hidden="true">vs</span>
+        <div data-lead={String(pair.measurable && pair.winner === 'Y')}>
+          <dt>{pair.labels.Y}</dt>
+          <dd>{pair.profiles.Y || '자극 문장이 결과에 실려오지 않았다'}</dd>
+        </div>
+      </dl>
 
       <div className="twin-verdict">
         <div className="twin-verdict__line">
@@ -176,19 +353,14 @@ function PairPanel({ pair, result }) {
         <p className="twin-panel__empty">인용할 응답을 고르지 못했다.</p>
       )}
 
-      <details className="twin-panel__how">
-        <summary>대표는 어떻게 골랐나</summary>
-        <p>
-          이긴 쪽 2명 · 진 쪽 2명 · 미결정 1명을 성×연령 층이 겹치지 않게 뽑는다.
-          제시 순서를 보고 고른 응답자(위치응답)는 제외한다 — 그 말을 이유로 읽으면
-          없는 근거가 생긴다. 난수를 쓰지 않아 같은 조사면 같은 5명이 나온다.
-        </p>
-      </details>
-
-      {/* ⚠ 경계는 **이 판 안**에 둔다. 값과 떨어지면 값만 인용된다. */}
-      <ul className={`twin-panel__caveats${pair.caveatsMissing ? ' is-missing' : ''}`}>
-        {pair.caveats.map((note) => <li key={note}>{note}</li>)}
-      </ul>
+      {/* ⚠ 경계 문구는 **페이지 각주로 모았다**(사용자 결정 2026-08-11). 쌍마다 같은 문장이
+          9줄씩 반복돼 인터뷰와 측정치를 밀어냈다. 지우지 않고 중복만 걷어 각주로 내렸다 —
+          **빠졌을 때는 여기서 크게 운다.** 빈 경계는 「경계 없음」이 아니라 「경계 소실」이다. */}
+      {pair.caveatsMissing ? (
+        <ul className="twin-panel__caveats is-missing">
+          {pair.caveats.map((note) => <li key={note}>{note}</li>)}
+        </ul>
+      ) : null}
 
       <details className="twin-panel__figures">
         <summary>측정치 보기</summary>
