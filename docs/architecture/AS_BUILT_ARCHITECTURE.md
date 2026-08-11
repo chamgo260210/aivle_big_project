@@ -40,22 +40,30 @@ healthcheck 의존. 필요한 환경변수는 `.env.example` 참조 (`AI_PROVIDE
 
 라우트는 `frontEnd/src/app/router/AppRouter.jsx`가 정본이다. 현재 제품은 **하나의 선형 여정**이다:
 
-| # | 화면 | 라우트 | 백엔드 | AI TaskType |
-|---|---|---|---|---|
-| 1 | 아이디어 입력·해석 | `/app/projects/:id/idea` | `JourneyController` | `IDEA_INTERPRETATION` |
-| 2 | 법률 사전점검 | `/app/projects/:id/legal` | `LegalPrecheckController` | `IDEA_LEGAL_PRECHECK` |
-| 3 | 컨셉 생성 | `…/journey/concept` | `ConceptJourneyController` | `CONCEPT_GENERATION` + `CONCEPT_LEGAL_VALIDATION` |
-| 4 | 컨셉 분석 | `…/journey/concept-analysis` | `ConceptJourneyController` | `QUICK_ASSESSMENT`, `DETAILED_ANALYSIS` |
-| 5 | 컨셉 선택 | `…/journey/concept-selection` | `ConceptJourneyController` | — (사용자 결정) |
-| 6 | 페르소나 | `…/journey/persona` | `PersonaJourneyController` | `PERSONA_CARD_GENERATION` |
-| 7 | 인터뷰 | `…/journey/interview` | `PersonaJourneyController` | `PERSONA_INTERVIEW`, `INTERVIEW_SYNTHESIS` |
-| 8 | 마케팅 | `…/journey/marketing` | `MarketingReportJourneyController` | `MARKETING_GENERATION`, `MARKETING_COMPARISON` |
-| 9 | 최종 리포트 | `…/journey/final-report` | `MarketingReportJourneyController` | `FINAL_REPORT_GENERATION` |
+칸의 정본은 `ProjectModuleStatusService.findAll()` 이 돌려주는 **여덟 개**이고,
+`PipelineModuleType` 열거 순서와 같다. 실스택으로 확인함(2026-08-11).
 
-각 단계는 **앞 단계의 확정 산출물을 입력으로 요구**한다. 예를 들어 마케팅은
-`ideas.findCurrent(...).filter(IdeaVersion::isConfirmed)` → `ConceptSelection` → `PersonaStudy` →
-성공한 `InterviewSynthesisRun`이 전부 있어야 하고, 하나라도 없으면
-`PROJECT_STAGE_INVALID`/`ANALYSIS_INPUT_INVALID`로 막는다 (`MarketingReportJourneyService.context()`).
+| # | 화면 | 라우트 | `PipelineModuleType` | AI TaskType |
+|---|---|---|---|---|
+| 1 | 아이디어 | `…/idea` | `IDEA` | `IDEA_BRIEF_DERIVATION` |
+| 2 | 사업안(생성·비교·선택) | `…/concepts` (+`/compare` 는 같은 화면의 비교 모드) | `CONCEPT_PORTFOLIO` | `CONCEPT_PORTFOLIO_V2_{RUN,CONTINUE,SELECTION_ACTION}` |
+| 3 | 시장 분석 | `…/market` | `MARKET_ANALYSIS` | `MARKET_RESEARCH`(mode=FULL) |
+| 4 | BM 분석 | `…/business-model` | `BUSINESS_MODEL` | `MARKET_RESEARCH`(mode=BM) |
+| 5 | 기술·운영 | `…/tech-ops` | `TECH_OPS` | `TECH_OPS_PROPOSAL` |
+| 6 | 재무 | `…/finance` | `FINANCE` | `FINANCE_ESTIMATE` |
+| 7 | 패널 트윈 조사 | `…/panel-survey` | `PANEL_SURVEY` | `TWIN_SURVEY`, `TWIN_STIMULUS_DRAFT` |
+| 8 | 마케팅 콘텐츠 | `…/marketing` | `MARKETING` | `MARKETING_CONTENT_GENERATION` |
+
+각 단계는 **앞 단계의 확정 산출물을 입력으로 요구**한다. 게이트의 정본은
+`ProjectModuleStatusService.findAll()` 한 메서드다 — 상태가 이상하면 거기부터 읽는다.
+
+> ⚠ 두 칸은 게이트 규칙이 다르다. **시장 분석·BM 은 실행이 있으면 Seed 확정 여부와 무관하게
+> 그 실행 상태를 보여준다**(`researchOrGate`). 견본 컨셉으로도 돌 수 있어서, Seed 로 막으면
+> 다 끝난 모듈이 「준비 전」으로 보이는 거짓말이 된다.
+
+> ⚠ `PipelineModuleType` 에는 여정에 안 나오는 `CONCEPT_FACTORY`·`CONCEPT_SELECTION` 이
+> 아직 남아 있다(옛 컨셉 모듈). 프론트는 셋 다 `concepts` 한 칸으로 접는데,
+> `Object.fromEntries` 라 **열거 순서의 마지막이 이긴다**.
 
 ### 죽은 화면 — 라우트만 남고 전부 리다이렉트
 
