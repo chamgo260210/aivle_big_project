@@ -19,7 +19,7 @@ class ActiveSurfaceCleanupTests {
         assertThat(Arrays.stream(ModuleType.values()).map(Enum::name)).containsExactly(
             "MARKET_ANALYSIS", "BUSINESS_MODEL", "TECH_OPS", "FINANCIAL_ANALYSIS", "PERSONA_RESPONSE");
         assertThat(Arrays.stream(PipelineModuleType.values()).map(Enum::name)).containsExactly(
-            "IDEA", "CONCEPT_FACTORY", "CONCEPT_SELECTION", "MARKET_ANALYSIS",
+            "IDEA", "CONCEPT_PORTFOLIO", "CONCEPT_FACTORY", "CONCEPT_SELECTION", "MARKET_ANALYSIS",
             "BUSINESS_MODEL", "TECH_OPS", "FINANCE", "PANEL_SURVEY", "MARKETING");
     }
 
@@ -36,7 +36,9 @@ class ActiveSurfaceCleanupTests {
     @Test
     void jobCenterTaskTypesRemainBoundToCurrentPipelineWork() {
         assertThat(Arrays.stream(TaskType.values()).map(Enum::name)).containsExactly(
-            "IDEA_ATTACHMENT_PARSE", "IDEA_BRIEF_DERIVATION", "CONCEPT_FACTORY_RUN",
+            "IDEA_ATTACHMENT_PARSE", "IDEA_BRIEF_DERIVATION",
+            "CONCEPT_PORTFOLIO_V2_RUN", "CONCEPT_PORTFOLIO_V2_CONTINUE",
+            "CONCEPT_PORTFOLIO_V2_SELECTION_ACTION", "CONCEPT_FACTORY_RUN",
             "CONCEPT_CANDIDATE", "CONCEPT_DISTINCTNESS_JUDGE", "CONCEPT_LEGAL_REVIEW",
             "CONCEPT_REDESIGN", "CONCEPT_HYPOTHESIS_ALTERNATIVE", "CONCEPT_DELTA_LEGAL_REVIEW",
             "TECH_OPS_PROPOSAL", "FINANCE_ESTIMATE", "MARKETING_CONTENT_GENERATION",

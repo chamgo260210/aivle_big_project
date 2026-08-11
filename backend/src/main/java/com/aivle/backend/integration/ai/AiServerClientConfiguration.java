@@ -14,7 +14,13 @@ public class AiServerClientConfiguration {
     @Bean
     @Qualifier("aiServerRestClient")
     RestClient aiServerRestClient(AiServerProperties properties) {
-        return createRestClient(properties);
+        return createRestClient(properties, properties.readTimeout());
+    }
+
+    @Bean
+    @Qualifier("conceptPortfolioAiServerRestClient")
+    RestClient conceptPortfolioAiServerRestClient(AiServerProperties properties) {
+        return createRestClient(properties, properties.conceptPortfolioReadTimeout());
     }
 
     /**

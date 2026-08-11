@@ -4,6 +4,8 @@ import com.aivle.backend.common.exception.BusinessException;
 import com.aivle.backend.common.exception.ErrorCode;
 import com.aivle.backend.pipeline.idea.domain.IdeaBriefStatus;
 import com.aivle.backend.pipeline.idea.repository.IdeaBriefRepository;
+import com.aivle.backend.pipeline.conceptportfolio.domain.ConceptInputRequestStatus;
+import com.aivle.backend.pipeline.conceptportfolio.repository.ConceptInputRequestRepository;
 import com.aivle.backend.project.repository.ProjectRepository;
 import com.aivle.backend.taskrun.api.ProjectJobView;
 import com.aivle.backend.taskrun.domain.TaskRun;
@@ -31,12 +33,14 @@ public class ProjectJobQueryService {
     private final ProjectRepository projects;
     private final TaskRunRepository taskRuns;
     private final IdeaBriefRepository ideaBriefs;
+    private final ConceptInputRequestRepository conceptInputs;
 
     public ProjectJobQueryService(ProjectRepository projects, TaskRunRepository taskRuns,
-            IdeaBriefRepository ideaBriefs) {
+            IdeaBriefRepository ideaBriefs, ConceptInputRequestRepository conceptInputs) {
         this.projects = projects;
         this.taskRuns = taskRuns;
         this.ideaBriefs = ideaBriefs;
+        this.conceptInputs = conceptInputs;
     }
 
     public List<ProjectJobView> active(Long ownerId, Long projectId) {
@@ -92,6 +96,17 @@ public class ProjectJobQueryService {
             return run.getState() == TaskRunState.QUEUED || run.getState() == TaskRunState.READY
                 || run.getState() == TaskRunState.RUNNING;
         }
+        if ((run.getTaskType() == TaskType.CONCEPT_PORTFOLIO_V2_RUN
+                || run.getTaskType() == TaskType.CONCEPT_PORTFOLIO_V2_CONTINUE)
+                && "CONCEPT_PORTFOLIO_RUN".equals(run.getSubjectType())) {
+            boolean latestForSubject = taskRuns
+                .findFirstByProjectIdAndSubjectTypeAndSubjectIdAndDeletedAtIsNullOrderByCreatedAtDescIdDesc(
+                    run.getProject().getId(), run.getSubjectType(), run.getSubjectId())
+                .map(latest -> latest.getId().equals(run.getId())).orElse(false);
+            boolean unresolved = conceptInputs.countByRunIdAndStatusInAndDeletedAtIsNull(
+                run.getSubjectId(), List.of(ConceptInputRequestStatus.OPEN)) > 0;
+            return latestForSubject && unresolved;
+        }
         if (run.getTaskType() != TaskType.IDEA_BRIEF_DERIVATION || !"IDEA_BRIEF".equals(run.getSubjectType())) {
             return true;
         }
@@ -116,6 +131,8 @@ public class ProjectJobQueryService {
     private JobModule module(TaskType type) {
         return switch (type) {
             case IDEA_ATTACHMENT_PARSE, IDEA_BRIEF_DERIVATION -> JobModule.IDEA;
+            case CONCEPT_PORTFOLIO_V2_RUN, CONCEPT_PORTFOLIO_V2_CONTINUE,
+                CONCEPT_PORTFOLIO_V2_SELECTION_ACTION -> JobModule.CONCEPT_PORTFOLIO;
             case CONCEPT_FACTORY_RUN, CONCEPT_CANDIDATE, CONCEPT_DISTINCTNESS_JUDGE,
                 CONCEPT_LEGAL_REVIEW, CONCEPT_REDESIGN -> JobModule.CONCEPT_FACTORY;
             case CONCEPT_HYPOTHESIS_ALTERNATIVE, CONCEPT_DELTA_LEGAL_REVIEW -> JobModule.CONCEPT_SELECTION;
@@ -128,7 +145,8 @@ public class ProjectJobQueryService {
     }
 
     private enum JobModule {
-        IDEA("/idea"), CONCEPT_FACTORY("/concepts"), CONCEPT_SELECTION("/concepts/compare"),
+        IDEA("/idea"), CONCEPT_PORTFOLIO("/concepts"), CONCEPT_FACTORY("/concepts"),
+        CONCEPT_SELECTION("/concepts/compare"),
         TECH_OPS("/tech-ops"), FINANCE("/finance"), MARKETING("/marketing"), MARKET("/market"),
         PANEL_SURVEY("/panel-survey");
         private final String route;
