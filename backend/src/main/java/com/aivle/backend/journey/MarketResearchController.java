@@ -59,6 +59,28 @@ public class MarketResearchController {
             MarketResearchRun.Kind.BM), id(request));
     }
 
+    /**
+     * BM 앞 단계 — <b>사용자가 채우는 실행 계획.</b>
+     *
+     * <p>계획 4칸(활동·자원·파트너·고객 관계)은 컨셉 계약이 주지 않는 값이라 여기서 받는다.
+     * 요청 바디에 실어 실행과 함께 보내지 않는 이유는 <b>새로고침에 사라지고 감사 기록도
+     * 안 남기 때문</b>이다 — 저장해 두고 실행이 읽는다.
+     */
+    @GetMapping("/business-model/plan")
+    public ApiResponse<BmPlanPreparationService.PlanView> currentPlan(
+            @PathVariable Long projectId, HttpServletRequest request) {
+        return ApiResponse.success(
+            service.currentPlan(currentUser.currentUserId(), projectId), id(request));
+    }
+
+    @PatchMapping("/business-model/plan")
+    public ApiResponse<BmPlanPreparationService.PlanView> savePlan(
+            @PathVariable Long projectId, @RequestBody PlanRequest body,
+            HttpServletRequest request) {
+        return ApiResponse.success(service.savePlan(currentUser.currentUserId(), projectId,
+            body.plan(), body.constraints()), id(request));
+    }
+
     /** {@code conceptId} 는 AI 쪽 {@code pipeline.CONCEPTS} 의 <b>이름표</b>다. */
     public record StartRequest(@NotBlank String conceptId, @NotBlank String asOf, JsonNode concept) { }
 
@@ -68,6 +90,12 @@ public class MarketResearchController {
      * 깨지 않으려고 남긴다.
      */
     public record BmRequest(@NotBlank String conceptId, @NotBlank String asOf) { }
+
+    /**
+     * ⚠ 두 칸 모두 <b>필수가 아니다.</b> 전부 선택 입력이므로 빈 계획도 정상 요청이고,
+     * 그때 캔버스는 그만큼 빈 채로 나온다 — 그 사실을 화면이 제출 전에 확인받는다.
+     */
+    public record PlanRequest(JsonNode plan, JsonNode constraints) { }
 
     private String id(HttpServletRequest request) {
         Object value = request.getAttribute("requestId");

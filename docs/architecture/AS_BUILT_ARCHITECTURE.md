@@ -256,6 +256,100 @@ IDEA_LEGAL_PRECHECK / CONCEPT_LEGAL_VALIDATION            → legal.pipeline (�
 "the redesigned Journey does not use fixture/success fallback".
 키가 없으면 `DEPENDENCY_UNAVAILABLE / AI_CONFIGURATION_INVALID`로 실패하지, 가짜 결과를 만들지 않는다.
 
+### 5-1. BM 캔버스 9칸 — 성격이 둘로 갈린다
+
+정본은 `ai/app/research/research2/harness/vocab.json` 의 `canvas` 라우팅 표다.
+
+| 성격 | 칸 | 요건 | 원천 |
+|---|---|---|---|
+| **측정·판정** | 고객 세그먼트 · 가치 제안 · 채널 · 수익원 | 담당 조사 슬롯 ≥ 1 | 시장조사 근거 |
+| **계획** | 고객 관계 · 핵심 자원 · 핵심 활동 · 핵심 파트너 · 비용 구조 | **슬롯 불필요** | `concept_snapshot` · `execution_constraints` |
+
+**9칸을 전부 근거로 채우는 것은 설계가 아니다.** 계획 5칸에 근거가 없는 것은 결함이 아니라
+정상이다. 화면이 이 구분을 하지 않으면 정상 결과가 미완성으로 읽힌다.
+
+계획 칸의 재료는 **세 원천**에서 오고, 우선순위가 있다:
+
+```
+사용자 입력(_user_bm_plan)  >  견본 스텁(_bm_plan)  >  컨셉 파생(_CONCEPT_TO_PLAN)
+```
+
+정본은 `bm_adapter.plan_material_of()` 이고 `_snapshot()` 이 그것을 부른다.
+⚠ **사용자 입력이 최우선이어야 한다.** 예전에는 `_bm_plan` 이 먼저라 견본 컨셉에서
+사용자가 같은 칸을 채워도 조용히 무시됐다 — 화면이 「입력을 받았다」고 말해 놓고 그 값을
+안 쓰는 것은 거짓말이다. `test_user_plan_beats_the_sample_stub` 이 그 순서를 고정한다.
+
+`_` 로 시작하는 이유는 `run.py:37 load_concept` 이 `_` 키를 걸러내 **수집 프롬프트로 새지
+않게** 하기 위해서다(절대 규칙 6). 사용자가 쓴 계획이 수집에 들어가면 모델이 **그 계획을
+확인해 주는 자료만** 찾아오는 자기확인 회로가 된다 — `hypotheses` 를 비우게 하는 이유와 같다.
+
+**사용자 입력이 들어오는 길** (판 ㉞):
+
+```
+화면 /business-model 1국면  ──PATCH /business-model/plan──>  bm_plan_preparations (V12)
+                                                                     │
+   POST /business-model  ──> MarketResearchService.startBm ──────────┘
+        → MarketResearchInputFactory.bm(label, asOf, plan, constraints)
+        → taskInput.planMaterial · taskInput.executionConstraints
+        → pipeline._bm_material()  ← **주입 지점은 여기 한 곳뿐**
+        → concept dict 병합 → _snapshot() / execution_constraints_of()
+```
+
+⚠ 계획은 `textContents` 가 아니라 **taskInput 최상위**로 간다. 컨셉을 문자열로 감싼 것은
+그 안에 float 31개가 있어서였고, 계획은 짧은 문자열과 **정수**뿐이라 감쌀 이유가 없다.
+비용 셋은 정수여야 하며 아니면 **400**이다(`BmPlanPreparationService.normalizeConstraints`) —
+안 막으면 `CanonicalInputHasher` 가 감싸이지 않은 예외를 던져 사용자에게 500 으로 나간다.
+
+**사용자가 쓴 칸은 기계로 `PLAN` 에 고정한다** (`serialize._stamp_user_plan`).
+프롬프트 §9 만 파트너 칸에 「입력 근거로 확인됨」을 허용해서, 사용자가 파트너 **유형**을
+적으면 모델이 그것을 VERIFIED 로 올릴 수 있다. 근거 인용이 0인 사용자 칸은 도장을 내리고
+「사용자가 입력한 실행 계획이다 — 관측이 아니다」를 경계에 더한다. **내리는 방향만** 하고,
+근거를 인용한 칸은 건드리지 않는다. 「꽉 찬 캔버스」가 「검증된 캔버스」로 읽히면 안 된다.
+
+뒤 넷은 `ConceptSnapshot` 의 `extra="allow"` 로 얹는 확장 필드다. `bm/prompt.py` 는 노트북에서
+기계 추출한 담당자 계약이라 못 고치지만, 그 프롬프트가 필드명을 열거하지 않고
+`bm/analyze.py` 가 `ResolvedBMInput` 을 통째로 dump 하므로 확장 필드는 그대로 모델에 닿는다.
+
+비용 구조 칸은 `execution_constraints` (컨셉의 `constraint`) 가 **유일한 원천**이다.
+`pipeline._bm` 이 이 인자를 안 넘기면 그 칸은 **항상 빈다** — 프롬프트 §8 이
+「예산·기간·비용 정보가 전혀 없으면 `content=[]`」 라서 예외도 로그도 남지 않는다.
+`ai/tests/test_bm_plan_material.py` 와 `test_bm_pipeline.py` 가 그 침묵을 깬다.
+
+**제품 배선** — 이 표는 이제 **문서가 아니라 코드**다:
+`bm_adapter.plan_material_of()` 의 `_CONCEPT_TO_PLAN` 이 구현이고, `_snapshot()` 이 그것을
+부른다. `_bm_plan` 이 있으면(견본 경로) 그대로 쓰고, 없으면 아래 표대로 파생한다.
+검사는 `ai/tests/test_bm_plan_material.py::test_generated_concept_fills_the_plan_cells`.
+
+| `_bm_plan` 키 | `ConceptCandidateResult` (`ai/app/tasks/concept_candidate/models.py`) |
+|---|---|
+| `revenue_model` | `revenueModel` |
+| `channel` | `channels` |
+| `differentiation` | `differentiators` (문장 → 목록 분해) |
+| `key_activities` | `operatingModel` + `transactionFlow` |
+| `key_resources` | `platformRole` + `featureSet` |
+| `key_partners` | `partnerModel` + `partnerRequirements` |
+| `customer_relationship` | **대응 필드 없음 — 컨셉 스키마에 추가해야 한다** |
+
+마지막 줄이 남은 구멍이었다 — **판 ㉞ 에서 화면이 직접 받는 것으로 닫았다.**
+`solutionMechanism` 에서 유추하면 프롬프트 §5(「명시된 것만」)를 어기므로 지어내지 않고
+사용자에게 묻는다. 파생 경로에서는 여전히 비고
+(`test_customer_relationship_stays_empty_until_the_schema_has_it` 이 그 공백을 고정한다),
+사용자가 쓰면 `_user_bm_plan` 으로 들어온다.
+
+> ⚠ **이 표(ConceptCandidateResult 파생)는 시장조사 입구계약과 다른 스키마다.**
+> 입구계약서 §1 이 요구하는 것은 필수 5 · 다듬기 5 · 가설 4 · 선택 5뿐이고,
+> **활동·자원·파트너·고객 관계는 거기 없다.** 그래서 계획 4칸의 정본 원천은 파생이 아니라
+> **사용자 입력**이고, 파생은 컨셉 생성이 그 필드를 주는 경우의 보조 경로다.
+
+> ⚠ **배선이 있어도 오늘 견본 3개 중 2개는 여전히 빈다.** `household-ledger`·`pet-treat` 에는
+> 파생할 원 필드 자체가 없다(`_bm_plan` 도 `operatingModel` 도 없다). 이 배선은 컨셉이
+> DB 에서 오기 시작하는 순간 동작하도록 **코드와 검사를 먼저 놓은 것**이고, 없는 데이터를
+> 견본 JSON 에 지어 넣지 않는다. 컨셉 전달 경로 자체는 아직 임시 다리다
+> (`pipeline._concept_path_of` 가 `concept_id` 로 `data/concept_*.json` 을 되짚는다).
+
+> ⚠ `key_partners` 는 실행에 필요한 파트너 **유형**이지 계약된 상대가 아니다. 그 구분이
+> 흐려지면 프롬프트 §9(「실제 파트너 정보가 있을 때만」)를 우회하게 된다.
+
 ---
 
 ## 6. 데이터

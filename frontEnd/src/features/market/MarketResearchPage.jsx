@@ -5,10 +5,12 @@ import { createMarketApi } from './marketApi.js';
 import { projectRoutes } from '../../app/routing/projectRoutes.js';
 import { Accordion, Alert, Badge, Button, Card, LoadingState } from '../../shared/ui';
 import { GradeBadge, SourceLink } from './BmCanvas.jsx';
+import AssumptionLedger from './AssumptionLedger.jsx';
+import Emphasis from './emphasis.jsx';
 import useMarketPolling from './useMarketPolling.js';
 import useCellFocus from './useCellFocus.js';
 import {
-  SCORE_STATE_VIEW,
+  NOT_FOUND_GROUP, SCORE_STATE_VIEW,
   abbreviateKrw, bucketEvidence, competitorGaps, formatValue, hostOf,
 } from './marketResult.js';
 import './market.css';
@@ -110,7 +112,7 @@ function ResultBody({ result, activeId, onJump, onNext }) {
   return (
     <>
       <Kpis market={market} onJump={onJump} />
-      <ReadingConditions market={market} />
+      <AssumptionLedger market={market} />
 
       {section(1, '시장 크기', 'MARKET_SIZE',
         bag.size.length > 0
@@ -145,6 +147,10 @@ function ResultBody({ result, activeId, onJump, onNext }) {
       ) : null}
 
       {section(6, '시장 규모 계산', 'CALCULATION', <CalcBody cards={bag.calc} />)}
+
+      {/* 7과목인데 6섹션만 세우면 성적표의 마지막 줄이 화면에 없다 —
+          「못 찾은 것」은 이 조사에서 **항상 나가는 칸**이라 더더욱 그렇다. */}
+      {section(7, '못 찾은 것', 'NOT_FOUND', <NotFoundBody blocks={market.notFound} />)}
 
       <div className="mr-actions">
         <Button onClick={onNext}>다음 — BM 분석</Button>
@@ -191,23 +197,37 @@ function Kpis({ market, onJump }) {
 }
 
 /**
- * 값을 오독하게 만드는 문장만 모은다.
- * ⚠ **규칙상 지울 수 없다** — 이 문장들이 빠지면 추정이 확정으로 읽힌다.
+ * 못 찾은 것 — **갈래로 묶는다.** 「없다」도 결과이고, 갈래마다 다음 행동이 다르다.
+ * 더 찾으면 나올 것과 찾아도 없는 것을 한 무더기로 두면 둘 다 못 읽는다.
  */
-function ReadingConditions({ market }) {
-  const lines = [];
-  if (market.tam?.assumptions.length) {
-    lines.push(`TAM·SAM 은 가정이 곱해진 추정이다 — ${market.tam.assumptions.join(' · ')}`);
+function NotFoundBody({ blocks }) {
+  if (!blocks || blocks.length === 0) {
+    return <p className="bm-cell__none">못 찾은 것이 기록되지 않았다.</p>;
   }
-  if (market.price?.baseNote) lines.push(market.price.baseNote);
-  if (!market.som) lines.push('SOM 은 산출하지 않았다 — 0 이 아니라 «안 쟀다»다.');
-  if (market.growth?.assumptions.length) lines.push(market.growth.assumptions.at(-1));
-  if (lines.length === 0) return null;
+  // 갈래 순서는 `NOT_FOUND_GROUP` 선언 순서다 — 모르는 키(group=null)는 맨 뒤에 드러낸다.
+  const groups = [...Object.keys(NOT_FOUND_GROUP), null];
 
   return (
-    <div className="mr-limits">
-      <span>이 숫자를 읽는 조건</span>
-      <ul>{lines.map((line) => <li key={line}>{line}</li>)}</ul>
+    <div className="mr-nf">
+      {groups.map((group) => {
+        const mine = blocks.filter((block) => block.group === group && block.count > 0);
+        if (mine.length === 0) return null;
+        const view = NOT_FOUND_GROUP[group];
+        return (
+          <div key={group ?? '(모르는 갈래)'} className="mr-nf__g">
+            <div className="mr-nf__h">
+              <Badge tone={view?.tone ?? 'danger'}>{view?.label ?? '분류하지 못한 항목'}</Badge>
+              <span>{view?.note ?? '이 키를 화면이 모른다 — 조용히 묻지 않고 드러낸다'}</span>
+            </div>
+            {mine.map((block) => (
+              <div key={block.key} className="mr-nf__b">
+                <h4>{block.label}<small className="num">{block.count}건</small></h4>
+                <ul>{block.entries.map((line) => <li key={line}>{line}</li>)}</ul>
+              </div>
+            ))}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -241,7 +261,9 @@ function EvidenceTable({ rows, quote = false }) {
               {item.subject} · {item.metric}
               {quote && item.quote ? <div className="mr-quote">“{item.quote}”</div> : null}
               {/* 경계는 값과 한 몸이다. 접지 않는다. */}
-              {item.caveats.map((line) => <div key={line} className="mr-caveat">{line}</div>)}
+              {item.caveats.map((line) => (
+                <div key={line} className="mr-caveat"><Emphasis text={line} /></div>
+              ))}
             </td>
             <td className="p num">{item.period ?? '—'}</td>
             <td><GradeBadge grade={item.grade} /></td>
@@ -265,8 +287,12 @@ function GrowthBody({ growth, rows }) {
         </div>
       </div>
       {rows.length > 0 ? <EvidenceTable rows={rows} /> : null}
+      {/* 한 줄로 이어 붙이지 않는다 — 두 문장은 서로 다른 것을 말한다.
+          자세한 항별 판정은 「이 숫자를 읽는 조건」의 가정 원장에 있다. */}
       {growth.assumptions.length > 0 ? (
-        <div className="mr-note">{growth.assumptions.join(' · ')}</div>
+        <div className="mr-note">
+          {growth.assumptions.map((line) => <div key={line}><Emphasis text={line} /></div>)}
+        </div>
       ) : null}
     </>
   );
@@ -305,7 +331,7 @@ function CompetitorBody({ rows, gaps }) {
                 <div className="mr-comp__src"><SourceLink item={mine[0]} /></div>
               ) : null}
               {mine.flatMap((item) => item.caveats).map((line) => (
-                <div key={line} className="mr-caveat">{line}</div>
+                <div key={line} className="mr-caveat"><Emphasis text={line} /></div>
               ))}
             </div>
           );
@@ -339,12 +365,22 @@ function PriceBody({ price, cited }) {
           {' — '}{cited.length}중 확인이 아니라 <strong>1중 확인</strong>이다.
         </Alert>
       ) : null}
-      {price.caveats.map((line) => <div key={line} className="mr-caveat">{line}</div>)}
+      {price.caveats.map((line) => (
+        <div key={line} className="mr-caveat"><Emphasis text={line} /></div>
+      ))}
     </>
   );
 }
 
-/** 계산 카드 — 입력마다 **뒷받침 근거가 있는지**를 같이 그린다. */
+/**
+ * 계산 카드 — 입력과 **그 계산이 쓴 재료 카드**를 같이 그린다.
+ *
+ * ⚠ 예전에는 `index < materialIds.length` 로 입력 줄마다 「뒷받침 근거 없음」 배지를
+ * 달았다. 그것은 **입력 순서와 재료 순서가 같다고 가정**한 것인데 그런 보장은 없고,
+ * 실제로 엉뚱한 줄에 배지가 붙었다. 대응 관계가 데이터에 없으면 **없다고 그린다** —
+ * 틀린 배지는 없는 배지보다 나쁘다. 항별 관측/가정 판정은 「이 숫자를 읽는 조건」의
+ * 가정 원장이 한다(그쪽은 서버가 항마다 판정을 실어 보낸다).
+ */
 function CalcBody({ cards }) {
   if (cards.length === 0) return <p className="bm-cell__none">계산 카드가 없다.</p>;
   return (
@@ -362,29 +398,27 @@ function CalcBody({ cards }) {
             </div>
             <table className="mr-table">
               <tbody>
-                {inputs.map(([name, value], index) => {
-                  const backed = index < card.materialIds.length;
-                  return (
-                    <tr key={name}>
-                      <td className="v num">
-                        {typeof value === 'number' ? value.toLocaleString('ko-KR') : String(value)}
-                      </td>
-                      <td>{name}</td>
-                      <td className="s">
-                        {backed
-                          ? <Badge tone="success">{card.materialIds[index]}</Badge>
-                          : <Badge tone="warning">뒷받침 근거 없음</Badge>}
-                      </td>
-                    </tr>
-                  );
-                })}
+                {inputs.map(([name, value]) => (
+                  <tr key={name}>
+                    <td className="v num">
+                      {typeof value === 'number' ? value.toLocaleString('ko-KR') : String(value)}
+                    </td>
+                    <td>{name}</td>
+                  </tr>
+                ))}
               </tbody>
             </table>
-            {card.assumptions.length > 0 ? (
-              <div className="mr-note">
-                {card.assumptions.map((line) => <div key={line}>{line}</div>)}
-              </div>
-            ) : null}
+            <div className="mr-note">
+              <b>쓴 재료</b>{' '}
+              {card.materialIds.length > 0
+                ? card.materialIds.map((id) => (
+                  <Badge key={id} tone="success">{id}</Badge>
+                ))
+                : <Badge tone="warning">관측 재료 없음 — 전부 가정으로 채운 계산이다</Badge>}
+              {card.assumptions.map((line) => (
+                <div key={line}><Emphasis text={line} /></div>
+              ))}
+            </div>
           </div>
         );
       })}

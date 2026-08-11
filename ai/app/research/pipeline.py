@@ -133,6 +133,77 @@ def _read_result(run_id: str) -> dict:
 
 
 # ══════════════════════════════════════════════════════════════
+# 사용자가 채운 실행 계획 — 요청에서 온다
+# ══════════════════════════════════════════════════════════════
+#: 화면이 받는 계획 칸. **컨셉 계약이 주지 않는 넷**이다(입구계약서 §1).
+#: 수익모델·채널·차별점은 여기 없다 — 가설 4(`_hypotheses_v2`)가 이미 사용자 승인을 거친다.
+#: ⚠ 키 이름은 `bm_adapter.PLAN_FIELDS` 와 같아야 한다. 다르면 조용히 안 실린다.
+PLAN_KEYS = ("key_activities", "key_resources", "key_partners", "customer_relationship")
+_LIST_PLAN_KEYS = ("key_activities", "key_resources", "key_partners")
+
+#: 비용 구조 칸의 재료. **정수만** — taskInput 부동소수점 금지(canonical hash).
+CONSTRAINT_KEYS = ("budget_krw", "months", "team")
+
+
+def _plan_material(raw) -> dict:
+    """요청의 `planMaterial` 을 계획 재료로 정리한다.
+
+    ⚠ **빈 값을 만들어 넣지 않는다.** 빈 문자열·빈 배열을 실으면 「없다」와 「비었다」가
+    같아지고, 모델은 프롬프트 §5~§9 대로 어차피 `content=[]` 를 낸다. 빈 칸은 **키 자체를
+    빼서** 뒷단(`_bm_plan`·컨셉 파생)이 채울 수 있게 둔다.
+    """
+    if not isinstance(raw, dict):
+        return {}
+    out: dict = {}
+    for key in PLAN_KEYS:
+        value = raw.get(key)
+        if key in _LIST_PLAN_KEYS:
+            items = [str(x).strip() for x in value if str(x).strip()] \
+                if isinstance(value, (list, tuple)) else []
+            if items:
+                out[key] = items
+        elif isinstance(value, str) and value.strip():
+            out[key] = value.strip()
+    return out
+
+
+def _plan_constraints(raw) -> dict:
+    """요청의 `executionConstraints` — **정수만 받는다.**
+
+    ⚠ 실수를 조용히 반올림하지 않는다. 백엔드가 이미 400 으로 막지만, 여기서도 버린다 —
+    같은 규칙을 두 층이 지키는 것이 「조용히 다른 값」보다 낫다.
+    """
+    if not isinstance(raw, dict):
+        return {}
+    return {key: raw[key] for key in CONSTRAINT_KEYS
+            if isinstance(raw.get(key), int) and not isinstance(raw.get(key), bool)}
+
+
+#: 비용 세 칸의 사람이 읽는 이름·단위. 사용자가 넣은 **숫자를 다시 적을 뿐** 판단하지 않는다.
+_CONSTRAINT_LABEL = (("budget_krw", "예산", "원"), ("months", "기간", "개월"),
+                     ("team", "인원", "명"))
+
+
+def _user_planned_cells(plan_material: dict, plan_constraints: dict) -> dict:
+    """사용자가 실제로 채운 칸 → 그 칸에 들어갈 **사용자의 문장**.
+
+    **비운 칸은 넣지 않는다** — 안 쓴 칸까지 도장을 내리면 컨셉 서술이 채운 칸까지
+    「사용자가 썼다」로 표시된다.
+    """
+    out: dict[str, list[str]] = {}
+    for key, value in plan_material.items():
+        cell = serialize.USER_PLAN_CELL.get(key)
+        if not cell:
+            continue
+        out[cell] = list(value) if isinstance(value, list) else [str(value)]
+    if plan_constraints:
+        out[serialize.USER_PLAN_CELL["constraint"]] = [
+            f"{label} {plan_constraints[key]:,}{unit}"
+            for key, label, unit in _CONSTRAINT_LABEL if key in plan_constraints]
+    return out
+
+
+# ══════════════════════════════════════════════════════════════
 # 진입점
 # ══════════════════════════════════════════════════════════════
 async def run_market_research(task_input: dict, run_id: str,
@@ -166,9 +237,15 @@ async def run_market_research(task_input: dict, run_id: str,
     budget = Budget(total=int(task_input.get("llmBudget") or 0))
     started = time.monotonic()
 
+    # 사용자가 BM 앞 단계에서 채운 실행 계획. **컨셉 계약이 주지 않는 것들**이라
+    # (입구계약서 §1 의 선택 필드에 활동·자원·파트너·고객 관계가 없다) 화면이 따로 받는다.
+    plan_material = _plan_material(task_input.get("planMaterial"))
+    plan_constraints = _plan_constraints(task_input.get("executionConstraints"))
+
     try:
         if mode == "BM":
-            payload = await _bm(source_run, concept_path, concept_id, run_id, budget)
+            payload = await _bm(source_run, concept_path, concept_id, run_id, budget,
+                                plan_material, plan_constraints)
         else:
             payload = await asyncio.to_thread(
                 _full, source_run, concept_path, concept_id, run_id, budget,
@@ -315,14 +392,17 @@ def _timed(ledger: Run, name: str, work):
 # BM
 # ══════════════════════════════════════════════════════════════
 async def _bm(source_run: str, concept_path: str, concept_id: str,
-              run_id: str, budget: Budget) -> dict:
+              run_id: str, budget: Budget,
+              plan_material: dict | None = None,
+              plan_constraints: dict | None = None) -> dict:
     from .bm.flow import run_bm_pipeline_flow                      # noqa: PLC0415
     from .bm.normalize import create_bm_analysis_input             # noqa: PLC0415
 
     ledger = Run()
     material = await asyncio.to_thread(_bm_material, ledger, source_run,
-                                       concept_path, concept_id)
-    cards, market_join = material
+                                       concept_path, concept_id,
+                                       plan_material or {}, plan_constraints or {})
+    cards, market_join, constraints = material
 
     evidence = serialize.evidence(cards)
 
@@ -332,7 +412,10 @@ async def _bm(source_run: str, concept_path: str, concept_id: str,
 
     began = time.monotonic()
     try:
-        out = await run_bm_pipeline_flow(create_bm_analysis_input(market_data=market_join))
+        # ⚠ `execution_constraints` 를 빼면 비용 구조 칸이 **항상 빈다** — 프롬프트 §8 이
+        #   「예산·기간·비용 정보가 전혀 없으면 content=[]」 이라서, 조용히 정상처럼 보인다.
+        out = await run_bm_pipeline_flow(create_bm_analysis_input(
+            market_data=market_join, execution_constraints=constraints))
     except Exception as error:                      # noqa: BLE001
         stage.status = "FAILED"
         stage.seconds = int(time.monotonic() - began)
@@ -350,14 +433,25 @@ async def _bm(source_run: str, concept_path: str, concept_id: str,
         stages=[s.as_contract() for s in ledger.stages],
         degradations=ledger.degradations,
         scorecard=None, market=None,
-        canvas={"cells": serialize.canvas_cells(out["bm_analysis"].canvas, evidence)},
+        canvas={"cells": serialize.canvas_cells(
+            out["bm_analysis"].canvas, evidence,
+            _user_planned_cells(plan_material, plan_constraints))},
         bm=serialize.bm(out["final_result"], out["bm_analysis"]),
         evidence=evidence, summary=None,
         notes=list(serialize.NOTES_BM))
 
 
-def _bm_material(ledger: Run, source_run: str, concept_path: str, concept_id: str):
-    """카드와 `MarketJoinData` — **엔진 안에서** 만든다. BM 층은 원장을 직접 읽지 않는다."""
+def _bm_material(ledger: Run, source_run: str, concept_path: str, concept_id: str,
+                 plan_material: dict, plan_constraints: dict):
+    """카드 · `MarketJoinData` · 실행 제약 — **엔진 안에서** 만든다.
+
+    BM 층은 원장을 직접 읽지 않는다. 실행 제약도 여기서 꺼낸다 — 컨셉 파일을 두 번 열지
+    않으려고 `adapt()` 안에서 같이 뽑는다.
+
+    <b>사용자 입력이 들어오는 유일한 자리다.</b> 컨셉 dict 가 `_snapshot()` 과
+    `execution_constraints_of()` 두 함수의 유일한 입력이라, 여기서 한 번 병합하면 그 뒤로는
+    아무것도 안 고쳐도 모델까지 간다.
+    """
     import bm_adapter as ADAPTER                                   # noqa: PLC0415
     import canvas as CANVAS                                        # noqa: PLC0415
     import cards as CARDS                                          # noqa: PLC0415
@@ -366,11 +460,21 @@ def _bm_material(ledger: Run, source_run: str, concept_path: str, concept_id: st
     ledger.stage("restore").status = "OK"
     verdict = _timed(ledger, "verdict", lambda: VERDICT.build(source_run, concept_path))
     cards_doc = _timed(ledger, "cards", lambda: CARDS.build(source_run, concept_path))
+    held: dict = {}
 
     def adapt():
         concept = json.load(io.open(os.path.join(RESEARCH_HOME, concept_path),
                                     encoding="utf-8"))
+        # 사용자가 쓴 것이 **이긴다.** 견본의 `_bm_plan` 은 컨셉 계약 밖의 손으로 쓴
+        # 스텁이라, 사용자가 같은 칸을 채웠는데 그것이 이기면 입력이 조용히 무시된다.
+        if plan_material:
+            concept = {**concept, "_user_bm_plan": dict(plan_material)}
+        if plan_constraints:
+            concept = {**concept, "constraint": {**(concept.get("constraint") or {}),
+                                                 **plan_constraints}}
+        held["constraints"] = ADAPTER.execution_constraints_of(concept)
         return ADAPTER.build_from(CANVAS.build(source_run, concept_path), verdict,
                                   cards_doc, concept, source_run, concept_id)
 
-    return cards_doc.get("카드") or [], _timed(ledger, "bm_adapter", adapt)
+    market_join = _timed(ledger, "bm_adapter", adapt)
+    return cards_doc.get("카드") or [], market_join, held.get("constraints") or {}

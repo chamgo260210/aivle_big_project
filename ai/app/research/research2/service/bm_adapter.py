@@ -51,6 +51,21 @@ ALLOWED_SOURCE_LABELS = ("concept_snapshot", "market_size", "growth_rate",
                          "competitor_analysis", "price_analysis",
                          "demand_evidence", "execution_constraints")
 
+#: 캔버스 «계획 5칸»의 재료가 실리는 자리 — 컨셉의 `_bm_plan` → `concept_snapshot`.
+#:
+#: 앞 넷은 `ConceptSnapshot` 의 **명명 필드**이고, 뒤 넷은 `extra="allow"` 로 얹는
+#: **확장 필드**다. 확장이 정상 경로인 이유:
+#:   · `bm/prompt.py` 는 노트북에서 기계 추출한 담당자 계약이라 우리가 못 고친다.
+#:   · 그런데 그 프롬프트는 `concept_snapshot` 의 **필드명을 열거하지 않는다** —
+#:     「concept_snapshot 또는 execution_constraints에 명시된 활동만 정리한다」뿐이다.
+#:   · `bm/analyze.py` 가 `ResolvedBMInput` 을 통째로 dump 하고 거기 `market_join_data`
+#:     가 들어 있어, 확장 필드는 그대로 모델에 도달한다.
+#: 그래서 계약 사본(`bm/contracts.py`)을 건드리지 않고 계획 칸을 채울 수 있다.
+#: ⚠ 표를 두 군데 두지 않는다. 키를 늘릴 일이 생기면 **여기만** 고친다.
+PLAN_FIELDS = ("revenue_model", "channel", "differentiation",
+               "key_activities", "key_resources", "key_partners",
+               "customer_relationship")
+
 
 # ══════════════════════════════════════════════════════════════
 # 계약의 사본 — **노트북 셀 6 을 그대로 옮긴 것**. 값을 바꾸지 않는다.
@@ -176,6 +191,93 @@ def build(run: str, concept: str, concept_id: str) -> MarketJoinData:
                       run, concept_id)
 
 
+#: 컨셉 생성 산출물(`ConceptCandidateResult`) → 계획 칸 재료. 정본 표는
+#: `docs/architecture/AS_BUILT_ARCHITECTURE.md` 에 있고 **여기가 그 표의 구현**이다.
+#: 값이 여럿인 칸은 이어 붙이지 않고 **목록으로** 넘긴다 — 한 문장으로 뭉치면 모델이
+#: 그것을 한 항목으로 읽는다.
+_CONCEPT_TO_PLAN = {
+    "revenue_model": ("revenueModel",),
+    "channel": ("channels",),
+    "differentiation": ("differentiators",),
+    "key_activities": ("operatingModel", "transactionFlow"),
+    "key_resources": ("platformRole", "featureSet"),
+    "key_partners": ("partnerModel", "partnerRequirements"),
+    # ⚠ `customer_relationship` 은 **의도적으로 비운다.** 컨셉 스키마에 대응 필드가 없고,
+    #   `solutionMechanism` 에서 유추하면 `bm/prompt.py` §5(「입력에 명시된 것만」)를
+    #   어긴다. 필드 신설이 정답이고 그건 별건이다 — 그때까지 이 칸은 정직하게 빈다.
+}
+
+
+#: 사용자가 BM 앞 화면에서 채운 칸. **컨셉 계약이 주지 않는 것들**이다 —
+#: 입구계약서 §1 의 선택 필드에 활동·자원·파트너·고객 관계가 없다.
+USER_PLAN_KEY = "_user_bm_plan"
+
+
+def plan_material_of(con: dict) -> dict:
+    """계획 5칸의 재료. **사용자 입력 > 견본 `_bm_plan` > 컨셉 파생** 순이다.
+
+    견본 컨셉 파일은 `_bm_plan` 을 손으로 들고 있지만 그것은 **계약 밖의 스텁**이고,
+    컨셉 생성 담당자에게 요구하는 값이 아니다. 그래서 제품에서는 이 넷을 화면이 받는다.
+
+    ⚠ **사용자가 이긴다.** 예전에는 `_bm_plan` 이 최우선이라, 견본 컨셉에서 사용자가 같은
+      칸을 채워도 **조용히 무시**됐다. 사람이 방금 쓴 것이 파일의 스텁에 지는 것은
+      「입력을 받았다」는 화면의 약속을 깨는 일이다.
+
+    ⚠ **지어내지 않는다.** 원 필드가 없으면 그 칸은 비운 채로 둔다 — 빈 칸은 결함이
+      아니라 「입력에 없다」는 사실이고, 그 사실이 화면에 그대로 서야 한다.
+    """
+    plan = dict(con.get("_bm_plan") or {})
+    for key, value in (con.get(USER_PLAN_KEY) or {}).items():
+        if value:
+            plan[key] = value
+    for key, sources in _CONCEPT_TO_PLAN.items():
+        if plan.get(key):
+            continue                                  # 이미 들고 있으면 그대로 둔다
+        merged = []
+        for name in sources:
+            value = con.get(name)
+            if isinstance(value, (list, tuple)):
+                merged.extend(str(x).strip() for x in value if str(x).strip())
+            elif isinstance(value, str) and value.strip():
+                merged.append(value.strip())
+        if merged:
+            # 단일 문자열 칸은 목록이 아니라 문장 하나여야 한다(계약의 타입이 그렇다).
+            plan[key] = merged[0] if key in ("revenue_model",) else merged
+    return plan
+
+
+def _snapshot(con: dict) -> ConceptSnapshot:
+    """컨셉 → `concept_snapshot`. **계획 5칸이 여기서 재료를 받는다.**
+
+    ⚠ `differentiation` 을 `con["hypotheses"]` 에서 가져오지 않는다. 그 필드는 절대 규칙 6
+      때문에 **비어 있어야 하고**(`Concept.research_view()` 가 수집 프롬프트로 그대로
+      넘긴다), 실제로 비어 있다. 거기서 읽으면 차별점이 **항상 `[]`** 다 — 조용히.
+      실내용은 컨셉의 `_bm_plan` 에 있고, `_` 키라 수집에는 넘어가지 않는다.
+    """
+    plan = plan_material_of(con)
+    fine = con.get("_다듬기5") or {}
+    extra = {k: plan[k] for k in PLAN_FIELDS[3:] if plan.get(k)}
+    return ConceptSnapshot(
+        concept_name=con.get("name"), target_customer=con.get("target"),
+        problem=con.get("problem"), solution=con.get("solution"),
+        # 예전엔 solution 을 그대로 복사했다 — 같은 문장이 두 칸에 있으면 둘 다 신호가 없다.
+        core_value=fine.get("3_핵심_가치") or con.get("solution"),
+        differentiation=[str(x) for x in (plan.get("differentiation") or [])][:6],
+        revenue_model=plan.get("revenue_model"),
+        channel=plan.get("channel"),
+        **extra)
+
+
+def execution_constraints_of(con: dict) -> dict:
+    """컨셉의 `constraint` → BM 입력의 `execution_constraints`. **비용 구조 칸의 유일한 원천.**
+
+    없으면 `{}` 다 — 지어내지 않는다. 그때 모델은 프롬프트 §8 대로 `content=[]` 를 낸다.
+    ⚠ 값은 정수로 유지한다(CLAUDE.md §5-2: task input 에 부동소수점 금지).
+    """
+    raw = con.get("constraint")
+    return dict(raw) if isinstance(raw, dict) else {}
+
+
 def build_from(cv: dict, vd: dict, cd: dict, con: dict,
                run: str, concept_id: str) -> MarketJoinData:
     """**서브프로세스 0 · 파일 읽기 0.** 이미 만들어진 재료만 받아 조립한다.
@@ -227,12 +329,7 @@ def build_from(cv: dict, vd: dict, cd: dict, con: dict,
 
     return MarketJoinData(
         concept_id=concept_id,
-        concept_snapshot=ConceptSnapshot(
-            concept_name=con.get("name"), target_customer=con.get("target"),
-            problem=con.get("problem"), solution=con.get("solution"),
-            core_value=con.get("solution"),
-            differentiation=[str(h) for h in (con.get("hypotheses") or [])][:6],
-            revenue_model=None, channel=None),
+        concept_snapshot=_snapshot(con),
         market_size=MarketSizeData(tam=tam.get("값"),
                                    sam=sam.get("값") if isinstance(sam, dict) else None,
                                    som=None, unit="KRW"),
