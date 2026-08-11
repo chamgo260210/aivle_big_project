@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useContext, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { getUserErrorMessage } from '../../../shared/api/apiError.js';
 import useFinance from '../hooks/useFinance.js';
@@ -20,6 +20,8 @@ export default function FinancePage() {
   return <FinanceWorkspace key={`${finance.preparation.preparationId}:${finance.preparation.revision}`} projectId={projectId} finance={finance} />;
 }
 
+// Retained for future demo-mode routing; production FinancePage does not render it.
+// eslint-disable-next-line no-unused-vars
 function FinanceDemo({ projectId, finance }) {
   const analysis = finance.analysis;
   return <section className="finance-state"><h1>재무 분석 테스트</h1>
@@ -115,8 +117,10 @@ function formatCompact(value) {
 
 function FinanceWorkspace({ projectId, finance }) {
   const preparation = finance.preparation;
-  const fields = preparation.financialFields ?? {};
-  const [draft, setDraft] = useState(() => createFinancialDraft(fields));
+  const fields = useMemo(() => preparation.financialFields ?? {}, [preparation.financialFields]);
+  const [draft, setDraft] = useState(() => applyAiProposals(
+    createFinancialDraft(fields), fields, preparation.assistance,
+  ));
   const locked = Boolean(preparation.inputSnapshotId);
   const missing = useMemo(() => new Set(preparation.missingRequiredInputs ?? []), [preparation.missingRequiredInputs]);
   const safe = async (action) => { try { await action(); } catch { /* hook이 사용자용 오류 상태를 제공한다. */ } };
@@ -124,9 +128,6 @@ function FinanceWorkspace({ projectId, finance }) {
   const references = preparation.upstreamReferences ?? {};
   const editedValues = () => financialValuesFromDraft(draft, fields);
   const liveCac = calculateDraftCac(draft);
-  useEffect(() => {
-    setDraft((current) => applyAiProposals(current, fields, preparation.assistance));
-  }, [fields, preparation.assistance]);
   const revenuePriceFields = draft.revenueModel === 'ONE_TIME' ? REVENUE_MONEY_FIELDS.filter(([key]) => key === 'unitPrice')
     : draft.revenueModel === 'SUBSCRIPTION' ? REVENUE_MONEY_FIELDS.filter(([key]) => key === 'monthlySubscriptionPrice')
       : REVENUE_MONEY_FIELDS;
@@ -255,6 +256,7 @@ function estimateLabel(item) {
 }
 
 function EstimateControls({ fieldKey, item, field, locked, busy, generate, decide, editedValue, safe }) {
+  void editedValue;
   if (locked || field?.readOnly || item?.estimateStatus === 'ACCEPTED') return null;
   const pending = ['QUEUED', 'RUNNING'].includes(item?.estimateStatus);
   const proposed = item?.proposalValue != null && item?.estimateStatus === 'SUCCEEDED';
@@ -271,6 +273,7 @@ function FinancialSection({ eyebrow, title, fields, draft, change, sourceFields,
       finance={finance} safe={safe} editedValue={editedValues()[key]} />)}</div></section>;
 }
 function canShowInlineEstimate(field, assistance, draftValue) {
+  void draftValue;
   if (field?.readOnly || assistance?.estimateStatus === 'ACCEPTED') return false;
   if (assistance?.estimateStatus === 'SUCCEEDED') return true;
   return !['QUEUED', 'RUNNING'].includes(assistance?.estimateStatus);
