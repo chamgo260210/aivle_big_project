@@ -1,14 +1,15 @@
 import { describe, expect, it } from 'vitest';
-
-import {
-  MODULE_STATUS,
-  PROJECT_MODULES,
-  getProjectModuleByPath,
-  getProjectModules,
-  normalizeProjectModuleStatuses,
-} from './projectModuleModel.js';
+import { MODULE_STATUS, PROJECT_MODULES, getProjectModuleByPath, getProjectModules, normalizeProjectModuleStatuses } from './projectModuleModel.js';
 
 describe('project module model', () => {
+  it('shows Concept Portfolio as one business-proposal journey step', () => {
+    expect(PROJECT_MODULES.map((item) => item.shortLabel)).toEqual([
+      '개요', '아이디어', '사업안', '시장 분석', 'BM 분석', '기술·운영', '재무', '트윈 조사', '마케팅 콘텐츠', '설정',
+    ]);
+    expect(getProjectModules('41').filter((item) => item.id === 'concepts')).toHaveLength(1);
+    expect(getProjectModuleByPath('41', '/app/projects/41/concepts/compare').id).toBe('concepts');
+  });
+
   it('provides all independent module statuses and canonical routes without project.stage', () => {
     expect(Object.keys(MODULE_STATUS)).toEqual([
       'NOT_READY', 'READY', 'QUEUED', 'RUNNING', 'NEEDS_INPUT',
@@ -19,38 +20,24 @@ describe('project module model', () => {
       '/app/projects/project%20%2F%201/overview',
       '/app/projects/project%20%2F%201/idea',
       '/app/projects/project%20%2F%201/concepts',
-      '/app/projects/project%20%2F%201/concepts/compare',
       '/app/projects/project%20%2F%201/market',
       '/app/projects/project%20%2F%201/business-model',
       '/app/projects/project%20%2F%201/tech-ops',
       '/app/projects/project%20%2F%201/finance',
+      '/app/projects/project%20%2F%201/panel-survey',
       '/app/projects/project%20%2F%201/marketing',
       '/app/projects/project%20%2F%201/settings',
     ]);
   });
 
-  it('resolves the current module from the route and falls back to overview', () => {
-    expect(getProjectModuleByPath('7', '/app/projects/7/concepts/compare').id).toBe('conceptCompare');
-    expect(getProjectModuleByPath('7', '/app/projects/7/unknown').id).toBe('overview');
+  it('maps the V2 canonical module status and keeps legacy aliases transitional only', () => {
+    const statuses = normalizeProjectModuleStatuses([{ module: 'CONCEPT_PORTFOLIO', status: 'RUNNING', activeTaskRunId: 'task' }]);
+    expect(statuses.concepts.status).toBe('RUNNING');
+    expect(statuses.concepts.activeTaskRunId).toBe('task');
   });
 
-  it('maps the v3 module response without trusting unknown module or status values', () => {
-    const statuses = normalizeProjectModuleStatuses([
-      { module: 'IDEA', status: 'READY', requiredInputs: [], activeRunId: null },
-      { module: 'MARKET_ANALYSIS', status: 'NOT_CONNECTED', requiredInputs: ['selectedConceptSnapshotId'] },
-      { module: 'BUSINESS_MODEL', status: 'NOT_CONNECTED', requiredInputs: ['businessModelModuleConnection'] },
-      { module: 'TECH_OPS', status: 'NEEDS_INPUT', requiredInputs: ['techOpsRequiredFacts'] },
-      { module: 'FINANCE', status: 'READY', requiredInputs: [] },
-      { module: 'UNKNOWN', status: 'READY' },
-      { module: 'MARKETING', status: 'UNKNOWN' },
-    ]);
-
-    expect(statuses.idea.status).toBe('READY');
-    expect(statuses.market.requiredInputs).toEqual(['selectedConceptSnapshotId']);
-    expect(statuses.businessModel.requiredInputs).toEqual(['businessModelModuleConnection']);
-    expect(statuses.techOps.status).toBe('NEEDS_INPUT');
-    expect(statuses.finance.status).toBe('READY');
-    expect(statuses.UNKNOWN).toBeUndefined();
-    expect(statuses.marketing).toBeUndefined();
+  it('keeps the panel twin survey on its own slot', () => {
+    const statuses = normalizeProjectModuleStatuses([{ module: 'PANEL_SURVEY', status: 'COMPLETED' }]);
+    expect(statuses.panelSurvey.status).toBe('COMPLETED');
   });
 });

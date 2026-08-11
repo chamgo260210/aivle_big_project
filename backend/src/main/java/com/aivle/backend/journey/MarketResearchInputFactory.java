@@ -75,6 +75,24 @@ public class MarketResearchInputFactory {
      * 원장은 이름표로 정해진다.
      */
     public String bm(String conceptId, String asOf) {
+        return bm(conceptId, asOf, null, null);
+    }
+
+    /**
+     * 2단계 — 이름표 + <b>사용자가 채운 실행 계획</b>.
+     *
+     * <p>계획 4칸(활동·자원·파트너·고객 관계)은 <b>컨셉 계약이 주지 않는 값</b>이다
+     * (입구계약서 §1 의 선택 필드에 없다). 그래서 화면이 따로 받아 여기로 나른다.
+     *
+     * <p>⚠ 계획은 <b>{@code textContents} 가 아니라 taskInput 최상위</b>로 간다. 컨셉
+     * 스냅샷을 문자열로 감싼 것은 그 안에 float 31개가 있어서였는데, 계획은 짧은 문자열과
+     * <b>정수</b>뿐이라 감쌀 이유가 없다. 최상위로 두면 AI 쪽이 파싱 없이 읽는다.
+     *
+     * <p>⚠ 비용은 <b>정수만</b>이다. 「5천만원 정도」 같은 서술을 여기로 보내면 안 된다 —
+     * 숫자로 바꾸는 것은 사용자가 화면에서 할 일이고, 우리가 추측하면 사용자가 쓰지 않은
+     * 정밀도를 지어내는 것이다.
+     */
+    public String bm(String conceptId, String asOf, JsonNode planMaterial, JsonNode constraints) {
         ObjectNode root = mapper.createObjectNode();
         // textContents 는 모드와 무관하게 필수다. BM 은 컨셉 식별자만 있으면 되지만
         // **빈 배열은 통과하지 못한다**(1~64개).
@@ -83,7 +101,33 @@ public class MarketResearchInputFactory {
         root.put("asOf", asOf);
         root.put("mode", "BM");
         root.put("llmBudget", 1);
+        // 비어 있으면 칸 자체를 만들지 않는다 — 빈 객체를 실으면 AI 쪽에서 「사용자가
+        // 안 썼다」와 「사용자가 비웠다」가 같아진다.
+        if (planMaterial != null && planMaterial.isObject() && !planMaterial.isEmpty()) {
+            root.set("planMaterial", planMaterial);
+        }
+        if (constraints != null && constraints.isObject() && !constraints.isEmpty()) {
+            assertIntegers(constraints);
+            root.set("executionConstraints", constraints);
+        }
         return finish(root);
+    }
+
+    /**
+     * 비용 세 칸은 <b>정수여야 한다.</b>
+     *
+     * <p>{@link #assertNoFloatingPoint} 가 어차피 막지만 메시지가 「taskInput 에 부동소수점이
+     * 있다」라 사용자에게 쓸모가 없다. 여기서 먼저 잡아 <b>어느 칸인지</b>를 말한다.
+     */
+    private static void assertIntegers(JsonNode constraints) {
+        for (String name : constraints.propertyNames()) {
+            JsonNode value = constraints.get(name);
+            if (value == null || value.isNull()) continue;
+            if (!value.isIntegralNumber()) {
+                throw new IllegalArgumentException(
+                    "실행 제약 " + name + " 은 정수여야 한다 — 받은 값: " + value.asText());
+            }
+        }
     }
 
     private String finish(ObjectNode root) {

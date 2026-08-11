@@ -107,4 +107,48 @@ class MarketResearchInputFactoryTests {
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("input/a/b[0]/침투율");
     }
+
+    // ── 사용자가 채운 실행 계획 ────────────────────────────────────────
+    @Test
+    @DisplayName("실행 계획을 실어도 해셔를 통과한다 — 정수와 짧은 문자열뿐이다")
+    void bmWithPlanHashes() {
+        JsonNode plan = MAPPER.readTree(
+            "{\"key_partners\":[\"결제 대행사\"],\"customer_relationship\":\"자동 알림\"}");
+        JsonNode constraints = MAPPER.readTree(
+            "{\"budget_krw\":5000000,\"months\":10,\"team\":2}");
+
+        String input = factory.bm("beauty-noshow", "2026-08-09", plan, constraints);
+        assertThatCode(() -> hasher.hash(TaskType.MARKET_RESEARCH, "1.0", "ko-KR", input))
+            .doesNotThrowAnyException();
+
+        JsonNode root = MAPPER.readTree(input);
+        assertThat(root.get("planMaterial").get("key_partners")).isNotEmpty();
+        assertThat(root.get("executionConstraints").get("budget_krw").asInt()).isEqualTo(5000000);
+    }
+
+    @Test
+    @DisplayName("빈 계획은 칸 자체를 만들지 않는다 — 「안 썼다」와 「비웠다」를 섞지 않는다")
+    void emptyPlanIsNotCarried() {
+        JsonNode empty = MAPPER.createObjectNode();
+        JsonNode root = MAPPER.readTree(factory.bm("c", "2026-08-09", empty, empty));
+        assertThat(root.get("planMaterial")).isNull();
+        assertThat(root.get("executionConstraints")).isNull();
+    }
+
+    @Test
+    @DisplayName("⭐ 소수 예산은 어느 칸인지 말하며 거부한다 — 500 이 아니라 400 이 되도록")
+    void fractionalConstraintNamesTheField() {
+        JsonNode constraints = MAPPER.readTree("{\"budget_krw\":5000000.5}");
+        assertThatThrownBy(() -> factory.bm("c", "2026-08-09", null, constraints))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("budget_krw")
+            .hasMessageContaining("정수");
+    }
+
+    @Test
+    @DisplayName("계획이 없으면 기존 BM 입력과 글자 하나까지 같다 — 기존 경로 무변경")
+    void planlessBmIsUnchanged() {
+        assertThat(factory.bm("c", "2026-08-09", null, null))
+            .isEqualTo(factory.bm("c", "2026-08-09"));
+    }
 }

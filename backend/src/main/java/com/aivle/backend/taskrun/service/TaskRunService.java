@@ -141,6 +141,22 @@ public class TaskRunService {
         attempt.start(claimToken, LocalDateTime.now(clock));
     }
 
+    @Transactional
+    public void assertActiveClaim(String runId, String attemptId, String claimToken) {
+        TaskRun run = runs.findLocked(runId).orElseThrow(this::notFound);
+        TaskAttempt attempt = attempts.findByIdAndTaskRunId(attemptId, runId).orElseThrow(this::notFound);
+        LocalDateTime now = LocalDateTime.now(clock);
+        if (run.getState() != TaskRunState.RUNNING || run.getFinalResultId() != null
+                || !attemptId.equals(run.getCurrentAttemptId())) {
+            throw new TaskRunFailure("AI_RESULT_INVALID", "LATE_OR_DUPLICATE_RESULT",
+                HttpStatus.CONFLICT, false);
+        }
+        try { attempt.assertCompletable(claimToken, now); }
+        catch (IllegalStateException | IllegalArgumentException invalid) {
+            throw new TaskRunFailure("AI_RESULT_INVALID", "STALE_CLAIM", HttpStatus.CONFLICT, false);
+        }
+    }
+
     @Transactional(noRollbackFor = TaskRunFailure.class)
     public TaskResult adopt(String runId, String attemptId, String claimToken, String payload, String hash, String schemaVersion) {
         TaskRun run = runs.findLocked(runId).orElseThrow(this::notFound);
@@ -248,7 +264,10 @@ public class TaskRunService {
         if (java.util.Set.of("INSUFFICIENT_DISTINCT_CONCEPTS", "LOCKED_CONSTRAINT_INVALID",
             "ORIGIN_INVALID", "LEGAL_REJECTED", "LEGAL_EXTERNAL_FACT_UNRESOLVED",
             "LEGAL_REDESIGN_EXHAUSTED", "REPLACEMENT_EXHAUSTED", "DISTINCTNESS_EXHAUSTED",
-            "SCHEMA_REPAIR_EXHAUSTED", "INTERNAL_STATE_FAILURE", "REQUEST_CONTRACT_INVALID").contains(reason)) return reason;
+            "SCHEMA_REPAIR_EXHAUSTED", "INTERNAL_STATE_FAILURE", "REQUEST_CONTRACT_INVALID",
+            // 트윈 조사의 두 이유는 「AI 응답을 해석 못 했다」가 아니다. 접으면 화면이
+            // 「성적이 없는 유형이라 거절」과 「뱅크가 안 붙었다」를 말할 수 없다.
+            "TWIN_TASK_TYPE_NOT_SERVICEABLE", "TWIN_BANK_UNAVAILABLE").contains(reason)) return reason;
         return switch (internal) {
         case "PAYLOAD_TOO_LARGE" -> "PAYLOAD_TOO_LARGE";
         case "DEADLINE_EXCEEDED" -> "TASK_TIMEOUT";

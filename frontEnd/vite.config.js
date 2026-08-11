@@ -4,6 +4,18 @@ import react from '@vitejs/plugin-react'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
+  // `npm run dev` 로 :5173 을 띄우면 **저장하는 즉시** 화면이 바뀐다(HMR).
+  // 컨테이너(:3000)는 nginx 가 빌드 산출물을 주는 곳이라 고칠 때마다 재빌드가 필요하다 —
+  // 화면을 여러 번 다듬는 동안에는 :5173 을 쓴다.
+  //
+  // ⚠ 프록시 대상이 backend 가 아니라 **:3000(nginx)** 이다. compose 가 백엔드 포트를
+  //    호스트에 열지 않아서(`docker compose ps` 로 확인) localhost:8080 은 닿지 않는다.
+  //    nginx 가 이미 /api 를 backend 로 넘기므로 그 길을 그대로 빌려 쓴다.
+  server: {
+    proxy: {
+      '/api': { target: 'http://localhost:3000', changeOrigin: true },
+    },
+  },
   test: {
     environment: 'jsdom',
     setupFiles: './src/test/setupTests.js',

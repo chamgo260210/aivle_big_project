@@ -20,6 +20,9 @@ router = APIRouter(prefix="/internal/v1/ai", tags=["Internal AI Executions"])
 logger = logging.getLogger(__name__)
 TASK_TYPES = {
     "IDEA_BRIEF_DERIVATION",
+    "CONCEPT_PORTFOLIO_V2_RUN",
+    "CONCEPT_PORTFOLIO_V2_CONTINUE",
+    "CONCEPT_PORTFOLIO_V2_SELECTION_ACTION",
     "CONCEPT_CANDIDATE", "CONCEPT_DISTINCTNESS_JUDGE",
     "CONCEPT_LEGAL_REVIEW",
     "CONCEPT_REDESIGN",
@@ -29,6 +32,8 @@ TASK_TYPES = {
     "FINANCE_ESTIMATE",
     "MARKETING_CONTENT_GENERATION",
     "MARKET_RESEARCH",
+    "TWIN_SURVEY",
+    "TWIN_STIMULUS_DRAFT",
 }
 
 
@@ -156,6 +161,39 @@ async def execute(request: Request, body: InternalExecutionRequestV1):
                                   body.taskRunId, body.taskAttemptId)
         text = "\n".join(chunk["text"] for content in body.input["textContents"] for chunk in content["chunks"])
         source_keys = [content["contentKey"] for content in body.input["textContents"]]
+    elif body.taskType == "CONCEPT_PORTFOLIO_V2_RUN":
+        from app.tasks.concept_portfolio_v2.models import ConceptPortfolioProductionInput
+        try:
+            portfolio_input = ConceptPortfolioProductionInput.model_validate(body.input)
+        except ValidationError as failure:
+            return internal_error(correlation, "INVALID_REQUEST", "FIELD_CONSTRAINT_VIOLATION",
+                                  400, False, body.taskRunId, body.taskAttemptId,
+                                  safe_validation_fields(failure))
+        text = json.dumps(portfolio_input.model_dump(mode="json"), ensure_ascii=False,
+                          sort_keys=True, separators=(",", ":"))
+        source_keys = ["concept-portfolio-v2-input"]
+    elif body.taskType == "CONCEPT_PORTFOLIO_V2_CONTINUE":
+        from app.tasks.concept_portfolio_v2 import ConceptPortfolioContinuationInput
+        try:
+            continuation_input = ConceptPortfolioContinuationInput.model_validate(body.input)
+        except ValidationError as failure:
+            return internal_error(correlation, "INVALID_REQUEST", "FIELD_CONSTRAINT_VIOLATION",
+                                  400, False, body.taskRunId, body.taskAttemptId,
+                                  safe_validation_fields(failure))
+        text = json.dumps(continuation_input.model_dump(mode="json"), ensure_ascii=False,
+                          sort_keys=True, separators=(",", ":"))
+        source_keys = ["concept-portfolio-v2-continuation-input"]
+    elif body.taskType == "CONCEPT_PORTFOLIO_V2_SELECTION_ACTION":
+        from app.tasks.concept_portfolio_v2 import ConceptPortfolioSelectionActionInput
+        try:
+            selection_input = ConceptPortfolioSelectionActionInput.model_validate(body.input)
+        except ValidationError as failure:
+            return internal_error(correlation, "INVALID_REQUEST", "FIELD_CONSTRAINT_VIOLATION",
+                                  400, False, body.taskRunId, body.taskAttemptId,
+                                  safe_validation_fields(failure))
+        text = json.dumps(selection_input.model_dump(mode="json"), ensure_ascii=False,
+                          sort_keys=True, separators=(",", ":"))
+        source_keys = ["concept-portfolio-v2-selection-action-input"]
     elif body.taskType in {"CONCEPT_CANDIDATE", "CONCEPT_DISTINCTNESS_JUDGE", "CONCEPT_LEGAL_REVIEW", "CONCEPT_REDESIGN", "CONCEPT_HYPOTHESIS_ALTERNATIVE", "CONCEPT_DELTA_LEGAL_REVIEW"}:
         text = json.dumps(body.input, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
         source_keys = ["concept-factory-input"]
@@ -191,6 +229,79 @@ async def execute(request: Request, body: InternalExecutionRequestV1):
             from app.research.pipeline import run_market_research
             budget = (deadline - datetime.now(timezone.utc)).total_seconds()
             result = await run_market_research(body.input, body.taskAttemptId, budget)
+        elif body.taskType == "TWIN_SURVEY":
+            # 트윈 조사도 프롬프트 1회가 아니라 수백~수천 셀이다. 남은 deadline 을 예산으로
+            # 넘기고, 예산이 마르면 러너가 거기까지 모은 셀로 집계한다(부분 결과가 정상이다).
+            from app.twin import execute_twin_survey
+            budget = (deadline - datetime.now(timezone.utc)).total_seconds()
+            result = await execute_twin_survey(body.input, budget)
+        elif body.taskType == "TWIN_STIMULUS_DRAFT":
+            # 조사 자체와 달리 프롬프트 1회다(동기 인라인). 여기서 뽑은 쌍은 화면이 고르고
+            # 다듬은 뒤에야 TWIN_SURVEY 로 간다 — 이 태스크는 카드 뱅크를 건드리지 않는다.
+            from app.twin.stimulus_draft import execute_twin_stimulus_draft
+            result = await execute_twin_stimulus_draft(body.input)
+        elif body.taskType == "CONCEPT_PORTFOLIO_V2_RUN":
+            from app.tasks.concept_portfolio_v2 import (
+                ConceptPortfolioProductionContractError,
+                execute_concept_portfolio_v2,
+            )
+            from app.tasks.concept_portfolio_v2.progress_sender import (
+                progress_sender_from_environment,
+            )
+            try:
+                async with progress_sender_from_environment(
+                    task_run_id=body.taskRunId,
+                    task_attempt_id=body.taskAttemptId,
+                    correlation_id=correlation,
+                ) as progress:
+                    result = await execute_concept_portfolio_v2(
+                        body.input,
+                        event_sink=progress.emit if progress.enabled else None,
+                    )
+            except ConceptPortfolioProductionContractError as failure:
+                logger.warning(
+                    "CPV2 production result contract invalid taskRunId=%s taskAttemptId=%s correlationId=%s",
+                    body.taskRunId,
+                    body.taskAttemptId,
+                    correlation,
+                    exc_info=True,
+                )
+                return internal_error(
+                    correlation, "RESULT_SCHEMA_INVALID", "AI_RESULT_INVALID", 502, False,
+                    body.taskRunId, body.taskAttemptId, failure.validation_fields,
+                )
+        elif body.taskType == "CONCEPT_PORTFOLIO_V2_CONTINUE":
+            from app.tasks.concept_portfolio_v2 import (
+                ConceptPortfolioProductionContractError,
+                execute_concept_portfolio_v2_continuation,
+            )
+            try:
+                result = await execute_concept_portfolio_v2_continuation(body.input)
+            except ConceptPortfolioProductionContractError as failure:
+                logger.warning(
+                    "CPV2 continuation result contract invalid taskRunId=%s taskAttemptId=%s correlationId=%s",
+                    body.taskRunId, body.taskAttemptId, correlation, exc_info=True,
+                )
+                return internal_error(
+                    correlation, "RESULT_SCHEMA_INVALID", "AI_RESULT_INVALID", 502, False,
+                    body.taskRunId, body.taskAttemptId, failure.validation_fields,
+                )
+        elif body.taskType == "CONCEPT_PORTFOLIO_V2_SELECTION_ACTION":
+            from app.tasks.concept_portfolio_v2 import (
+                ConceptPortfolioProductionContractError,
+                execute_concept_portfolio_v2_selection_action,
+            )
+            try:
+                result = await execute_concept_portfolio_v2_selection_action(body.input)
+            except ConceptPortfolioProductionContractError as failure:
+                logger.warning(
+                    "CPV2 selection action result contract invalid taskRunId=%s taskAttemptId=%s correlationId=%s",
+                    body.taskRunId, body.taskAttemptId, correlation, exc_info=True,
+                )
+                return internal_error(
+                    correlation, "RESULT_SCHEMA_INVALID", "AI_RESULT_INVALID", 502, False,
+                    body.taskRunId, body.taskAttemptId, failure.validation_fields,
+                )
         elif body.taskType == "CONCEPT_CANDIDATE":
             from app.tasks.concept_candidate import execute_concept_candidate
             result = await execute_concept_candidate(body.input)

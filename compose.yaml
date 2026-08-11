@@ -64,6 +64,7 @@ services:
       AI_MODEL_CONCEPT_VALIDATION: ${AI_MODEL_CONCEPT_VALIDATION:-}
       AI_BASE_URL: ${AI_BASE_URL:-}
       AI_INTERNAL_SERVICE_TOKEN: ${AI_INTERNAL_SERVICE_TOKEN:?AI_INTERNAL_SERVICE_TOKEN is required}
+      BACKEND_INTERNAL_BASE_URL: http://backend:8080
       AI_FIXTURE_MODE: ${AI_FIXTURE_MODE:-false}
       AI_PROVIDER_TIMEOUT_SECONDS: ${AI_PROVIDER_TIMEOUT_SECONDS:-60}
       AI_CONCEPT_GENERATION_CONCURRENCY: ${AI_CONCEPT_GENERATION_CONCURRENCY:-1}
@@ -105,6 +106,11 @@ services:
       DART_API_KEY: ${DART_API_KEY:-}
       TAVILY_API_KEY: ${TAVILY_API_KEY:-}
       BM_MODEL: ${BM_MODEL:-${AI_MODEL}}
+      # 트윈 카드 뱅크도 이미지 밖이다 — 이유는 크기가 아니라 **재배포 금지**다
+      # (KISDI 한국미디어패널조사 파생 마이크로데이터). 가림(pid 해시)만으로 부족하다:
+      # 카드 본문에 만나이·성별·지역·가구형태·소득대가 문장으로 들어 있다.
+      # 없으면 조용히 빈 표본으로 도는 대신 TWIN_BANK_UNAVAILABLE 로 시끄럽게 죽는다.
+      TWIN_BANK_DIR: /app/app/twin/bank
     volumes:
       # 씨앗 원장을 **읽기 전용**으로 붙인다. named volume 은 빈 채로 덮어써서
       # 컨테이너 안 원장이 0개였다 — `.dockerignore` 가 runs/ 를 빼기 때문이다
@@ -116,6 +122,8 @@ services:
       #   시끄럽게 터진다 — 그게 낫다.
       # 덤으로 §1 동시 세션 규칙을 지킨다: 컨테이너가 측정 원장을 덮어쓸 수 없다.
       - ./ai/app/research/research2/runs:/app/app/research/research2/runs:ro
+      # named volume 을 쓰면 빈 채로 덮어쓴다 — 원장 때와 같은 함정이다. 바인드여야 한다.
+      - ./ai/app/twin/bank:/app/app/twin/bank:ro
     depends_on:
       minio:
         condition: service_healthy

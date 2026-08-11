@@ -47,6 +47,17 @@ _EVIDENCE = {
 #: 카드가 경계를 담는 칸들. **하나라도 빠뜨리면 §4 위반**이다 — 경계는 값과 같이 옮긴다.
 _CAVEAT_KEYS = ("경계", "경계_proxy", "상한_울타리")
 
+#: 계산식 한 항(요인) 한글 키 → 계약 키. **이 표가 factors 의 allowlist 다.**
+_FACTOR = {
+    "이름": "name", "값": "value", "단위": "unit", "판정": "basis",
+    "설명": "note", "울타리": "bound", "반증": "falsifiedIf",
+    "출처_수": "sourceCount", "원출처_도메인": "sourceDomains", "경계": "caveats",
+}
+
+#: 요인의 판정 어휘. 정본은 `research2/service/verdict.py::FACTOR_BASES` 다 —
+#: 사본을 두는 대신 갈라지면 `ContractDrift` 로 터지게 한다.
+_FACTOR_BASES = ("관측", "가정", "가설")
+
 #: 「못 찾은 것」 갈래. **사용자의 다음 행동이 다르면 다른 갈래다.**
 #:   NOT_YET   더 찾으면 나올 수 있다        CONFIRMED_ABSENT  찾아도 없다 — 종착이다
 #:   ASSUMED   식을 가정으로 메웠다          SCREENED_OUT      찾았지만 규격 미달로 걸렀다
@@ -225,19 +236,58 @@ def _count_of(value: Any) -> int:
     return 1 if value else 0
 
 
+def _factors(items: Any) -> list[dict]:
+    """계산식의 항들. **번역만 한다** — 판정도 집계도 여기서 하지 않는다.
+
+    ⚠ `note` 를 자르지 않는다. 자르면 문장 한가운데가 끊긴 채 화면까지 간다 —
+    실제로 그랬다(`basis[:100]` → 「… 두발 미」).
+    """
+    out = []
+    for item in (items or []):
+        if not isinstance(item, dict):
+            raise ContractDrift(f"요인이 dict 가 아니다: {item!r}")
+        basis = item.get("판정")
+        if basis not in _FACTOR_BASES:
+            raise ContractDrift(f"요인 판정이 계약 밖이다: {basis!r}")
+        value = item.get("값")
+        row = {
+            "name": _text(item.get("이름"), "이름 미기재"),
+            "value": float(value) if isinstance(value, (int, float)) else None,
+            "unit": _text(item.get("단위"), "") or None,
+            "basis": basis,
+            "note": _text(item.get("설명"), "") or None,
+            "bound": _text(item.get("울타리"), "") or None,
+            "falsifiedIf": _text(item.get("반증"), "") or None,
+            "sourceCount": int(item.get("출처_수") or 0),
+            "sourceDomains": _strings(item.get("원출처_도메인")),
+            "caveats": _strings(item.get("경계")),
+        }
+        out.append(row)
+    return out
+
+
 def _figure(estimate: dict | None, unit: str, grade: str | None) -> dict | None:
-    """TAM·SAM·성장률 한 칸. `grade` 는 **계산 카드에서** 온다 — 여기서 매기지 않는다."""
+    """TAM·SAM·성장률 한 칸. `grade` 는 **계산 카드에서** 온다 — 여기서 매기지 않는다.
+
+    ⚠ `assumptions` 는 **`해석_경계`** 다. 항에 붙는 문장은 `factors` 가 값·근거·울타리·
+    반증까지 들고 나가므로, 같은 말을 문장으로 한 번 더 실으면 화면에 두 벌이 뜬다.
+    남는 것은 **표가 말할 수 없는 것**뿐이다(예: 「연평균이 아니다」·「과거 관측이다」).
+    요인이 없는 옛 판정 출력은 `가정` 을 그대로 쓴다 — 그때는 표가 아예 없다.
+    """
     if not isinstance(estimate, dict) or estimate.get("값") is None:
         return None
     if grade not in GRADES:
         raise ContractDrift(f"계산값 등급이 계약 밖이다: {grade!r}")
+    factors = _factors(estimate.get("요인"))
     return {
         "value": float(estimate.get("값_퍼센트") if unit == "PERCENT_PER_YEAR"
                        else estimate.get("값")),
         "unit": unit,
         "grade": grade,
         "formula": estimate.get("식") or None,
-        "assumptions": _strings(estimate.get("가정")),
+        "factors": factors,
+        "assumptions": _strings(estimate.get("해석_경계") if factors
+                                else estimate.get("가정")),
         "caveats": [],
         "evidenceIds": [f"C-{g.get('fact_id')}" for g in (estimate.get("근거") or [])
                         if isinstance(g, dict) and g.get("fact_id")],
@@ -365,21 +415,46 @@ def _price(cards: list[dict]) -> dict | None:
 # ══════════════════════════════════════════════════════════════
 # BM — 캔버스 9칸 · 판정
 # ══════════════════════════════════════════════════════════════
-def canvas_cells(items: list, evidence_items: list[dict]) -> list[dict]:
+#: 사용자가 채운 계획 키 → 그것이 채우는 캔버스 칸.
+#: 정본은 `pipeline.PLAN_KEYS` + `constraint` 이고, 여기는 **이름만** 바꾼다.
+USER_PLAN_CELL = {
+    "key_activities": "KEY_ACTIVITIES",
+    "key_resources": "KEY_RESOURCES",
+    "key_partners": "KEY_PARTNERS",
+    "customer_relationship": "CUSTOMER_RELATIONSHIPS",
+    "constraint": "COST_STRUCTURE",
+}
+
+#: 사용자가 쓴 칸에 붙는 경계. 「꽉 찬 캔버스」가 「검증된 캔버스」로 읽히지 않게 한다.
+USER_PLAN_CAVEAT = "사용자가 입력한 실행 계획이다 — 관측이 아니다."
+
+
+#: 사용자가 쓴 칸의 출처 라벨. 계약 화이트리스트 7종 안에 있어야 한다 —
+#: `user_input` 같은 새 라벨은 `analyze.validate_canvas_source_labels` 가 지우고
+#: 자바 계약이 거부한다. 둘 다 이미 「관측이 아닌 입력」 축이다.
+_USER_PLAN_LABEL = {"COST_STRUCTURE": "execution_constraints"}
+
+
+def canvas_cells(items: list, evidence_items: list[dict],
+                 user_planned: dict[str, list[str]] | None = None) -> list[dict]:
     """`BMCanvasItem` → 계약 칸. **경계는 여기서 기계가 파생한다(층 1).**
 
     실측(판 ㉜-b): BM 모델은 경계를 최종 문장에 **0/2** 로 싣는다. 그래서 모델에게 다시
     부탁하지 않는다 — 인용한 근거의 경계를 **합집합으로 끌어온다**. LLM 이 관여하지
     않으므로 소실이 구조적으로 불가능하고, 자바 `requireCaveats` 가 한 번 더 막는다.
+
+    `user_planned` 는 **사용자가 직접 채운 칸**의 이름이다. 그 칸이 시장 근거를 하나도
+    인용하지 않았다면 도장을 `PLAN` 으로 **내리고** 경계를 붙인다 — 사유는 아래.
     """
     caveats_by_id = {item["id"]: item.get("caveats") or [] for item in evidence_items}
+    planned = dict(user_planned or {})
     out = []
     for item in items:
         cited = list(item.market_evidence_ids)
         derived: list[str] = []
         for evidence_id in cited:
             derived.extend(caveats_by_id.get(evidence_id, []))
-        out.append({
+        cell = {
             "canvasCell": item.canvas_cell.value,
             "status": item.status.value,
             "content": _strings(item.content),
@@ -388,9 +463,46 @@ def canvas_cells(items: list, evidence_items: list[dict]) -> list[dict]:
             "marketEvidenceIds": cited,
             "missingEvidence": _strings(item.missing_evidence),
             "caveats": list(dict.fromkeys(derived)),
-        })
+        }
+        _stamp_user_plan(cell, planned)
+        out.append(cell)
     assert_caveats_reached(out, evidence_items)
     return out
+
+
+def _stamp_user_plan(cell: dict, planned: dict[str, list[str]]) -> None:
+    """사용자가 쓴 칸을 **계획으로 고정하고, 쓴 내용을 잃지 않게 한다.**
+
+    두 가지를 한다.
+
+    <b>① 도장을 내린다.</b> 프롬프트 §9 만 파트너 칸에 「입력 또는 시장분석에 **실제 파트너
+    정보**가 있을 때만 작성」이라 적고 PLAN 을 지시하지 않는다. 그래서 사용자가 파트너를
+    적으면 모델이 「입력 근거로 확인됨」(VERIFIED)으로 올릴 수 있다. 사용자가 쓴 것은
+    **필요한 유형이지 계약된 상대가 아니다**(견본의 `_key_partners_주의`).
+
+    <b>② 비었으면 사용자가 쓴 그대로 채운다.</b> 실측(실스택 스모크): 입력을 다 받고도
+    모델이 `CUSTOMER_RELATIONSHIPS` 와 `COST_STRUCTURE` 를 `content=[]` 로 냈다 — payload
+    에는 글자 그대로 있었다. 계획 칸에서 모델이 할 일은 **창업자가 쓴 계획을 다시 쓰는
+    것이 아니다.** 사용자의 문장을 LLM 왕복에 맡기면 조용히 사라진다.
+
+    ⚠ 모델이 쓴 내용이 있으면 **덮지 않는다.** 정리해 놓은 것을 뭉개지 않는다.
+    ⚠ 근거를 인용한 칸은 아예 건드리지 않는다 — 시장 근거가 붙었다면 판정은 모델과
+      근거의 몫이다.
+    ⚠ **올리지 않는다.** VERIFIED→PLAN 은 안전한 방향이고 그 반대는 하지 않는다.
+    """
+    name = cell["canvasCell"]
+    if name not in planned or cell["marketEvidenceIds"]:
+        return
+    cell["status"] = "PLAN"
+    if not cell["content"]:
+        cell["content"] = list(planned[name])
+        # content 가 있으면 출처 라벨도 있어야 한다(자바 계약 :242). 새 라벨을 만들지
+        # 않고 화이트리스트 7종 중 뜻이 맞는 것을 쓴다.
+        if not cell["sourceLabels"]:
+            cell["sourceLabels"] = [_USER_PLAN_LABEL.get(name, "concept_snapshot")]
+    if USER_PLAN_CAVEAT not in cell["caveats"]:
+        # 경계는 상위집합이면 된다(자바 `requireCaveats` 가 `containsAll`) — 더해도 안 깨진다.
+        cell["caveats"].append(USER_PLAN_CAVEAT)
 
 
 def assert_caveats_reached(cells: list[dict], evidence_items: list[dict]) -> None:

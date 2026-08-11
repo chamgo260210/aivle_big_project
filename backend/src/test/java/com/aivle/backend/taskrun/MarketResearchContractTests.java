@@ -136,6 +136,51 @@ class MarketResearchContractTests {
     }
 
     @Test
+    @DisplayName("요인 판정 어휘 밖의 값은 거부한다 — 관측·가정·가설 셋뿐이다")
+    void unknownFactorBasisRejected() throws Exception {
+        ObjectNode node = payload("full.json");
+        ArrayNode factors = (ArrayNode) node.get("market").get("tam").get("factors");
+        assertThat(factors).isNotEmpty();                   // 픽스처 전제 확인
+        ((ObjectNode) factors.get(0)).put("basis", "ASSUMED");
+        assertThatThrownBy(() -> MarketResearchContract.validate(node))
+            .isInstanceOf(ExecutionFailure.class);
+    }
+
+    @Test
+    @DisplayName("요인에 계약 밖 칸이 있으면 거부한다 — 표가 조용히 넓어지지 않게")
+    void unknownFactorFieldRejected() throws Exception {
+        ObjectNode node = payload("full.json");
+        ObjectNode factor = (ObjectNode) node.get("market").get("tam").get("factors").get(0);
+        factor.put("range", "[0.15, 0.25]");
+        assertThatThrownBy(() -> MarketResearchContract.validate(node))
+            .isInstanceOf(ExecutionFailure.class);
+    }
+
+    @Test
+    @DisplayName("⭐ 「관측」인데 출처가 0곳이면 거부한다 — 표가 거짓말을 하게 된다")
+    void observedFactorWithoutSourceRejected() throws Exception {
+        ObjectNode node = payload("full.json");
+        ArrayNode factors = (ArrayNode) node.get("market").get("tam").get("factors");
+        ObjectNode observed = null;
+        for (JsonNode factor : factors) {
+            if ("관측".equals(factor.get("basis").asText())) observed = (ObjectNode) factor;
+        }
+        assertThat(observed).as("픽스처에 관측 요인이 있어야 이 검사가 뭔가를 본다").isNotNull();
+        observed.put("sourceCount", 0);
+        assertThatThrownBy(() -> MarketResearchContract.validate(node))
+            .isInstanceOf(ExecutionFailure.class);
+    }
+
+    @Test
+    @DisplayName("factors 가 배열이 아니면 거부한다 — null 은 «항이 없다» 와 다르다")
+    void nullFactorsRejected() throws Exception {
+        ObjectNode node = payload("full.json");
+        ((ObjectNode) node.get("market").get("tam")).putNull("factors");
+        assertThatThrownBy(() -> MarketResearchContract.validate(node))
+            .isInstanceOf(ExecutionFailure.class);
+    }
+
+    @Test
     @DisplayName("FULL 인데 canvas 가 차 있으면 거부한다 — 모드가 섞이면 안 된다")
     void modeMixRejected() throws Exception {
         ObjectNode node = payload("full.json");
