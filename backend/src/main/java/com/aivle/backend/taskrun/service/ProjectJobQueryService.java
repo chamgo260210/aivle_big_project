@@ -123,7 +123,7 @@ public class ProjectJobQueryService {
             case FINANCE_ESTIMATE -> JobModule.FINANCE;
             case MARKETING_CONTENT_GENERATION -> JobModule.MARKETING;
             case MARKET_RESEARCH -> JobModule.MARKET;
-            case TWIN_SURVEY -> JobModule.PANEL_SURVEY;
+            case TWIN_SURVEY, TWIN_STIMULUS_DRAFT -> JobModule.PANEL_SURVEY;
         };
     }
 

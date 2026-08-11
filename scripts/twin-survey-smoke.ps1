@@ -27,6 +27,12 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+# ⚠ **파이프로 native 프로세스에 보내는 본문도 UTF-8 이어야 한다.** PowerShell 5.1 의 기본
+#   $OutputEncoding 은 ASCII 라 아래 파이썬 프로브의 한글이 «?» 로 뭉개진다. 그러면 자극의
+#   속성이 양쪽 다 «?» 가 되어 게이트가 IDENTICAL 로 판정하고, 스모크는 **검사하는 척만** 한다.
+#   Invoke-Json 이 본문을 바이트로 만들어 보내는 것과 같은 이유다(아래 주석 참조).
+#   호출자가 pwsh 든 powershell.exe 든 여기서 못박는다.
+$OutputEncoding = New-Object System.Text.UTF8Encoding $false
 $failures = New-Object System.Collections.Generic.List[string]
 
 function Write-Step { param([string]$Text) Write-Output "`n== $Text" }
@@ -88,6 +94,72 @@ Write-Output "  $unavailableOutput"
 if ($unavailableOutput -match "TWIN_BANK_UNAVAILABLE") { Write-Pass "뱅크 미마운트 = 시끄러운 실패" }
 else { Add-Failure "뱅크가 없는데 TWIN_BANK_UNAVAILABLE 이 아니다" }
 
+# ── 1-2. 자극 초안이 판매 경계를 코드로 지키나 ────────────────────────
+#     초안은 사용자가 첫 칸을 채우는 대신 고르는 자리다. 여기서 우열형이 아닌 쌍이
+#     새 나가면, 사용자는 「AI 가 준 것」이라 믿고 고르고 조사는 그 뒤에 거절한다.
+#     프롬프트로 부탁한 규칙은 회귀해도 조용하다 — 코드가 거르는지를 본다.
+#     **무료다.** 제공자 호출을 가짜로 바꿔 LLM 을 한 번도 부르지 않는다.
+Write-Step "stimulus draft gate"
+$draftProbe = @'
+import asyncio
+from app.api.executions import TASK_TYPES
+from app.providers import ProviderFailure
+from app.twin import stimulus_draft
+from app.twin.task_type import classify
+
+print("registered=" + str("TWIN_STIMULUS_DRAFT" in TASK_TYPES))
+
+CONCEPT = {"conceptName": "새벽 밀키트", "targetUsers": "1인 가구",
+           "problemScenario": "장 볼 시간이 없다",
+           "featureSet": ["보관 형태"], "differentiators": "신선 보관",
+           "priceKrw": 9900}
+
+def side(value):
+    return {"label": value + " 안", "value": value}
+
+def stub(pairs):
+    async def prompt(*args, **kwargs):
+        return {"situation": "가게에서 하나를 고릅니다.", "pairs": pairs}
+    stimulus_draft.execute_structured_prompt = prompt
+
+# (1) 우열형만 살아남나 — 윤리·가치형과 동일 쌍을 섞어 넣는다.
+stub([{"axis": "보관 형태", "X": side("신선"), "Y": side("냉동"), "rationale": "묻는다"},
+      {"axis": "친환경 인증", "X": side("있음"), "Y": side("없음"), "rationale": "묻는다"},
+      {"axis": "배송", "X": side("새벽"), "Y": side("새벽"), "rationale": "묻는다"}])
+result = asyncio.run(stimulus_draft.execute_twin_stimulus_draft(CONCEPT))
+# 판정을 파워셸 문자열 비교에 맡기지 않는다 — 게이트에 다시 넣어 본다.
+types = {classify({"pairId": p["pairId"], "X": p["X"], "Y": p["Y"]}).task_type
+         for p in result["pairs"]}
+print("kept=" + ",".join(p["axis"] for p in result["pairs"]))
+print("onlyDominance=" + str(types == {"DOMINANCE"}))
+print("dropped=" + ",".join(d["taskType"] for d in result["dropped"]))
+print("equalPrice=" + str({p["X"]["priceKrw"] == p["Y"]["priceKrw"]
+                           for p in result["pairs"]} == {True}))
+
+# (2) 팔 수 있는 쌍이 0개면 정직하게 실패하나.
+stub([{"axis": "친환경 인증", "X": side("있음"), "Y": side("없음"), "rationale": "묻는다"}])
+try:
+    asyncio.run(stimulus_draft.execute_twin_stimulus_draft(CONCEPT))
+    print("empty=NO_FAILURE")
+except ProviderFailure as failure:
+    print("empty=" + failure.reason)
+'@
+$draftOutput = ($draftProbe | docker compose exec -T ai-server python -) -join "`n"
+Write-Output ($draftOutput -split "`n" | ForEach-Object { "  $_" })
+if ($draftOutput -match "registered=True") { Write-Pass "TASK_TYPES 등록" }
+else { Add-Failure "TWIN_STIMULUS_DRAFT 가 TASK_TYPES 에 없다 — 등록 분기를 빠뜨렸다" }
+if ($draftOutput -match "onlyDominance=True") { Write-Pass "초안이 우열형만 돌려준다" }
+else { Add-Failure "초안에 우열형이 아닌 쌍이 섞였다" }
+if ($draftOutput -match "dropped=ETHICAL_VALUE,IDENTICAL") { Write-Pass "버린 이유가 살아 있다" }
+else { Add-Failure "버린 후보의 이유가 뭉개졌다" }
+if ($draftOutput -match "equalPrice=True") { Write-Pass "가격이 양쪽 같다 — 지불의사가 만들어질 수 없다" }
+else { Add-Failure "초안의 두 안에 다른 가격이 붙었다 — 가격형이 새 나간다" }
+if ($draftOutput -match "empty=TWIN_STIMULUS_NO_SERVICEABLE_PAIR") {
+    Write-Pass "0쌍 = 정직한 실패"
+} else {
+    Add-Failure "팔 수 있는 쌍이 0개인데 정직하게 실패하지 않았다"
+}
+
 # ── 2. 계정·프로젝트 ──────────────────────────────────────────────────
 Write-Step "account"
 $suffix = [guid]::NewGuid().ToString("N")
@@ -121,6 +193,22 @@ function Wait-Terminal {
         Start-Sleep -Seconds 3
     }
     return $null
+}
+
+# ── 2-2. 초안 엔드포인트가 실제로 서 있나 ────────────────────────────
+#     여기서 도는 프로젝트에는 확정된 컨셉이 없다. 그러면 재료가 없으니 LLM 을 부르기 전에
+#     404 로 막혀야 한다. **무료다.** 이 검사가 보는 것은 거절 자체가 아니라 그 앞의 배선이다
+#     — 라우팅·인증·컨트롤러·서비스 진입. 트윈 조사에서 subjectId NOT NULL 을 잡은 것도
+#     단위 테스트가 아니라 이 자리의 첫 POST 였다.
+Write-Step "stimulus draft endpoint"
+try {
+    Invoke-Json POST "$BaseUrl/api/v2/projects/$projectId/twin-survey/stimulus-draft" $headers @{} | Out-Null
+    Add-Failure "컨셉이 없는데 초안이 만들어졌다 — 재료 없이 프롬프트가 나갔다"
+} catch {
+    $status = [int]$_.Exception.Response.StatusCode
+    if ($status -eq 404) { Write-Pass "컨셉 없음 = 404 (LLM 0회)" }
+    elseif ($status -eq 405 -or $status -eq 401) { Add-Failure "초안 엔드포인트가 서 있지 않다: HTTP $status" }
+    else { Add-Failure "예상 밖 응답: HTTP $status" }
 }
 
 # ── 3. 윤리·가치형은 LLM 0회로 거절되나 ──────────────────────────────

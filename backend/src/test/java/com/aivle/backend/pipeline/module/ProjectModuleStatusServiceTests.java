@@ -149,6 +149,43 @@ class ProjectModuleStatusServiceTests {
         assertThat(finance.nextAction().route()).isEqualTo("/finance");
     }
 
+    /**
+     * 트윈 게이트는 컨셉·재무 <b>둘 다</b> 본다. 재무 스냅샷은 구조상 컨셉 없이는 생기지 않으므로
+     * 상태는 어차피 NOT_READY 지만, 아무것도 없을 때 «재무 스냅샷» 하나만 가리키면
+     * 사용자는 갈 수 없는 문을 본다. 빠진 것을 여정 순서대로 다 센다.
+     */
+    @Test
+    void panelSurveyGateNamesEveryMissingInputInJourneyOrder() {
+        when(projects.findByIdAndOwnerIdAndDeletedAtIsNull(41L, 7L)).thenReturn(Optional.of(mock(Project.class)));
+
+        var twin = panelSurvey();
+
+        assertThat(twin.status()).isEqualTo(PipelineModuleStatus.NOT_READY);
+        assertThat(twin.requiredInputs())
+            .containsExactly("marketAnalysisSeedSnapshotId", "financialSnapshotId");
+        assertThat(twin.nextAction().route()).isEqualTo("/panel-survey");
+    }
+
+    @Test
+    void panelSurveyGateAsksOnlyForFinanceOnceTheConceptIsFinalized() {
+        when(projects.findByIdAndOwnerIdAndDeletedAtIsNull(41L, 7L)).thenReturn(Optional.of(mock(Project.class)));
+        ConceptSelection selection = mock(ConceptSelection.class);
+        MarketAnalysisSeedSnapshot seed = mock(MarketAnalysisSeedSnapshot.class);
+        when(selection.getId()).thenReturn(13L); when(seed.getId()).thenReturn("market-seed-1");
+        when(selections.findByProjectIdAndCurrentSelectionTrueAndDeletedAtIsNull(41L)).thenReturn(Optional.of(selection));
+        when(snapshots.findBySelectionIdAndProjectIdAndDeletedAtIsNull(13L, 41L)).thenReturn(Optional.of(seed));
+
+        var twin = panelSurvey();
+
+        assertThat(twin.status()).isEqualTo(PipelineModuleStatus.NOT_READY);
+        assertThat(twin.requiredInputs()).containsExactly("financialSnapshotId");
+    }
+
+    private ProjectModuleStatusResponse panelSurvey() {
+        return service.findAll(7L, 41L).stream()
+            .filter(item -> item.module() == PipelineModuleType.PANEL_SURVEY).findFirst().orElseThrow();
+    }
+
     @Test
     void hidesProjectsNotOwnedByTheCurrentUser() {
         when(projects.findByIdAndOwnerIdAndDeletedAtIsNull(41L, 8L)).thenReturn(Optional.empty());

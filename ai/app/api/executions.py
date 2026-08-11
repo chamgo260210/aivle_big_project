@@ -30,6 +30,7 @@ TASK_TYPES = {
     "MARKETING_CONTENT_GENERATION",
     "MARKET_RESEARCH",
     "TWIN_SURVEY",
+    "TWIN_STIMULUS_DRAFT",
 }
 
 
@@ -198,6 +199,11 @@ async def execute(request: Request, body: InternalExecutionRequestV1):
             from app.twin import execute_twin_survey
             budget = (deadline - datetime.now(timezone.utc)).total_seconds()
             result = await execute_twin_survey(body.input, budget)
+        elif body.taskType == "TWIN_STIMULUS_DRAFT":
+            # 조사 자체와 달리 프롬프트 1회다(동기 인라인). 여기서 뽑은 쌍은 화면이 고르고
+            # 다듬은 뒤에야 TWIN_SURVEY 로 간다 — 이 태스크는 카드 뱅크를 건드리지 않는다.
+            from app.twin.stimulus_draft import execute_twin_stimulus_draft
+            result = await execute_twin_stimulus_draft(body.input)
         elif body.taskType == "CONCEPT_CANDIDATE":
             from app.tasks.concept_candidate import execute_concept_candidate
             result = await execute_concept_candidate(body.input)

@@ -469,3 +469,84 @@ docker compose up -d --build frontend ai-server backend
 2026-08-11 기준 **다른 세션이 시장조사 화면 작업을 진행 중**이다
 (`ai/app/research/*`, `frontEnd/src/features/market/*`, `MarketResearchContract` 등).
 `git add -A` 금지. 경로를 명시해 add 하고 `git diff --cached --name-only HEAD` 로 확인한다.
+
+---
+
+## 12. §11 실행 결과 — 2026-08-11 (미커밋)
+
+**§11 의 0~4단계를 전부 했다.** 아래는 결과이고, 충돌하면 이 절이 아니라 코드가 정본이다.
+
+| 항목 | 결과 |
+|---|---|
+| 0. 프론트 컨테이너 | 재빌드함. 번들에 `panel-survey` 확인 |
+| 1. 게이트 정정 | `twinOrGate` 가 컨셉·재무 둘 다 본다. `requiredInputs` 는 빠진 것을 여정 순서대로 전부 센다 |
+| 2. `TWIN_STIMULUS_DRAFT` | 동기 인라인(패턴 A)으로 붙었다. 등록 5곳 + 계약 검증 |
+| 3. 화면 | 첫 화면이 「자극 초안 만들기」 버튼 하나. 빈 표는 「직접 만들기」 뒤로 |
+| 4. 문서 | `CLAUDE.md` §2 를 실제 체인으로 고쳤다 (라우터 경로도 `app/routing/` 으로 정정) |
+
+### §11 계획과 갈린 지점 — 셋
+
+1. **`ai/prompts/twin_stimulus_draft/` 를 만들지 않았다.** 그 디렉터리도 `_load_prompts`
+   기구도 저장소에 **없다**(`git ls-files` 확인). 지금 관례대로 프롬프트를
+   `stimulus_draft.py` 안에 뒀다 — `tasks/idea_brief/service.py` 와 같은 모양이다.
+2. **LLM 이 속성 dict 도 가격도 만들지 않는다.** 「축 이름 하나 + 양쪽 값 둘」만 받고
+   dict 는 시스템이 조립하며, 가격은 입력값을 양쪽에 그대로 얹는다. 그래서
+   「속성을 둘 바꿨다」·「가격을 다르게 매겼다」가 **표현될 수 없다** — 프롬프트가 회귀해도
+   가격형·다속성이 안 나온다. (OpenAI strict json_schema 가 자유 dict 를 못 받는 것도 겹친다.)
+3. **확정 가격은 깨끗하게 읽히는 것만 넘긴다.** `finalHypotheses.price` 는 자유문장이라
+   「월 9,900원」→9900, 「3만원」→null 이다. 억지로 읽어 틀린 가격을 자극에 앉히지 않는다.
+   못 읽으면 양쪽 다 null 이고, 사용자가 편집기에서 넣으면 된다.
+
+### 스모크에서 잡힌 것 — 스모크가 «검사하는 척»만 하고 있었다
+
+`scripts/twin-survey-smoke.ps1` 의 파이썬 프로브는 stdin 으로 한글을 보내는데,
+**PowerShell 5.1 의 기본 `$OutputEncoding` 이 ASCII** 라 자극의 속성이 양쪽 다 «?» 가 됐다.
+그러면 게이트가 `IDENTICAL` 로 판정해 「뱅크 미마운트」 검사가 엉뚱한 이유로 통과/실패한다.
+스크립트 첫머리에서 `$OutputEncoding` 을 UTF-8 로 못박았다. `Invoke-Json` 이 본문을 바이트로
+만들어 보내는 것과 같은 종류의 지뢰이고, **호출자가 pwsh 인지 powershell.exe 인지에 따라
+결과가 달라지고 있었다.**
+
+무료 검사 3개를 더했다: 초안이 우열형만 돌려주는지 · 0쌍일 때 정직하게 실패하는지 ·
+초안 엔드포인트가 실제로 서 있는지(컨셉 없는 프로젝트 → 404, LLM 0회).
+
+### 검증한 것 / 안 한 것
+
+- 통과: `ai` 431 passed · 백엔드 `*Twin*`·`*ModuleStatus*`·`*ActiveSurfaceCleanup*`·`*ProjectJob*` ·
+  프론트 `twin-survey/`·`module-status/` 86 passed · 실스택 스모크(무료 구간) PASSED
+- **안 했다: 초안의 유료 왕복.** 실제로 LLM 을 태워 초안을 받아 본 적은 없다.
+  확정된 컨셉이 있는 프로젝트가 필요하고 돈이 든다. 프롬프트가 규칙을 얼마나 지키는지는
+  **아직 실측되지 않았다** — 다만 안 지켜도 게이트가 버리므로 실패 방향은 「초안 0쌍」이다.
+- 백엔드 전체 `gradlew test` 는 돌리지 않았다(이 기계에서 10시간 전례).
+
+### 12-2. 견본 컨셉 경로 (2026-08-11, 사용자 결정)
+
+**컨셉 파이프라인이 아직 안 찼다** — 실측: 프로젝트 15개 전부 `concept_selections` 0건,
+`market_analysis_seed_snapshots` 0건. 스냅샷만 보던 초안 엔드포인트는 이 환경에서
+**구조적으로 못 쓴다.** 시장조사와 **같은 규율**로 열었다:
+
+- 화면이 견본 컨셉 **이름표만** 보낸다 (`beauty-noshow`·`household-ledger`·`pet-treat`)
+- 재료는 AI 서버가 들고 있는 것을 쓴다 — 시장조사와 **같은 표**(`research.pipeline.CONCEPTS`).
+  따로 들고 있으면 두 화면이 다른 컨셉을 본다
+- **확정된 컨셉이 있으면 그것이 이긴다.** 이름표는 시연·시험용 길이지 기본값이 아니다
+- 견본 → 초안 입력 대응: `name`→conceptName · `target`→targetUsers · `problem`→problemScenario ·
+  `solution`→differentiators(자유문장) · `price_hypothesis_krw`→priceKrw(정수 아니면 null)
+- 백엔드는 아는 이름 목록을 **들지 않는다**. 경로에 못 쓸 글자만 막고, 모르는 이름은 AI 가 막는다
+
+**유료 왕복을 실측했다**(§12 에서 「안 했다」고 적은 그것이다). `beauty-noshow` 로 4쌍이
+나왔고 전부 우열형, `dropped` 0, 가격은 양쪽 null, 라벨은 양쪽 다르다:
+예약 통합 관리 · 노쇼 방지(예치금) · 자동 응답 · 대기자 통보(자동/수동).
+**프롬프트가 규칙을 지켰다** — 다만 표본 1회다.
+
+### 12-3. 화면 오류 문구 회귀 (2026-08-11)
+
+컨셉 없는 프로젝트에서 초안을 누르면 「잠시 후 다시 시도해 주세요」가 나왔다.
+서버는 404 로 **무엇을 해야 하는지** 말해 주는데(`retryable:false` + safeMessage),
+`getUserErrorMessage` 가 **코드로만** 매핑해서 그 문구를 버린 것이다.
+`draftFailureText.js` 가 재시도로 안 풀리는 실패에는 서버 문구를 그대로 보인다.
+
+### 12-4. 배포가 화면에 안 닿던 이유 — `index.html` 캐시
+
+`frontEnd/nginx.conf` 가 `index.html` 에 `Cache-Control` 을 안 붙여서 브라우저가
+Last-Modified 로 임의 추정 캐시를 했다. 컨테이너에는 새 번들뿐인데 화면은 옛 화면이 나온다 —
+서버만 봐서는 원인이 안 보이는 자리다. `index.html` 은 `no-cache`,
+해시 붙은 `/assets/` 는 `immutable` 로 못박았다. **배포할 때마다 반복되던 문제다.**

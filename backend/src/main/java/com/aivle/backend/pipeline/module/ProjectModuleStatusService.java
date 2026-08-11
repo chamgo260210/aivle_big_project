@@ -30,6 +30,7 @@ import com.aivle.backend.pipeline.techops.repository.TechOpsInputPreparationRepo
 import com.aivle.backend.pipeline.techops.repository.TechOpsInputSnapshotRepository;
 import com.aivle.backend.project.repository.ProjectRepository;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -157,10 +158,14 @@ public class ProjectModuleStatusService {
             // ⚠ 이 게이트는 **새로 만든 것**이다. 재무와 마케팅은 원래 데이터로 이어져 있지 않았다
             //   (마케팅 게이트는 selectedSnapshot 기반). 트윈 조사는 재무 다음에 서므로
             //   앞 단계의 확정물인 financialSnapshotId 를 요구한다.
+            //   ⚠ **컨셉도 같이 본다.** 자극 초안이 마켓 시드 스냅샷에서 나오므로 재무만 있고
+            //   컨셉이 없으면 READY 라고 말해 놓고 초안을 만들지 못한다.
+            //   requiredInputs 는 **없는 것부터** 센다 — 앞 단계를 먼저 가리켜야 길이 된다.
             //   시장조사와 같은 규칙으로, **실행이 있으면 게이트와 무관하게 그 상태를 보여준다** —
             //   막아 두면 다 끝난 모듈이 「준비 전」으로 보이는 거짓말이 된다.
-            response(projectId, PipelineModuleType.PANEL_SURVEY, twinOrGate(twinRun, financialSnapshot != null),
-                financialSnapshot == null ? List.of("financialSnapshotId") : List.of(),
+            response(projectId, PipelineModuleType.PANEL_SURVEY,
+                twinOrGate(twinRun, selectedSnapshot != null && financialSnapshot != null),
+                twinRequiredInputs(selectedSnapshot != null, financialSnapshot != null),
                 new NextAction("패널 트윈 조사", "/panel-survey"),
                 twinRun == null ? null : String.valueOf(twinRun.getId()),
                 twinRun == null ? null : twinRun.getTaskRun().getId(),
@@ -188,14 +193,22 @@ public class ProjectModuleStatusService {
         return seed == null ? PipelineModuleStatus.NOT_READY : PipelineModuleStatus.READY;
     }
 
-    private PipelineModuleStatus twinOrGate(TwinSurveyRun run, boolean financialReady) {
+    private PipelineModuleStatus twinOrGate(TwinSurveyRun run, boolean inputsReady) {
         if (run != null) return switch (run.getState()) {
             case QUEUED -> PipelineModuleStatus.QUEUED;
             case RUNNING -> PipelineModuleStatus.RUNNING;
             case SUCCEEDED -> PipelineModuleStatus.COMPLETED;
             case FAILED -> PipelineModuleStatus.FAILED;
         };
-        return financialReady ? PipelineModuleStatus.READY : PipelineModuleStatus.NOT_READY;
+        return inputsReady ? PipelineModuleStatus.READY : PipelineModuleStatus.NOT_READY;
+    }
+
+    /** 빠진 것을 여정 순서대로 센다 — 컨셉이 재무보다 앞이라 먼저 나온다. */
+    private List<String> twinRequiredInputs(boolean conceptReady, boolean financialReady) {
+        List<String> missing = new ArrayList<>();
+        if (!conceptReady) missing.add("marketAnalysisSeedSnapshotId");
+        if (!financialReady) missing.add("financialSnapshotId");
+        return missing;
     }
 
     private PipelineModuleStatus researchStatus(MarketResearchRun run) {
