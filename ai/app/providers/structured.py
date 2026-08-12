@@ -102,10 +102,11 @@ def _retry_after_ms(response) -> int | None:
 async def execute_structured_prompt(system: str, user: str, model_override: str | None = None,
                                     response_schema: dict[str, Any] | None = None,
                                     schema_name: str | None = None,
-                                    task_type: str | None = None) -> dict[str, Any]:
+                                    task_type: str | None = None,
+                                    timeout_seconds_override: float | None = None) -> dict[str, Any]:
     api_key, model, base_url = _configuration(model_override)
     try:
-        timeout_seconds = float(os.getenv("AI_PROVIDER_TIMEOUT_SECONDS", "60"))
+        timeout_seconds = timeout_seconds_override or float(os.getenv("AI_PROVIDER_TIMEOUT_SECONDS", "60"))
         if timeout_seconds <= 0:
             raise ValueError
     except ValueError as failure:
@@ -132,6 +133,9 @@ async def execute_structured_prompt(system: str, user: str, model_override: str 
                               upstream_status=429, schema_name=schema_name,
                               retry_after_ms=_retry_after_ms(response))
     if response.status_code >= 500:
+        logger.error("Provider server error taskType=%s model=%s status=%s body=%s",
+                     task_type or "STRUCTURED_TASK", model, response.status_code,
+                     re.sub(r"(?i)(bearer\\s+|sk-)[a-z0-9._-]+", r"\\1[REDACTED]", response.text)[:800])
         raise ProviderFailure("DEPENDENCY_UNAVAILABLE", "MODEL_DEPENDENCY_UNAVAILABLE", 503, True,
                               upstream_status=response.status_code, schema_name=schema_name)
     if response.status_code == 400 and response_schema is not None:

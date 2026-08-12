@@ -8,6 +8,9 @@ from app.tasks.marketing_content.models import (
     MarketingContentResult,
     lint_provider_schema,
 )
+from app.tasks.marketing_content.marketing_image import (
+    generate_and_store_marketing_image,
+)
 from app.tasks.marketing_content.prompts import SYSTEM_PROMPT
 
 
@@ -34,6 +37,12 @@ async def execute_marketing_content(task_input: dict) -> dict:
         raise ProviderFailure("RESULT_SCHEMA_INVALID", "AI_RESULT_INVALID", 502, False)
     rendered = "\n".join(filter(None, [result.title, result.body, result.callToAction,
                                        result.imageBrief, *result.hashtags])).casefold()
+    if result.artifactRefs:
+        raise ProviderFailure("RESULT_SCHEMA_INVALID", "AI_RESULT_INVALID", 502, False)
     if any(claim.casefold() in rendered for claim in value.source.prohibitedClaims):
         raise ProviderFailure("EXECUTION_FAILED", "SAFETY_POLICY_BLOCKED", 422, False)
+    artifact_ref = (
+        await generate_and_store_marketing_image(value, result)
+    )
+    result.artifactRefs = [artifact_ref]
     return result.model_dump(mode="json")

@@ -9,7 +9,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
-/** Stateless sandbox API for http://localhost:3001/module. Saved project analyses continue to use the project API. */
+/** Stateless sandbox API for the frontend's /module route. Saved project analyses continue to use the project API. */
 @RestController
 @RequestMapping("/api/v1/modules/financial")
 @RequiredArgsConstructor

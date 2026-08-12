@@ -137,7 +137,7 @@ function FinanceWorkspace({ projectId, finance }) {
 
   const refreshContainer = () => void finance.refresh({ preserveView: true });
   return <FinanceRefreshContext.Provider value={refreshContainer}><main className="finance-page">
-    <header className="finance-heading"><div><p>7. 재무 분석</p><h1>{locked ? '재무 분석 입력값이 확정되었습니다.' : '재무 분석 입력값을 준비하세요.'}</h1>
+    <header className="finance-heading"><div><p>6. 재무 분석</p><h1>{locked ? '재무 분석 입력값이 확정되었습니다.' : '재무 분석 입력값을 준비하세요.'}</h1>
       <span>기술·운영 분석에서 전달된 값을 확인하고, 부족한 항목만 입력해 재무 분석 Snapshot을 만듭니다.</span></div>
       <strong className="finance-heading__status">{locked ? '입력 확정' : preparation.readyToFinalize ? '확정 준비' : `${preparation.missingRequiredInputs.length}개 입력 필요`}</strong></header>
     {finance.error && <p className="finance-error" role="alert">{getUserErrorMessage(finance.error)}</p>}
