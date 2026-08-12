@@ -515,7 +515,7 @@ nextActions: list[str]         // min 1
 
 ## 5. 값을 만들 때 반드시 지킬 것
 
-### 5-1. task input에 **부동소수점 금지**
+### 5-1. task input에는 **정수를 쓴다** (2026-08-12 정정)
 
 canonical input hash는 Spring `CanonicalInputHasher`와 AI `executions.py canonical_hash`가
 **독립적으로 계산해 대조**한다. 규칙:
@@ -524,13 +524,30 @@ canonical input hash는 Spring `CanonicalInputHasher`와 AI `executions.py canon
 2. 객체 키는 **NFC 정규화 후 코드포인트 순 정렬**. 정규화 후 키가 충돌하면 에러
 3. 문자열도 NFC 정규화
 4. 구분자에 공백 없음 (`,` `:`)
-5. **부동소수점 숫자 금지** — Spring이
-   `"floating-point JSON numbers are not canonical task input"`으로 던진다
+5. 숫자는 **BigDecimal/Decimal 로 정규화** — 후행 0 제거, 지수표기 제거, `-0` → `0`.
+   **거부되는 것은 비유한(NaN·Infinity)뿐이다**
 
-→ input에 `0.35`를 넣으면 **컴파일도 테스트도 통과하고 런타임에만 깨진다.**
+> ⚠ **정정.** 이 항목은 오래 *"부동소수점 숫자 금지 — Spring 이
+> `floating-point JSON numbers are not canonical task input` 으로 던진다"* 고 적고 있었다. **틀렸다.**
+> `CanonicalInputHasher.canonicalNumber()` 는 비유한 값만 던지고 **유한 소수는 통과**시킨다
+> (주석: *"finite JSON numbers are interpreted as decimal values"*).
+> AI 쪽도 같고 `ai/tests/test_canonical_json.py` 가 `0.1 → "0.1"` · `3.5 → "3.5"` 를 고정한다.
+> 인용된 문자열은 **코드에 없다**(grep 0건).
+
+**그래도 input 에는 정수를 쓴다 — 막는 것이 해시가 아니라 «모듈별 입력 계약»일 뿐이다:**
+
+| 강제하는 곳 | 무엇 |
+|---|---|
+| `journey/MarketResearchInputFactory.java:133,179` | `isIntegralNumber()` / `isFloatingPointNumber()` |
+| `journey/BmPlanPreparationService.java:124` | 비용 셋은 정수. 아니면 **400** |
+| `taskrun/contract/TwinStimulusDraftContract` | `priceKrw` 는 원 단위 정수 |
+| `pipeline/finance/application/FinancialService.java:411` | 정수 요구 |
+| `pipeline/conceptportfolio/application/ConceptPortfolioResultContract.java:52` | 정수 요구 |
+
 비율이 필요하면 정수 basis point(`35`)나 문자열로 넣을 것.
+⚠ 계약을 안 건 모듈에서는 소수가 **그냥 지나간다** — 새 모듈은 자기 계약에 검사를 넣어야 한다.
 
-> 주의: 이 금지는 **AI로 보내는 input**에 적용된다. AI가 **돌려주는** 결과의
+> 주의: 이 규칙은 **AI로 보내는 input**에 적용된다. AI가 **돌려주는** 결과의
 > `overallScore: float`는 무관하다.
 
 ### 5-2. AI 결과에 실을 수 없는 필드

@@ -1,7 +1,7 @@
 # Current Repository Baseline
 
 - Status: CURRENT_AS_BUILT
-- Baseline date: 2026-08-04
+- Baseline date: 2026-08-04 · **2026-08-12 부분 정정**(TaskType 수·마이그레이션·Journey 범위)
 - Scope: 코드로 확인한 현재 실행 기준선
 - Implementation Status: IMPLEMENTED
 
@@ -13,14 +13,17 @@
 
 `Idea 입력 → AI 해석 → Idea Origin Draft 및 보완 질문 → Idea Origin 확정 → Legal Precheck → Legal Guardrail → Concept 생성 → Origin Integrity → Concept Legal Validation → 적격 Concept 3개 표시`
 
-현재 공식 범위는 적격 Concept 3개 표시에서 끝난다. Concept 분석·선택·Persona·Interview·Marketing·Report는 보존된 기존 MVP 실험 기능이다. 일부 Route와 API가 존재하더라도 현재 공식 Journey와 자동 연결된 단계는 아니다.
+⚠ **2026-08-12 정정: 이 문단은 낡았다.** 현재 여정은 `AS_BUILT_ARCHITECTURE.md` §2 의 **8단계**
+(아이디어→사업안→시장분석→BM→기술운영→재무→패널조사→마케팅)이고 실스택으로 확인됐다(2026-08-11).
+사업안 개수는 요청 파라미터 `maxConcepts`(1~5, 기본 5)다.
+아래 옛 서술은 이력으로 남긴다 — Concept 분석·선택·Persona·Interview·Marketing·Report는 보존된 기존 MVP 실험 기능이다. 일부 Route와 API가 존재하더라도 현재 공식 Journey와 자동 연결된 단계는 아니다.
 
 ## Internal AI contract
 
 - Contract version / task schema version: `1.0`
 - Locale / text language: `ko-KR`
 - Text content type: `TEXT`
-- TaskType: Java와 FastAPI가 동일한 13개 값
+- TaskType: Java와 FastAPI가 동일한 **18개** 값 (2026-08-12 정정. `taskrun/domain/TaskType.java`)
 - Spring adoption 전 공통 검증: TaskRun ID, TaskAttempt ID, taskType, taskSchemaVersion, correlationId, canonicalInputHash, resultSchemaVersion, result body
 - Domain invariant: 각 Journey Service와 Worker의 기존 결과 검증을 추가로 유지
 
@@ -38,8 +41,9 @@
 
 - PostgreSQL과 JPA/Flyway 사용
 - Object Storage는 MinIO/S3-compatible adapter 사용
-- Runtime Flyway는 PostgreSQL 최종 스키마를 직접 만드는 `V1__baseline_schema.sql` 하나
-- 과거 V1~V36과 Java Migration V5/V10의 최종 효과를 Baseline SQL에 흡수
+- Runtime Flyway baseline 은 `V1__new_pipeline_baseline.sql` 이고 그 위에 **V2–V21**(총 21개, 테이블 57개)
+- 과거 V1~V36과 Java Migration V5/V10의 최종 효과를 Baseline SQL에 흡수했다.
+  **현재 `backend/src/main/java/db/migration/` 디렉터리는 없다**
 - 기존 DB upgrade는 지원하지 않으며 적용 전 PostgreSQL/Docker volume 초기화 필수
 - 과거 Migration 이력은 Git history에 보존
 - H2는 일부 Service 로직 테스트에만 사용하고 Migration 계약은 PostgreSQL/Testcontainers로 검증

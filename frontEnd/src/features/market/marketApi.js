@@ -20,5 +20,13 @@ export function createMarketApi(client, projectId) {
     async saveBmPlan(plan, constraints) {
       return (await client.patch(`${root}/business-model/plan`, { plan, constraints })).data;
     },
+
+    // 경쟁 씨앗 — 슬롯 하네스가 F_COMP 슬롯의 subject 를 여기서 가져온다.
+    // 비워 두면 모델이 실명을 지어내거나 자리표시자를 만든다(2026-08-08 실측).
+    // ⚠ **통째로 갈아 끼운다.** 순서가 값이라 한 줄씩 고치는 길을 만들지 않는다.
+    async currentCompetitorSeeds() { return (await client.get(`${root}/competitor-seeds`)).data; },
+    async saveCompetitorSeeds(seeds) {
+      return (await client.put(`${root}/competitor-seeds`, seeds)).data;
+    },
   };
 }

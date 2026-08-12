@@ -38,13 +38,10 @@ public class TwinSurveyController {
      */
     @PostMapping("/twin-survey/stimulus-draft")
     public ApiResponse<JsonNode> stimulusDraft(@PathVariable Long projectId,
-            @RequestBody(required = false) DraftRequest body, HttpServletRequest request) {
-        return ApiResponse.success(drafts.draft(currentUser.currentUserId(), projectId,
-            body == null ? null : body.conceptId()), id(request));
+            HttpServletRequest request) {
+        return ApiResponse.success(drafts.draft(currentUser.currentUserId(), projectId),
+            id(request));
     }
-
-    /** 아는 이름표인지는 <b>AI 가</b> 정한다 — 백엔드가 목록을 들면 둘이 갈라진다. */
-    public record DraftRequest(String conceptId) { }
 
     @PostMapping("/twin-survey")
     public ResponseEntity<ApiResponse<TwinSurveyService.RunView>> start(

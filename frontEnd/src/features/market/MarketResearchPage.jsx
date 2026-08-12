@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useApiClient } from '../../shared/api/ApiClientProvider.jsx';
 import { createMarketApi } from './marketApi.js';
@@ -7,6 +7,7 @@ import { Accordion, Alert, Badge, Button, Card, LoadingState } from '../../share
 import { GradeBadge, SourceLink } from './BmCanvas.jsx';
 import AssumptionLedger from './AssumptionLedger.jsx';
 import Emphasis from './emphasis.jsx';
+import CompetitorSeedForm from './CompetitorSeedForm.jsx';
 import useMarketPolling from './useMarketPolling.js';
 import useCellFocus from './useCellFocus.js';
 import {
@@ -14,19 +15,6 @@ import {
   abbreviateKrw, bucketEvidence, competitorGaps, formatValue, hostOf,
 } from './marketResult.js';
 import './market.css';
-
-/**
- * 견본 컨셉 — <b>임시 다리다</b>.
- *
- * <p>제품에서 컨셉은 DB 에 있고 콘셉트 생성 단계가 만든다. 그때 이 버튼은 없어진다.
- * 지금은 AI 쪽 `pipeline.CONCEPTS` 의 이름표를 그대로 보내고,
- * 그 표가 (컨셉 파일, 원장) 을 정한다.
- */
-const SAMPLE_CONCEPTS = [
-  ['beauty-noshow', '미용실 노쇼 관리'],
-  ['household-ledger', '가계부 앱'],
-  ['pet-treat', '반려동물 수제 간식'],
-];
 
 /**
  * 1단계 — 시장조사.
@@ -40,11 +28,13 @@ export default function MarketResearchPage() {
   const navigate = useNavigate();
   const client = useApiClient();
   const api = useMemo(() => createMarketApi(client, projectId), [client, projectId]);
-  const [conceptKey, setConceptKey] = useState(SAMPLE_CONCEPTS[0][0]);
-
   const load = useCallback(() => api.currentMarketResearch(), [api]);
-  const start = useCallback(() => api.startMarketResearch(conceptKey, today(), null),
-    [api, conceptKey]);
+  // 컨셉은 **서버가 정한다** — 확정된 사업안(Market Seed)이 유일한 입력이다.
+  // 예전에는 여기서 견본 이름표를 보냈고, 사업안을 확정하기 전에 누르면 서버가 그 견본으로
+  // 조용히 떨어져 **남의 컨셉 원장으로 6/6 SUCCEEDED** 를 냈다(2026-08-12 실측: 미용실
+  // 노쇼 견본이 냉동 간편식 사업안의 결과로 나왔다). 지금은 null 을 보내고, 확정된
+  // 사업안이 없으면 서버가 실패시킨다.
+  const start = useCallback(() => api.startMarketResearch(null, today(), null), [api]);
   const { run, result, error, busy, loading, active, elapsed, trigger } = useMarketPolling(load, start);
   // KPI → 과목 섹션 착지. 포커스·rAF 함정은 훅 주석에 있다.
   const focus = useCellFocus('sec-');
@@ -67,15 +57,15 @@ export default function MarketResearchPage() {
         </Button>
       </div>
 
-      {/* 임시 다리 — 컨셉이 DB 에서 오게 되면 이 블록은 통째로 사라진다.
-          결과가 있으면 접는다. 첫 화면을 임시 다리가 먹지 않게. */}
+      {/* 경쟁 씨앗 — **조사 전에** 받아야 한다. 하네스가 슬롯을 설계할 때 읽으므로
+          조사를 돌린 뒤에 적으면 그 판에는 반영되지 않는다. */}
       {result ? (
-        <Accordion title="견본 컨셉 다시 고르기">
-          <ConceptPicker conceptKey={conceptKey} setConceptKey={setConceptKey} disabled={busy || active} />
+        <Accordion title="경쟁·현재 대안 (선택)">
+          <CompetitorSeedForm api={api} disabled={busy || active} />
         </Accordion>
       ) : (
-        <Card title="견본 컨셉">
-          <ConceptPicker conceptKey={conceptKey} setConceptKey={setConceptKey} disabled={busy || active} />
+        <Card title="경쟁·현재 대안 (선택)">
+          <CompetitorSeedForm api={api} disabled={busy || active} />
         </Card>
       )}
 
@@ -88,8 +78,12 @@ export default function MarketResearchPage() {
         </Alert>
       ) : null}
 
-      {!result ? (
-        !active ? <Card><p>아직 조사한 적이 없다. 「시장조사 실행」을 눌러라.</p></Card> : null
+      {/* ⚠ **조사 중에는 옛 결과를 감춘다.** 예전에는 새 조사가 도는 동안에도 직전 판의
+          표가 그대로 떠 있었다 — 사용자가 「지금 이 사업안의 결과」로 읽는다. 실제로
+          2026-08-12 에 미용실 견본 결과가 냉동 간편식 사업안의 화면에 그대로 떠 있었다.
+          아직 안 나온 값을 화면에 두는 것은 조용한 오답이다(견본 폴백과 같은 계보). */}
+      {active ? null : !result ? (
+        <Card><p>아직 조사한 적이 없다. 「시장조사 실행」을 눌러라.</p></Card>
       ) : (
         <ResultBody result={result} activeId={focus.active} onJump={focus.jump} onNext={() =>
           navigate(projectRoutes.businessModel(projectId))} />
@@ -423,24 +417,6 @@ function CalcBody({ cards }) {
         );
       })}
     </>
-  );
-}
-
-function ConceptPicker({ conceptKey, setConceptKey, disabled }) {
-  return (
-    <div className="market-concept-picker">
-      {SAMPLE_CONCEPTS.map(([key, label]) => (
-        <Button
-          key={key}
-          variant={key === conceptKey ? 'primary' : 'outline'}
-          aria-pressed={key === conceptKey}
-          disabled={disabled}
-          onClick={() => setConceptKey(key)}
-        >
-          {label}
-        </Button>
-      ))}
-    </div>
   );
 }
 

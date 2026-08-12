@@ -3,14 +3,15 @@
 이 저장소는 프로젝트별 기획을 정리하고 외부 분석 모듈과 연결하는 신규 제품 파이프라인을 구현합니다.
 
 1. Idea Brief 작성·확정
-2. 적격 컨셉 5개 생성과 공식 근거 기반 법률 구현 가능성 사전검토
+2. 사업안(컨셉) 생성과 공식 근거 기반 법률 검토 — 개수는 요청 파라미터 `maxConcepts`(1~5, 기본 5)
 3. 컨셉 비교·선택
 4. Market Handoff와 외부 시장분석 결과 반영
 5. Finalized Planning 생성, BM·재무 및 Persona 외부 모듈 Handoff
 6. Marketing Content 생성·수정·확정
 
-컨셉 생성은 정확히 5개 Slot을 사용하며 후보별 최대 1회 Redesign, 최대 2회
-Replacement, 전체 최대 15개 후보 검사 한도를 적용합니다. 사실이나 근거가 부족하면 성공을
+⚠ 아래 한도는 **옛 `ConceptFactory` 경로**의 것이고 현행 사업안 모듈(`conceptportfolio`)의 값이 아닙니다
+(2026-08-12 확인). `ConceptFactoryLimits` 기준으로도 지금은 Slot 5 · Replacement 2 ·
+법률 Redesign 1 → **검사 상한 20**입니다. 사실이나 근거가 부족하면 성공을
 가장하지 않고 입력 필요 또는 실패 상태로 종료합니다.
 
 ## Runtime
@@ -26,8 +27,9 @@ AI 서버가 직접 DB 상태를 변경하지 않습니다.
 
 ## Database
 
-보존 데이터가 없는 rebuild 환경을 전제로 Flyway migration은
-`backend/src/main/resources/db/migration/V1__new_pipeline_baseline.sql` 하나로 시작합니다.
+보존 데이터가 없는 rebuild 환경을 전제로 Flyway migration 은
+`backend/src/main/resources/db/migration/V1__new_pipeline_baseline.sql` 로 시작하고,
+현재 **V21 까지 21개 파일 · 테이블 57개**입니다. 다음 빈 번호는 **V22**입니다.
 기존 DB/volume에 대한 in-place upgrade는 지원하지 않으므로 적용 전에 DB를 초기화해야 합니다.
 
 ## Runtime contracts

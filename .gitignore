@@ -15,6 +15,9 @@
 #    않아서 아래 되살리기(!)가 먹지 않는다.
 ai/app/research/research2/runs/*
 ai/app/research/research2/outputs/
+# 수집이 만드는 새 원장. 씨앗과 달리 **예외 없이 전부 뺀다** — 여기 있는 것은
+# 사용자 사업안의 관측이라 재생성 가능하고, 개인 원자료가 섞일 수 있다.
+ai/app/research/research2/runs-generated/
 
 # 예외 — 견본 컨셉 3개의 원장은 커밋한다. 재생성 가능한 파생 데이터지만,
 # 시장조사 FULL 은 `--from a4`(저장된 수집 재채점) 위에 서 있어서(pipeline.py:9)

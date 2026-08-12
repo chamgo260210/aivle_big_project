@@ -30,7 +30,8 @@
 
 **대부분 A로 시작하고, 느려지면 B로 옮기는 게 맞다.** 실제로 법률 사전점검만 B다.
 
-> ⚠️ **B를 고르면 `TaskRunWorker.validateResult()`에 분기를 반드시 추가**해야 한다.
+> ⚠️ **공용 `TaskRunWorker` 는 없다(2026-08-12 확인).** 모듈마다 자기 워커를 만들고
+> **결과 검증도 그 워커 안에** 넣어야 한다. 안 넣으면 AI 호출은 성공하고 결과만 조용히 버려진다.
 > 현재 이 메서드는 `IDEA_INTERPRETATION`·`IDEA_LEGAL_PRECHECK`·`CONCEPT_LEGAL_VALIDATION`만 알고,
 > 나머지는 `RESULT_DOMAIN_INVARIANT_VIOLATION`으로 **무조건 거부**한다.
 > 잊으면 AI 비용은 다 쓰고 결과만 버려진다 — 컴파일 에러도, 테스트 실패도 나지 않는다.
@@ -78,7 +79,7 @@
 | 14 | `journey/XxxJourneyService.java` | 입력 조립 · `createTask` · `execute` · validator · View record |
 | 15 | `journey/XxxJourneyController.java` | `/api/v2/projects/{projectId}/…` |
 | 16 | (패턴 B만) `journey/XxxWorkerScheduler.java` | `@Scheduled` 폴러 |
-| 17 | (패턴 B만) `taskrun/service/TaskRunWorker.validateResult()` | **필수.** §0-(2) 참고 |
+| 17 | 모듈 전용 워커 안의 결과 검증 (예: `journey/MarketResearchWorker`) | **필수.** 공용 `TaskRunWorker` 는 없다 |
 | 18 | `docs/api/openapi.yaml` | 공개 계약 |
 | 19 | 테스트 | 아래 §4 |
 
@@ -286,8 +287,8 @@ AI 서버
 [ ] XxxJourneyService (taskInput 복사 / createTask / execute / validator)
 [ ] validator: 필드 집합 일치 + enum 화이트리스트 + 보낸 ID 대조
 [ ] 컨트롤러 (/api/v2)
-[ ] 패턴 B면 → TaskRunWorker.validateResult 분기 + @Scheduled 폴러
-[ ] input에 부동소수점 없음 확인                ← 런타임에만 터짐
+[ ] 모듈 전용 워커 + @Scheduled 폴러 + **그 안에 결과 검증**  ← 공용 TaskRunWorker 는 없다
+[ ] input 숫자는 정수    ← 해시가 아니라 «모듈 입력 계약»이 막는다. 계약을 안 걸면 그냥 지나간다
 [ ] docs/api/openapi.yaml
 
 프론트
@@ -322,7 +323,7 @@ AI 서버
 | Java에서 "floating-point JSON numbers…" | input에 소수 넣음 → 정수 basis point나 문자열로 |
 | `HEADER_BODY_CORRELATION_MISMATCH` | 클라이언트를 직접 만들며 헤더를 다르게 넣음 |
 | `DEADLINE_EXCEEDED` (즉시) | `deadlineAt`이 과거. 테스트 고정 시각 주의 |
-| AI 호출은 되는데 결과가 사라짐 | 패턴 B인데 `TaskRunWorker.validateResult` 분기 누락 |
+| AI 호출은 되는데 결과가 사라짐 | 모듈 워커 안에 결과 검증을 안 넣었다 |
 | `AI_RESULT_INVALID` (응답은 멀쩡해 보임) | 최상위 필드 집합 불일치. 서버 로그의 `topLevelFields=` 확인 |
 | `IllegalStateException: AI call must run outside a DB transaction` | 도메인 서비스 메서드에 `@Transactional`을 통째로 붙임 |
 | 기동 실패 (bean 2개) | 같은 포트에 `@Component`를 하나 더 붙임 |

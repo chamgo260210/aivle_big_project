@@ -52,14 +52,21 @@ public class MarketResearchInputFactory {
      *
      * <p>{@code llmBudget} 없이 보내면 AI 쪽이 {@code Budget(total=0)} 으로 떨어져
      * 요약이 {@code BUDGET_EXHAUSTED} 로 조용히 빠진다. 요약은 최소 3회를 요구한다.
+     *
+     * <p>⚠ <b>상한이지 지출이 아니다.</b> 저장된 수집을 재채점하는 판은 예전처럼 3회만 쓴다.
+     * 그런데 <b>원장이 없는 사업안</b>은 같은 요청으로 수집까지 도는데, 그쪽은
+     * 하네스 3 + 수집 ≈80 + 요약 3 이 필요하다. 어느 갈래인지는 <b>AI 서버만 안다</b>
+     * (원장이 있느냐가 가른다). 그래서 상한은 긴 쪽에 맞춘다 — 짧게 두면
+     * {@code _collect} 가 「완주 못 할 지출은 시작하지 않는다」로 <b>시작조차 안 한다</b>.
      */
+    private static final int LLM_BUDGET_FULL = 90;
     public String full(JsonNode concept, String conceptId, String asOf) {
         ObjectNode root = mapper.createObjectNode();
         root.set("textContents", textContents("concept", mapper.writeValueAsString(concept)));
         root.put("conceptId", conceptId);
         root.put("asOf", asOf);
         root.put("mode", "FULL");
-        root.put("llmBudget", 3);
+        root.put("llmBudget", LLM_BUDGET_FULL);
         return finish(root);
     }
 

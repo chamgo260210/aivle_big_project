@@ -9,3 +9,10 @@ python-multipart==0.0.30
 openai==2.38.0
 requests==2.32.4
 trafilatura==2.2.0
+# ⚠ **이 줄이 없어서 컨테이너가 PDF 48건을 통째로 버렸다**(판 ㉞, 유료 4판 ≈252회를
+# 그 결함 위에서 쟀다). `pdf_text.extract` 는 import 실패를 예외가 아니라 값
+# (`pdfplumber 없음: ModuleNotFoundError`)으로 접기 때문에 **아무것도 안 터진다** —
+# 실태조사·설문 PDF 가 조용히 사라질 뿐이다. 로컬엔 깔려 있어 더 안 보였다.
+# 새 서드파티를 엔진에 들이면 **여기에도 적는다**: `tools/preflight.py --need modules` 가
+# 컨테이너 안에서 이 목록을 검사한다.
+pdfplumber==0.11.10

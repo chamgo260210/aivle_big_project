@@ -1,7 +1,8 @@
 # As-Built Architecture (실제 동작 구조)
 
 - Status: **AS_BUILT** — 코드에서 직접 읽어 정리한 것. 목표(Target) 문서가 아니다.
-- Code Baseline: `9ea9975` (origin/main, 2026-08-04 확인)
+- Code Baseline: `9ea9975` (2026-08-04) · **§2·§4·§5·§6·§7·§9 는 2026-08-12 코드 재확인으로 정정**
+- 정정 근거를 기계로 재현하려면: `python scripts/verify-docs.py` (78개 항목 대조)
 - 짝 문서: [AI 모듈 통합 가이드](AI_MODULE_INTEGRATION_GUIDE.md) — 새 AI 기능을 끼워 넣는 절차
 
 > **우선순위:** 이 문서(As-built) < 코드. 충돌하면 코드가 맞다.
@@ -38,7 +39,9 @@ healthcheck 의존. 필요한 환경변수는 `.env.example` 참조 (`AI_PROVIDE
 
 ## 2. 사용자 여정(Journey) — 이 제품이 실제로 하는 일
 
-라우트는 `frontEnd/src/app/router/AppRouter.jsx`가 정본이다. 현재 제품은 **하나의 선형 여정**이다:
+라우트 정본은 **`frontEnd/src/app/routing/AppRouter.jsx`** 다(`App.jsx`가 이것을 import 한다).
+⚠ `app/**router**/AppRouter.jsx` 도 디스크에 남아 있으나 **import 하는 곳이 0곳인 죽은 중복본**이다.
+현재 제품은 **하나의 선형 여정**이다:
 
 칸의 정본은 `ProjectModuleStatusService.findAll()` 이 돌려주는 **여덟 개**이고,
 `PipelineModuleType` 열거 순서와 같다. 실스택으로 확인함(2026-08-11).
@@ -65,15 +68,21 @@ healthcheck 의존. 필요한 환경변수는 `.env.example` 참조 (`AI_PROVIDE
 > 아직 남아 있다(옛 컨셉 모듈). 프론트는 셋 다 `concepts` 한 칸으로 접는데,
 > `Object.fromEntries` 라 **열거 순서의 마지막이 이긴다**.
 
-### 죽은 화면 — 라우트만 남고 전부 리다이렉트
+### 죽은 화면 — **대부분 이미 제거됐다** (2026-08-12 정정)
 
-`AppRouter.jsx` 82–134행이 옛 경로를 전부 journey로 넘긴다.
-`plan/`·`structured-plan`·`review/legal`·`review/financial`·`validate/*`·`report` 등.
-대응하는 프론트 feature 폴더(`feasibility/`, `financial/`, `structured-plan/`, `documents/`,
-`legal-review/`, `personas/`, `report/`, `validation/`, `marketing/`)와 백엔드 `/api/v1` 컨트롤러
-(`legal-reviews`, `feasibility-assessments`, `financial-analyses`, `marketing-contents`,
-`persona-recommendations`, `panel-interviews`, `market-responses`)는 **코드는 살아 있으나 여정에서
-도달 불가능**하다. 새 작업을 여기에 얹지 말 것.
+이 절은 오래 *"`AppRouter.jsx` 82–134행이 옛 경로(`plan/`·`structured-plan`·`review/*`·
+`validate/*`·`report`)를 전부 journey로 넘긴다"*고 적고 있었다. **지금은 그 경로가 하나도 없다.**
+파일은 121행이고 `Navigate`는 프로젝트 라우트 정규화용 1곳뿐이다(grep 0건으로 확인).
+
+남아 있는 잔재는 이것뿐이다:
+
+| 대상 | 상태 |
+|---|---|
+| 프론트 feature 폴더 | `feasibility/` · `financial/` · `report/` **3개만 남음**. `structured-plan/` · `documents/` · `legal-review/` · `personas/` · `validation/` · `marketing/` 은 **삭제됨** |
+| 백엔드 `/api/v1` 레거시 컨트롤러 | `legal-reviews` · `feasibility-assessments` · `financial-analyses` · `persona-recommendations` · `panel-interviews` · `market-responses` **전부 grep 0건 — 없다** |
+| `app/router/AppRouter.jsx` | 죽은 중복본. import 0곳 |
+
+새 작업을 남은 3개 폴더에 얹지 말 것.
 
 ---
 
@@ -116,38 +125,54 @@ AI 서버는 상태를 갖지 않는 동기 실행기다.
 ⑦ 도메인 반영              XxxPersistenceService.complete(...)  — 별도 @Transactional
 ```
 
-**④는 반드시 DB 트랜잭션 밖에서 돈다.** `TaskRunWorker.execute()`가
-`TransactionSynchronizationManager.isActualTransactionActive()`를 확인하고 켜져 있으면
-`IllegalStateException("AI call must run outside a DB transaction")`을 던진다.
+**④는 DB 트랜잭션 밖에서 돌아야 한다.**
+`TransactionSynchronizationManager.isActualTransactionActive()`를 확인하고 켜져 있으면 예외를 던진다.
 그래서 ①②③⑥⑦이 각각 짧은 트랜잭션으로 쪼개져 있는 것이다.
 
-### 3-3. 실행 패턴이 **세 가지**다 — 어느 것을 쓰는지 반드시 확인
+> ⚠ **2026-08-12 정정.** 이 가드가 실제로 있는 곳은 **3개뿐**이다 —
+> `journey/MarketResearchWorker` · `journey/TwinSurveyWorker` ·
+> `journey/TwinSurveyStimulusDraftService`. 나머지 워커에서는 **규율로만** 지켜진다.
+> (예전 서술 *"`TaskRunWorker.execute()`가 한다"* 는 틀렸다 — 그 클래스는 없다.)
 
-| 패턴 | 누가 실행하나 | 사용자 체감 | 쓰는 곳 |
-|---|---|---|---|
-| **A. 동기 인라인** | HTTP 요청 스레드가 직접 `claim→execute→adopt` | 응답이 올 때까지 대기 | `JourneyAiService`, `PersonaJourneyService`, `MarketingReportJourneyService`, `ConceptJourneyService.execute()` |
-| **B. TaskRun 워커** | `@Scheduled` 폴러가 `TaskRunWorker.executeOne(type, workerId)` | 즉시 202 → 화면이 폴링 | `LegalPrecheckService` + `LegalPrecheckWorkerScheduler` (1초 주기) |
-| **C. 인메모리 배치** | `conceptEligibilityExecutor`(ThreadPoolTaskExecutor, core 1 / max 2 / queue 20) | 즉시 반환 → 배치 상태 폴링 | `ConceptJourneyService.generate()` → `runEligibility()` |
+### 3-3. 실행 패턴 — **모듈마다 자기 워커** (2026-08-12 전면 정정)
 
-패턴 A는 응답 검증을 **호출한 서비스가 직접** 한다(`this::validateIdea` 같은 `Consumer<JsonNode>`).
-패턴 B는 **`TaskRunWorker.validateResult()`가** 한다 — 그리고 이 메서드는 현재
-`IDEA_INTERPRETATION`·`IDEA_LEGAL_PRECHECK`·`CONCEPT_LEGAL_VALIDATION` **3개만** 안다.
-그 밖의 TaskType으로 워커를 돌리면 `RESULT_DOMAIN_INVARIANT_VIOLATION`으로 무조건 거부된다.
+> ⚠ 이 절은 오래 *"패턴이 A(동기 인라인)·B(TaskRun 워커)·C(인메모리 배치) 셋"* 이라고 적고,
+> `JourneyAiService` · `PersonaJourneyService` · `MarketingReportJourneyService` ·
+> `ConceptJourneyService` · `conceptEligibilityExecutor` 를 예로 들었다.
+> **그 다섯 개는 전부 존재하지 않는다**(grep 0건). 공용 `TaskRunWorker` 클래스도 없다.
 
-패턴 C는 라운드 루프다: 생성 → origin 무결성 검사 → 법률 배치 검증 →
-목표 개수(`CONCEPT_TARGET_ELIGIBLE_COUNT`, 기본 3)를 채울 때까지 최대
-`CONCEPT_MAX_REPLACEMENT_ROUNDS`(2) 라운드, 후보 상한 `CONCEPT_MAX_INSPECTED_CANDIDATES`(9).
+실제 구조는 **하나**다. `@Scheduled` 폴러를 가진 **모듈별 워커**가 자기 TaskType 을 집어
+`claim → execute → validate → adopt` 를 수행하고, 화면은 폴링한다.
 
-### 3-4. 결과가 도메인에 반영되는 두 시점
+| 워커 | 담당 |
+|---|---|
+| `IdeaBriefDerivationWorker` | 아이디어 브리프 |
+| `ConceptPortfolioWorker` · `ConceptPortfolioContinuationWorker` · `ConceptPortfolioSelectionWorker` | 사업안 v2 |
+| `ConceptFactoryWorker` · `ConceptSelectionActionWorker` | 옛 컨셉 경로 |
+| `MarketResearchWorker` | 시장분석 · BM (`mode` 로 가름) |
+| `TechOpsProposalWorker` | 기술·운영 |
+| `FinancialEstimateWorker` | 재무 |
+| `TwinSurveyWorker` | 패널 트윈 조사 |
+| `MarketingContentWorker` | 마케팅 |
 
-- 패턴 A/C: 실행 직후 `persistence.complete(...)` 호출
-- 패턴 B: **조회 시 지연 반영.** `LegalPrecheckService.current()` → `synchronize(run)`이
-  `TaskRun` 상태를 읽어 도메인 상태를 따라가고, `SUCCEEDED`인데 아직 버전이 없으면
-  `materialize()`가 그때 `LegalPrecheckVersion`·`LegalGuardrailSet`을 만든다.
+공용으로 남은 것은 **`taskrun/service/TaskRunWorkerContext`** 하나인데, 이것은 실행기가 아니라
+*"TaskRun 영속 컨텍스트가 살아 있는 동안 떠 둔 불변 스칼라 스냅샷"* 레코드다.
+트랜잭션 밖에서 AI 를 부르기 위해 필요한 값을 미리 복사해 두는 장치다.
 
-같은 지연 복구가 A 패턴에도 있다: `JourneyAiService.recoverAdoptedResult()` —
-`TaskResult`가 `ADOPTED`인데 도메인 run이 미완료면 재호출 없이 결과만 다시 반영한다.
-**AI를 다시 부르지 않고 복구하는 경로**이므로 지우면 비용이 샌다.
+**따라서 결과 검증은 각 워커가 자기 안에서 한다.** 새 TaskType 을 붙이면서 검증을 안 만들면
+**AI 호출은 성공하고 결과만 조용히 버려진다.**
+
+### 3-4. 결과가 도메인에 반영되는 시점
+
+워커가 채택하면 `XxxPersistenceService.complete(...)` 가 별도 트랜잭션으로 도메인에 반영한다.
+모듈에 따라 **조회 시 지연 반영**(`synchronize` → `materialize`)을 두어,
+`TaskRun` 이 `SUCCEEDED` 인데 도메인 버전이 아직 없으면 그때 만든다.
+
+> ⚠ **2026-08-12 정정.** 예전 서술이 든 `LegalPrecheckService.current()` 와
+> `JourneyAiService.recoverAdoptedResult()` 는 **존재하지 않는다.**
+> (`LegalPrecheckService` 라는 이름은 현재 `journey/MarketResearchService.java` 안에서만 언급된다.)
+> **재호출 없이 결과만 다시 반영하는 복구 경로**라는 설계 의도는 유효하니,
+> 새로 붙이는 모듈도 같은 성질을 갖게 할 것 — 없으면 재실행 비용이 샌다.
 
 ---
 
@@ -208,14 +233,34 @@ Spring `CanonicalInputHasher` ↔ AI `executions.py canonical_hash`.
 2. 객체 키는 **NFC 정규화 후 코드포인트 순 정렬**, 정규화 후 키 충돌은 에러
 3. 문자열도 NFC 정규화
 4. 구분자 공백 없음 (`,` `:`)
-5. **부동소수점 숫자 금지** — Spring이 `"floating-point JSON numbers are not canonical task input"`으로 던진다
+5. 숫자는 **BigDecimal/Decimal 로 정규화** — 후행 0 제거, 지수표기 제거, `-0` → `0`.
+   **거부되는 것은 비유한(NaN·Infinity)뿐이다**
 
-→ 새 task의 input에 `0.35` 같은 값을 넣으면 **컴파일도 테스트도 통과하고 런타임에만 깨진다.**
-비율이 필요하면 정수 basis point(`35` = 0.35%)나 문자열로 넣을 것.
+> ⚠ **정정(2026-08-12).** 이 절은 오래 **"부동소수점 숫자 금지 — Spring이
+> `floating-point JSON numbers are not canonical task input`으로 던진다"**고 적고 있었다. **틀렸다.**
+> - `CanonicalInputHasher.canonicalNumber()`(`taskrun/service/`)는
+>   `isFloatingPointNumber() && !Double.isFinite()` 일 때만 던진다 → **유한 소수는 통과**
+> - 메서드 주석이 *"finite JSON numbers are interpreted as decimal values"* 라고 **의도적 지원**임을 밝힌다
+> - AI 쪽 `canonical_json.py` 도 같다. `ai/tests/test_canonical_json.py` 가
+>   `0.1 → "0.1"` · `3.5 → "3.5"` · `-12.3400 → "-12.34"` 를 **명시적으로 고정**한다
+> - 인용된 문자열은 **코드에 없다**(grep 0건). git 이력상 과거엔 있었고 이후 제거됐다
+
+**그래도 taskInput 에는 정수를 쓴다 — 이유가 다를 뿐이다.**
+막는 것은 해시가 아니라 **모듈별 입력 계약**이고, 실제로 여러 곳이 각자 강제한다:
+
+| 강제하는 곳 | 무엇을 |
+|---|---|
+| `journey/MarketResearchInputFactory.java:133,179` | `isIntegralNumber()` / `isFloatingPointNumber()` 검사 |
+| `journey/BmPlanPreparationService.java:124` | 비용 셋은 정수. 아니면 **400** |
+| `taskrun/contract/TwinStimulusDraftContract` | `priceKrw` 는 원 단위 정수 |
+| `pipeline/finance/application/FinancialService.java:411` | 정수 요구 |
+| `pipeline/conceptportfolio/application/ConceptPortfolioResultContract.java:52` | 정수 요구 |
+
+비율이 필요하면 정수 basis point(`35` = 0.35%)나 문자열로 넣는다 — **지침은 그대로 유효하다.**
 
 ### 응답 금칙 필드
 
-`TaskRunWorker.rejectForbiddenFields()`가 결과 JSON 전체를 재귀 순회하며
+`rejectForbiddenFields()`가 결과 JSON 전체를 재귀 순회하며
 `storageUrl, objectKey, presignedUrl, localPath, fileBytes, base64, prompt, rawProviderResponse, credential`
 중 하나라도 있으면 거부한다. AI가 프롬프트나 원본 응답을 결과에 실어 보내는 것을 구조적으로 막는 장치다.
 
@@ -223,18 +268,23 @@ Spring `CanonicalInputHasher` ↔ AI `executions.py canonical_hash`.
 
 ## 5. AI 서버 내부
 
+> ⚠ **2026-08-12 정정.** 이 절이 적고 있던 `app/api/tasks.py` · `app/api/marketing.py` ·
+> `app/services/task_service.py` · `app/services/banner_service.py` ·
+> `marketing_task_service.py` · `artifact_service.py` · `prompt_service.py` 는 **전부 존재하지 않는다.**
+> 실제 `ai/app/api/` 는 `errors.py` · `executions.py` · `financial.py` **3개**,
+> `ai/app/services/` 는 `journey_provider.py` **1개**뿐이다.
+
 ```
 ai/main.py                      FastAPI 앱. 미들웨어(2MiB 제한·중복 키 거부)·예외 핸들러·라우터 등록
  ├ app/api/executions.py        POST /internal/v1/ai/executions   ← 여정 AI의 전부
- ├ app/api/tasks.py             POST /internal/v1/tasks           ← 구 AiTask 경로 (아래 §7)
- ├ app/api/marketing.py         POST /api/v1/marketing/banners/generate (배너 이미지)
+ ├ app/api/financial.py         재무 모듈
  └ app/api/errors.py            오류 정규화
-app/services/
- ├ journey_provider.py          ★ 프롬프트 로드 → provider 호출 → Pydantic 검증
- ├ task_service.py              구 AiTask 핸들러 레지스트리
- ├ marketing_task_service.py / banner_service.py / artifact_service.py
- └ prompt_service.py            배너 프롬프트 조립
-app/models/journey.py           ★ TaskType별 결과 Pydantic 모델 11개
+app/services/journey_provider.py  ★ 프롬프트 로드 → provider 호출 → Pydantic 검증
+app/canonical_json.py           ★ 언어 간 canonical JSON·해시 (Java 쪽 CanonicalInputHasher 와 짝)
+app/tasks/**                    TaskType별 태스크 구현
+app/research/research2/**       시장조사 엔진 (규칙 JSON 23개 · 측정 도구 22개)
+app/research/bm/**              BM 분석 8파일
+app/twin/**                     패널 트윈 조사
 app/legal/
  ├ pipeline.py                  IDEA_LEGAL_PRECHECK / CONCEPT_LEGAL_VALIDATION 파이프라인
  ├ concept_validation.py        GUARDRAIL / GUARDRAIL_BATCH 모드
@@ -362,30 +412,30 @@ IDEA_LEGAL_PRECHECK / CONCEPT_LEGAL_VALIDATION            → legal.pipeline (�
 
 ## 6. 데이터
 
-- 마이그레이션: SQL `V1`–`V36` + **Java 마이그레이션 `V5`·`V10`** (`backend/src/main/java/db/migration/`).
-  `ddl-auto=validate`. **다음 빈 버전은 V37.** V1–V36은 immutable.
-- 여정 관련 주요 버전: V27 TaskRun 기반, V28 idea journey, V29 concept journey,
-  V30 persona interview, V31 marketing report, V32 idea origin, V33 legal precheck guardrails,
-  V34–V36 concept eligibility 루프·재시도.
+- 마이그레이션: SQL **`V1`–`V21` (21개 파일)**. `ddl-auto=validate`.
+  **다음 빈 버전은 V22.** V1–V21은 immutable.
+  ⚠ **Java 마이그레이션은 없다** — `backend/src/main/java/db/migration/` 디렉터리 자체가 없다.
+  (이 절은 오래 "V1–V36 + Java 마이그레이션 V5·V10, 다음은 V37"이라고 적고 있었다. 2026-08-12 정정)
+- 여정 관련 주요 버전: **V10** market_research · **V11** twin_survey · V12 task_run 오류 사유 ·
+  **V13–V16** concept portfolio v2(제품·계보·선택·델타 법률) · V17–V19 재무 ·
+  **V20** bm_plan_preparation · **V21** research_competitor_seeds.
+- 테이블 **57개**.
 - 파일 bytes는 MinIO(S3 호환), 메타데이터는 RDB. AI 서버는 둘 다 접근 못 한다.
 
 ---
 
-## 7. 병존하는 옛 경로 — 헷갈리기 쉬운 3중 구조
+## 7. 병존하는 옛 경로 — **대부분 사라졌다** (2026-08-12 정정)
 
-이름이 비슷한 AI 연동 경로가 **셋** 있다. 새 작업은 전부 ①이다.
+이 절은 오래 "AI 연동 경로가 **셋**"이라고 적고 있었다. **지금은 ① 하나뿐이다.**
 
-| | 경로 | Spring 쪽 | AI 쪽 | 상태 |
-|---|---|---|---|---|
-| ① | `POST /internal/v1/ai/executions` | `taskrun/` + `journey/` | `app/api/executions.py` | **현행. 여기에 붙일 것** |
-| ② | `POST /internal/v1/tasks` | `aitask/` + `integration/ai/task/` (`AiTaskType` 3종) | `app/api/tasks.py` | 스모크·배너 아티팩트 전용 |
-| ③ | provider 직접 어댑터 | `integration/ai/{document,feasibility,legal,persona,openai}` | 없음 (Spring이 OpenAI 직접 호출) | **레거시**. `AnalysisJob` 기반 |
+| | 경로 | 상태 (2026-08-12 실측) |
+|---|---|---|
+| ① | `POST /internal/v1/ai/executions` — `taskrun/` + `journey/` ↔ `app/api/executions.py` | **현행. 여기에 붙일 것** |
+| ② | ~~`POST /internal/v1/tasks` — `aitask/` + `AiTaskType`~~ | **없다.** `AiTaskType` enum도 `aitask/` 패키지도 `app/api/tasks.py`도 존재하지 않는다. `ai/app/api/errors.py:74` 에 경로 문자열만 잔존 |
+| ③ | ~~provider 직접 어댑터 — `analysis/*`·`document`·`persona`·`job/`~~ | **없다.** 해당 패키지 전부 삭제됨. `integration/ai/` 디렉터리만 남아 있다 |
 
-`TaskType`(여정용, 13종)과 `AiTaskType`(②용, 3종)은 **이름만 같고 다른 enum**이다.
-import를 잘못하면 컴파일은 되고 의미만 틀어진다.
-
-③은 `analysis/{feasibility,financial,legal}`·`document`·`persona` 패키지와 `job/` 러너를 쓴다.
-여정 화면에서 도달할 수 없다.
+따라서 *"`AiTaskType` ≠ `TaskType` 이라 import 를 헷갈린다"* 는 **더 이상 위험이 아니다.**
+`TaskType` 은 **18종**이다(`taskrun/domain/TaskType.java`).
 
 ---
 
@@ -416,15 +466,19 @@ provider 오류 → journey_provider.ProviderFailure(code, reason, status, retry
 
 ## 9. 지뢰 (실측)
 
-1. **부동소수점 input 금지** — §4의 canonical hash 규칙. 런타임에만 터진다.
-2. **`TaskRunWorker.validateResult`는 3개 TaskType만 안다** — 워커(패턴 B)로 새 타입을 돌리려면
-   여기를 반드시 고쳐야 한다. 안 고치면 AI 호출은 성공하고 결과만 버려진다.
+1. **taskInput 에는 정수를 쓴다** — 단, 막는 것은 canonical hash 가 **아니라** 모듈별 입력 계약이다(§4 정정).
+   해셔는 유한 소수를 허용한다. 계약을 안 건 모듈에서는 소수가 그냥 지나간다.
+2. **공용 `TaskRunWorker` 클래스는 없다** — 결과 검증은 **모듈마다 자기 워커**가 한다.
+   새 TaskType 은 자기 폴러와 검증을 만들어야 하고, 안 만들면 AI 호출은 성공하고 결과만 버려진다.
+   ⚠ 트랜잭션 가드(`isActualTransactionActive`)는 **3곳**(`MarketResearchWorker` ·
+   `TwinSurveyWorker` · `TwinSurveyStimulusDraftService`), 금칙 필드 검사(`FORBIDDEN_FIELDS`)는
+   **2곳**(`MarketResearchWorker` · `TwinSurveyWorker`) 에만 있다. **전역 장치가 아니다.**
 3. **AI 호출은 트랜잭션 밖** — 도메인 서비스에 `@Transactional`을 통째로 붙이면 런타임 예외.
 4. **결과 필드 집합은 정확히 일치해야 한다** — `Set.copyOf(result.propertyNames()).equals(expected)`.
    프롬프트가 필드를 하나 더 만들어도 전체가 거부된다. 프롬프트와 validator는 항상 같이 고친다.
 5. **`X-Correlation-Id` 헤더와 본문 `correlationId`가 다르면 400.**
 6. **`deadlineAt`은 미래여야 한다** — 테스트에서 고정 시각을 쓰면 `DEADLINE_EXCEEDED`.
-7. **`AiTaskType` ≠ `TaskType`** (§7).
+7. ~~`AiTaskType` ≠ `TaskType`~~ — **옛 경로 ②·③이 제거되어 더 이상 위험이 아니다**(§7).
 8. **`ai/legal/`은 이제 없다.** 정본은 `ai/app/legal/`. 디스크에 남은 `ai/legal/`은 추적되지 않는
    `__pycache__`·`출력/` 잔재다.
 9. **로그 인코딩**: Java/gradle 로그는 CP949, Python 로그는 UTF-8. `Get-Content -Encoding UTF8`을
