@@ -18,4 +18,17 @@ export const createTechOpsApi = (client) => Object.freeze({
   handoff: async (projectId, snapshotId, options) => (await client.post(`${root(projectId)}/module-handoffs`,
     { module: 'TECH_OPS', inputSnapshotId: snapshotId, requestedOperation: 'START_TECH_OPS_ANALYSIS' }, options)).data,
   runs: async (projectId, options) => (await client.get(`${root(projectId)}/module-runs`, options)).data,
+  // concept·market·bm은 상위 모듈이 확정한 handoff JSON을 그대로 전달한다.
+  generateCommercializationAdvisory: async (projectId, input, options) =>
+    (await client.post(`${tech(projectId)}/advisory`, input, {
+      ...options,
+      // Market/BM scaling and the advisory are two sequential AI calls.
+      // The default API timeout is 15 seconds, which is too short here.
+      timeoutMs: options?.timeoutMs ?? 240_000,
+    })).data,
+  runCommercializationAdvisory: async (projectId, options) =>
+    (await client.post(`${tech(projectId)}/advisory/run`, {}, {
+      ...options,
+      timeoutMs: options?.timeoutMs ?? 240_000,
+    })).data,
 });

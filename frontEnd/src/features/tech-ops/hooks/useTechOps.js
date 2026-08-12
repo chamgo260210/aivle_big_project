@@ -36,6 +36,13 @@ export default function useTechOps(projectId) {
     const timer = setTimeout(() => void refresh(), 0);
     return () => clearTimeout(timer);
   }, [proposalEvents.terminal, refresh]);
+  useEffect(() => {
+    // The preparation can reference an old task after a reset or data cleanup.
+    // Stop the event loop and reload the authoritative preparation once.
+    if (proposalEvents.connectionState !== 'stopped') return undefined;
+    const timer = setTimeout(() => void refresh(), 0);
+    return () => clearTimeout(timer);
+  }, [proposalEvents.connectionState, refresh]);
 
   const act = async (busy, action) => {
     setState((value) => ({ ...value, busy, error: null }));

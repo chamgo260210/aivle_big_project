@@ -22,6 +22,7 @@ from app.api.errors import (
 )
 from app.api.executions import router as execution_router, internal_error
 from app.api.financial import router as financial_router
+from app.api.tech_ops import router as tech_ops_router
 from app.legal.registry import LegalRegistry, RegistryError
 from app.models.contracts import HealthResponse
 from app.request_context import (
@@ -112,6 +113,7 @@ async def request_id_middleware(request: Request, call_next):
 
 app.include_router(execution_router)
 app.include_router(financial_router)
+app.include_router(tech_ops_router)
 
 
 def health_payload(request: Request, health_status: str) -> HealthResponse:
