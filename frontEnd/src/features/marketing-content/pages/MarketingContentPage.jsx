@@ -39,7 +39,9 @@ export default function MarketingContentPage() {
   const latestEvent = progressEvents.at(-1);
 
   async function create() {
-    setNotice(''); try { await hook.create(toCreateRequest(effectiveSetup)); } catch (error) { setNotice(error.message); }
+    setNotice('');
+      try { const reference = effectiveSetup.referenceImage ? await hook.uploadReference(effectiveSetup.referenceImage): null;
+        await hook.create(toCreateRequest(effectiveSetup, reference?.artifactId ?? null)); } catch (error) { setNotice(error.message); }
   }
   async function save() {
     if (!draft) return; setNotice('');
@@ -70,7 +72,7 @@ export default function MarketingContentPage() {
     <div className="mk-workspace">
       <aside className="mk-workspace__setup"><MarketingSourceSummary source={source} />
         <MarketingSetupPanel value={effectiveSetup} onChange={setSetup} onSubmit={() => void create()}
-          disabled={!hook.source} busy={hook.active} /></aside>
+          disabled={!hook.source} busy={hook.active || hook.uploading} /></aside>
       <main className="mk-workspace__canvas">
         <section className="mk-progress" aria-live="polite" aria-busy={hook.active}><div>
           <span>{hook.active ? '생성 중' : generationStatus === 'FAILED' ? '확인 필요' : 'Preview'}</span>
@@ -78,7 +80,7 @@ export default function MarketingContentPage() {
             : latestEvent ? jobEventMessage(latestEvent) : ASYNC_MESSAGES[generationStatus] ?? '콘텐츠를 선택하거나 새로 생성하세요.'}</strong>
         </div>{progressEvents.length > 0 && <ol>{progressEvents.map((event) => <li key={event.sequence}
           data-active={event === latestEvent}>{jobEventMessage(event)}</li>)}</ol>}</section>
-        <MarketingCanvas result={draft} style={style} />
+        <MarketingCanvas result={draft} style={style} artifactUrl={hook.selected?.artifactRefs?.at(-1)} />
         {hook.selected && <MarketingRevisionList revisions={hook.selected.revisions} activeNumber={hook.selected.content.currentRevisionNumber} />}
       </main>
       <aside className="mk-workspace__editor"><MarketingStylePanel value={style} onChange={setStyle} />{draft && <>

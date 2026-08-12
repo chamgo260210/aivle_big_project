@@ -44,7 +44,7 @@ public class SecurityConfiguration {
                     "/actuator/health/**",
                     "/h2-console/**"
                 ).permitAll()
-                .requestMatchers("/internal/v1/ai/task-progress").permitAll()
+                .requestMatchers("/internal/v1/ai/task-progress", "/internal/v1/ai/marketing-artifacts", "/internal/v1/ai/projects/*/evidence-artifacts/*").permitAll()
                 .requestMatchers("/api/v3/internal/market-results").permitAll()
                 .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                 .anyRequest().authenticated())
@@ -104,7 +104,7 @@ public class SecurityConfiguration {
                     "/actuator/health/**",
                     "/h2-console/**"
                 ).permitAll()
-                .requestMatchers("/internal/v1/ai/task-progress").permitAll()
+                .requestMatchers("/internal/v1/ai/task-progress", "/internal/v1/ai/marketing-artifacts", "/internal/v1/ai/projects/*/evidence-artifacts/*").permitAll()
                 .requestMatchers("/api/v3/internal/market-results").permitAll()
                 .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                 .anyRequest().authenticated())
@@ -137,7 +137,7 @@ public class SecurityConfiguration {
                     "/actuator/health/**",
                     "/h2-console/**"
                 ).permitAll()
-                .requestMatchers("/internal/v1/ai/task-progress").permitAll()
+                .requestMatchers("/internal/v1/ai/task-progress", "/internal/v1/ai/marketing-artifacts", "/internal/v1/ai/projects/*/evidence-artifacts/*").permitAll()
                 .requestMatchers("/api/v3/internal/market-results").permitAll()
                 .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                 .anyRequest().authenticated())

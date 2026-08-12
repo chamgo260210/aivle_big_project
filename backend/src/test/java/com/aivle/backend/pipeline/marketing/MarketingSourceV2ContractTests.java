@@ -26,6 +26,11 @@ class MarketingSourceV2ContractTests {
             "sha256:" + "a".repeat(64), "{}", 7L, Instant.EPOCH);
         assertThat(source.getSourceMarketSeedSnapshotId()).isEqualTo("market-seed-1");
         assertThat(source.getFinalizedAt()).isEqualTo(Instant.EPOCH);
+        var portfolioSource = MarketingSourceSnapshot.createPortfolio("source-v2", 1L, "portfolio-market-seed",
+            17L, "portfolio-concept", "2.0", "sha256:" + "b".repeat(64), "{}", 7L, Instant.EPOCH);
+        assertThat(portfolioSource.getSourceType()).isEqualTo("CONCEPT_PORTFOLIO_V2");
+        assertThat(portfolioSource.getSelectionId()).isNull();
+        assertThat(portfolioSource.getPortfolioSelectionId()).isEqualTo(17L);
     }
 
     @Test
