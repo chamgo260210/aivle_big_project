@@ -55,6 +55,7 @@ export function toCreateRequest(setup, referenceArtifactId = null) {
     contentType: setup.contentType, channel: setup.channel.trim(), purpose: setup.purpose.trim(),
     tone: setup.tone.trim(), length: setup.length, requiredPhrases: [...new Set(required)].slice(0, 20),
     excludedPhrases: parsePhrases(setup.excludedPhrases), additionalInstruction: instruction || null,
+    referenceArtifactId,
   };
 }
 
