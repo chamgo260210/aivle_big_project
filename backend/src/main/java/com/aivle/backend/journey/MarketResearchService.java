@@ -214,7 +214,18 @@ public class MarketResearchService {
     private RunView runView(MarketResearchRun run) {
         return new RunView(run.getId(), run.getKind().name(), run.getState().name(),
             run.getTaskRun().getId(), run.getTaskRun().getState().name(),
-            run.getErrorCode(), run.getTaskRun().isRetryable());
+            run.getErrorCode(), safeErrorReason(run.getTaskRun().getLastErrorReason()), run.getTaskRun().isRetryable());
+    }
+
+    /** Only contract-level reasons are returned; provider details and input text stay server-side. */
+    private String safeErrorReason(String reason) {
+        if (reason == null) return null;
+        return switch (reason) {
+            case "FIELD_CONSTRAINT_VIOLATION", "HASH_MISMATCH", "UNKNOWN_FIELD",
+                 "CHUNK_COUNT_EXCEEDED", "CHUNK_SEQUENCE_INVALID", "REQUEST_CONTRACT_INVALID",
+                 "REQUEST_DEADLINE_EXCEEDED", "AI_CONFIGURATION_INVALID" -> reason;
+            default -> null;
+        };
     }
 
     private VersionView versionView(MarketResearchVersion version) {
@@ -226,7 +237,7 @@ public class MarketResearchService {
     }
 
     public record RunView(Long id, String kind, String state, String taskRunId, String taskState,
-                          String errorCode, boolean retryable) { }
+                          String errorCode, String errorReason, boolean retryable) { }
 
     /** {@code result} 는 계약 그대로다 — 백엔드가 다시 가공하지 않는다. */
     public record VersionView(Long id, String kind, Integer versionNumber, JsonNode result,
