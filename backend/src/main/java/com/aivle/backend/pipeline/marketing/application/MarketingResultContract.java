@@ -16,7 +16,7 @@ public class MarketingResultContract {
             || !expectedType.name().equals(value.path("contentType").asText())
             || !text(value.get("title"), 200) || !text(value.get("body"), 20_000)
             || !nullableText(value.get("callToAction"), 500) || !nullableText(value.get("imageBrief"), 4_000)
-            || !stringArray(value.get("hashtags"), 30, 100) || !stringArray(value.get("artifactRefs"), 0, 300)) invalid();
+            || !stringArray(value.get("hashtags"), 30, 100) || !stringArray(value.get("artifactRefs"), 1, 300)) invalid();
         JsonNode legal = value.get("legalReview");
         if (legal == null || !legal.isObject() || !Set.copyOf(legal.propertyNames()).equals(LEGAL)
             || !legal.path("compliant").isBoolean() || !stringArray(legal.get("warnings"), 30, 500)

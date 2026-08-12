@@ -7,6 +7,7 @@ import com.aivle.backend.common.exception.ErrorCode;
 import com.aivle.backend.file.object.ObjectKeyGenerator;
 import com.aivle.backend.file.object.ObjectStoragePort;
 import com.aivle.backend.file.validation.ValidatedUpload;
+import com.aivle.backend.pipeline.artifact.api.ProjectEvidenceArtifactApiModels.ArtifactView;
 import com.aivle.backend.pipeline.artifact.domain.ProjectEvidenceArtifact;
 import com.aivle.backend.pipeline.artifact.repository.ProjectEvidenceArtifactRepository;
 import com.aivle.backend.project.repository.ProjectRepository;
@@ -62,14 +63,36 @@ public class ProjectEvidenceArtifactService {
     @Transactional(readOnly = true)
     public Download download(Long ownerId, Long projectId, String artifactId) {
         requireOwned(ownerId, projectId);
-        ProjectEvidenceArtifact artifact = requireArtifact(projectId, artifactId);
+        return open(projectId, artifactId);
+    }
+
+    @Transactional(readOnly = true)
+    public Download downloadForAi(Long projectId, String artifactId) {
+        return open(projectId, artifactId);
+    }
+
+    private Download open(Long projectId, String artifactId) {
+        ProjectEvidenceArtifact artifact =
+            requireArtifact(projectId, artifactId);
+
         try {
             if (!storage.exists(artifact.getStorageKey())) {
-                throw new BusinessException(ErrorCode.EVIDENCE_ARTIFACT_NOT_FOUND);
+                throw new BusinessException(
+                    ErrorCode.EVIDENCE_ARTIFACT_NOT_FOUND
+                );
             }
-            return new Download(view(artifact), storage.open(artifact.getStorageKey()));
-        } catch (BusinessException exception) { throw exception; }
-        catch (IOException | RuntimeException exception) { throw new BusinessException(ErrorCode.FILE_STORAGE_FAILED); }
+
+            return new Download(
+                view(artifact),
+                storage.open(artifact.getStorageKey())
+            );
+        } catch (BusinessException exception) {
+            throw exception;
+        } catch (IOException | RuntimeException exception) {
+            throw new BusinessException(
+                ErrorCode.FILE_STORAGE_FAILED
+            );
+        }
     }
 
     @Transactional

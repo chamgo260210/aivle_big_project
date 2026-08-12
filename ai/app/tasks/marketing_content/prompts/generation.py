@@ -5,5 +5,6 @@ feasibility, legal-review services, or campaign experiments. Never use prohibite
 allowedClaims, obey requiredControls and communicationRequiredControls, apply every relevant
 requiredDisclosure in the copy, and report that application in
 legalReview. Preserve the requested contentType, channel, purpose, tone, length, required phrases,
-and excluded phrases. This task generates copy and an image brief, not binary image artifacts;
-artifactRefs must therefore be an empty list. Do not include prompts or provider data."""
+and excluded phrases. Write a concrete imageBrief for a premium commercial key visual that can be
+generated from the selected concept. The provider must leave artifactRefs empty because the service
+creates and stores the image after validating the copy. Do not include prompts or provider data."""

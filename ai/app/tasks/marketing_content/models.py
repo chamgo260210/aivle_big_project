@@ -98,6 +98,7 @@ class MarketingContentRequest(StrictModel):
     requiredPhrases: list[ClaimText] = Field(default_factory=list, max_length=20)
     excludedPhrases: list[ClaimText] = Field(default_factory=list, max_length=20)
     additionalInstruction: Annotated[str, Field(min_length=1, max_length=2000)] | None = None
+    referenceArtifactId: Annotated[str, Field(pattern=r"^[0-9a-f-]{36}$")] | None = None
 
 
 class MarketingContentInput(StrictModel):
@@ -120,7 +121,7 @@ class MarketingContentResult(StrictModel):
     hashtags: list[Annotated[str, Field(min_length=1, max_length=100)]] = Field(max_length=30)
     imageBrief: Annotated[str, Field(min_length=1, max_length=4000)] | None
     legalReview: LegalReview
-    artifactRefs: list[ArtifactRef] = Field(max_length=0)
+    artifactRefs: list[ArtifactRef] = Field(max_length=1)
 
 
 def lint_provider_schema(schema: dict) -> list[str]:
