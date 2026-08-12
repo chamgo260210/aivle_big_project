@@ -4,10 +4,12 @@ import com.aivle.backend.pipeline.marketing.domain.*;
 import com.aivle.backend.pipeline.marketing.repository.*;
 import com.aivle.backend.taskrun.integration.InternalAiExecutionClient.ExecutionResponse;
 import com.aivle.backend.taskrun.service.*;
+import com.aivle.backend.file.object.ObjectStoragePort;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.*;
+
 
 @Service @RequiredArgsConstructor
 public class MarketingContentCompletionService {
@@ -17,6 +19,7 @@ public class MarketingContentCompletionService {
     private final MarketingResultContract contract;
     private final MarketingLegalGuard legalGuard;
     private final TaskRunService taskRuns;
+    private final ObjectStoragePort objectStorage;
     private final ObjectMapper mapper;
 
     @Transactional
@@ -35,8 +38,20 @@ public class MarketingContentCompletionService {
         int number = content.completeRevision();
         MarketingContentRevision revision = revisions.save(MarketingContentRevision.create(content.getId(), number,
             MarketingRevisionType.GENERATED, MarketingRevisionOrigin.AI, json, null));
-        for (JsonNode ref : response.result().path("artifactRefs"))
-            assets.save(MarketingAsset.link(content.getId(), revision.getId(), ref.asText()));
+        for (
+            JsonNode ref
+            : response.result().path("artifactRefs")
+        ) {
+            validateArtifact(ref.asText());
+
+            assets.save(
+                MarketingAsset.link(
+                    content.getId(),
+                    revision.getId(),
+                    ref.asText()
+                )
+            );
+        }
     }
 
     @Transactional
@@ -47,5 +62,38 @@ public class MarketingContentCompletionService {
 
     private MarketingContent locked(String id, Long projectId) {
         return contents.findLocked(id, projectId).orElseThrow(() -> new IllegalStateException("marketing content missing"));
+    }
+
+    private void validateArtifact(String artifactRef) {
+        if (
+            !artifactRef.matches(
+                "ai-artifacts/[0-9a-f-]{36}\\.jpg"
+            )
+            || !objectStorage.exists(artifactRef)
+        ) {
+            throw new IllegalArgumentException(
+                "marketing image artifact is missing"
+            );
+        }
+
+        try {
+            ObjectStoragePort.ObjectMetadata metadata =
+                objectStorage.metadata(artifactRef);
+
+            if (
+                !"image/jpeg".equals(metadata.contentType())
+                || metadata.sizeBytes() <= 0
+                || metadata.sizeBytes() > 20L * 1024 * 1024
+            ) {
+                throw new IllegalArgumentException(
+                    "marketing image artifact is invalid"
+                );
+            }
+        } catch (java.io.IOException failure) {
+            throw new IllegalArgumentException(
+                "marketing image artifact is unavailable",
+                failure
+            );
+        }
     }
 }

@@ -168,7 +168,7 @@ public class InternalAiExecutionClient {
      */
     RestClient clientFor(TaskType taskType) {
         return switch (taskType) {
-            case MARKET_RESEARCH -> longClient;
+            case MARKET_RESEARCH,MARKETING_CONTENT_GENERATION -> longClient;
             // 트윈 조사는 n=300·4쌍이면 셀이 7,200개다. 여기를 빠뜨리면 조용히 30초 클라이언트를
             // 쓰고, 그 실패가 retryable 로 사상돼 재시도가 같은 값을 또 태운다.
             case TWIN_SURVEY -> surveyClient;

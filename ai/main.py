@@ -1,3 +1,10 @@
+from fastapi import FastAPI
+from pydantic import BaseModel
+from pathlib import Path
+
+from app.api.marketing import router as marketing_router
+from fastapi.staticfiles import StaticFiles
+
 import json
 import logging
 import os
@@ -23,11 +30,20 @@ from app.request_context import (
     resolve_request_id,
 )
 
-
 app = FastAPI(title="New Pipeline AI Server", version="1.0.0")
 logger = logging.getLogger(__name__)
 INTERNAL_JSON_MAX_BYTES = 2 * 1024 * 1024
 
+output_directory = Path(__file__).resolve().parent / "outputs"
+output_directory.mkdir(parents=True, exist_ok=True)
+
+app.mount(
+    "/outputs",
+    StaticFiles(directory=str(output_directory)),
+    name="outputs",
+)
+
+app.include_router(marketing_router)
 
 def internal_json_limit_exceeded(raw: bytes) -> bool:
     return len(raw) > INTERNAL_JSON_MAX_BYTES
