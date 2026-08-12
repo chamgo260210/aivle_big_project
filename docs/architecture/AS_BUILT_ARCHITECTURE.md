@@ -413,7 +413,7 @@ IDEA_LEGAL_PRECHECK / CONCEPT_LEGAL_VALIDATION            → legal.pipeline (�
 ## 6. 데이터
 
 - 마이그레이션: SQL **`V1`–`V21` (21개 파일)**. `ddl-auto=validate`.
-  **다음 빈 버전은 V22.** V1–V21은 immutable.
+  **다음 빈 버전은 V23.** V1–V22는 immutable.
   ⚠ **Java 마이그레이션은 없다** — `backend/src/main/java/db/migration/` 디렉터리 자체가 없다.
   (이 절은 오래 "V1–V36 + Java 마이그레이션 V5·V10, 다음은 V37"이라고 적고 있었다. 2026-08-12 정정)
 - 여정 관련 주요 버전: **V10** market_research · **V11** twin_survey · V12 task_run 오류 사유 ·
