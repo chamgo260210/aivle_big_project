@@ -42,6 +42,31 @@ public class MarketResearchController {
             MarketResearchRun.Kind.FULL), id(request));
     }
 
+    /**
+     * 경쟁 씨앗 — <b>사업안 화면이 받는 「경쟁/현재 대안」.</b>
+     *
+     * <p>슬롯 하네스가 F_COMP 슬롯의 subject 를 여기서 가져온다. 비워 두면 모델이 실명을
+     * 지어내거나 자리표시자를 만든다(2026-08-08 실측).
+     *
+     * <p>⚠ 0개를 <b>막지 않는다</b> — 경고만 돌려준다. 입구계약서가 「수리 대상」으로
+     * 남겨 둔 자리라(백로그 39) 하드 게이트로 굳히지 않는다.
+     */
+    @GetMapping("/competitor-seeds")
+    public ApiResponse<ResearchCompetitorSeedService.SeedsView> currentSeeds(
+            @PathVariable Long projectId, HttpServletRequest request) {
+        return ApiResponse.success(
+            service.currentSeeds(currentUser.currentUserId(), projectId), id(request));
+    }
+
+    /** <b>통째로 갈아 끼운다.</b> 순서가 값이라 한 줄씩 고치는 길을 만들지 않는다. */
+    @PutMapping("/competitor-seeds")
+    public ApiResponse<ResearchCompetitorSeedService.SeedsView> saveSeeds(
+            @PathVariable Long projectId, @RequestBody JsonNode body,
+            HttpServletRequest request) {
+        return ApiResponse.success(
+            service.saveSeeds(currentUser.currentUserId(), projectId, body), id(request));
+    }
+
     /** 2단계 — 「다음」. 1단계 결과를 근거로 캔버스를 만든다. */
     @PostMapping("/business-model")
     public ResponseEntity<ApiResponse<MarketResearchService.RunView>> startBm(
@@ -82,7 +107,17 @@ public class MarketResearchController {
     }
 
     /** {@code conceptId} 는 AI 쪽 {@code pipeline.CONCEPTS} 의 <b>이름표</b>다. */
-    public record StartRequest(@NotBlank String conceptId, @NotBlank String asOf, JsonNode concept) { }
+    /**
+     * ⚠ {@code conceptId}·{@code concept} 는 <b>받되 쓰지 않는다.</b> 컨셉은 확정된
+     * Market Seed 가 정하고({@link MarketResearchService#startFull}), 시드가 없으면
+     * 실패한다. 필드는 요청 모양을 깨지 않으려고 남긴다 — {@link BmRequest} 와 같은 결이다.
+     *
+     * <p><b>{@code @NotBlank} 를 뗀 이유.</b> 화면이 보내던 값은 견본 이름표였고
+     * (「beauty-noshow」), 그 값이 시드 없는 프로젝트에서 <b>미용실 견본 원장</b>을 태웠다.
+     * 화면에서 견본을 걷어내면서 이제 {@code null} 이 오는데, 필수 제약이 남아 있으면
+     * 그 자리에서 400 이 난다(실측). 안 쓰는 값을 필수로 두지 않는다.
+     */
+    public record StartRequest(String conceptId, @NotBlank String asOf, JsonNode concept) { }
 
     /**
      * {@code conceptId} 는 <b>받되 쓰지 않는다</b> — 2단계 컨셉은 1단계 결과에서 잇는다.

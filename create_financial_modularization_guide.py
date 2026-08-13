@@ -69,5 +69,5 @@ table(['컬럼','내용'],[('assumptions_json','정규화된 KRW 가정값과 �
 heading('8. AI 및 운영 가이드')
 bullets(['AI 서버 내부 엔드포인트는 /internal/v1/financial/report이며 내부 토큰으로만 호출한다.','AI 입력에는 원본 개인정보·비밀정보가 아닌 집계된 계산 결과만 포함한다.','AI 응답에는 provider, model, promptVersion, generatedAt, fallback 여부를 향후 result_json에 추가 저장한다.','시장 근거가 없으면 출처를 꾸며내지 않고 “사용자 가정 기반”으로 보고서에 표시한다.','대용량 시뮬레이션은 향후 비동기 job으로 옮기고 반복 횟수와 seed를 저장한다.'])
 heading('9. 배포와 확인')
-bullets(['Docker: docker compose down --remove-orphans 후 docker compose up --build -d','일반 화면은 localhost:3000, 재무 모듈은 localhost:3001/module','backend와 ai-server의 AI_INTERNAL_SERVICE_TOKEN / AI_SERVER_INTERNAL_API_KEY는 동일한 내부 토큰을 사용한다.','/jaemu 및 별도 jaemu 컨테이너는 제거되었으며 재무 기능은 financial 패키지에만 존재한다.'])
+bullets(['Docker: docker compose down --remove-orphans 후 docker compose up --build -d','일반 화면과 재무 모듈은 localhost:3000에서 제공되며, 재무 모듈 경로는 /module이다.','backend와 ai-server의 AI_INTERNAL_SERVICE_TOKEN / AI_SERVER_INTERNAL_API_KEY는 동일한 내부 토큰을 사용한다.','/jaemu 및 별도 jaemu 컨테이너는 제거되었으며 재무 기능은 financial 패키지에만 존재한다.'])
 d.save(out); print(out)

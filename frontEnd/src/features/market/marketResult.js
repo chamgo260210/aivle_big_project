@@ -82,6 +82,8 @@ export const NOT_FOUND_VIEW = {
   thin_slots: ['NOT_YET', '근거가 기준에 못 미치는 조사 칸'],
   retry_hints: ['NOT_YET', '재조사 힌트 — 자동으로 돌지 않는다'],
   url_filtered: ['NOT_YET', '열지 않고 거른 후보'],
+  extract_capped: ['NOT_YET', '본문은 받았지만 발췌 상한에 걸려 안 읽은 문서'],
+  fetch_empty: ['NOT_YET', '열렸지만 본문을 못 가져온 문서'],
   unknown_error_codes: ['NOT_YET', '분류하지 못한 외부 응답'],
   unfilled_vars: ['ASSUMED', '관측 없이 가정으로 채운 변수'],
   suspect_var: ['ASSUMED', '재조사 1순위 변수'],

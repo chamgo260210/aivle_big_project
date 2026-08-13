@@ -70,10 +70,15 @@ class MarketResearchInputFactoryTests {
     }
 
     @Test
-    @DisplayName("FULL 입력은 요약 예산을 싣는다 — 없으면 요약이 조용히 빠진다")
+    @DisplayName("FULL 예산은 수집까지 덮는다 — 짧으면 수집이 시작조차 안 된다")
     void fullCarriesBudget() throws Exception {
         JsonNode root = MAPPER.readTree(factory.full(realConcept(), "beauty-noshow", "2026-08-09"));
-        assertThat(root.get("llmBudget").asInt()).isEqualTo(3);
+
+        // 상한이지 지출이 아니다. 재채점 판은 예전처럼 3회만 쓴다.
+        // 그런데 **원장이 없는 사업안**은 같은 요청으로 수집까지 돌고, 그쪽은
+        // 하네스 3 + 수집 ≈80 + 요약 3 을 요구한다. 어느 갈래인지는 AI 서버만 안다.
+        // 짧게 두면 `pipeline._collect` 가 「완주 못 할 지출은 시작하지 않는다」로 멈춘다.
+        assertThat(root.get("llmBudget").asInt()).isGreaterThanOrEqualTo(86);
     }
 
     @Test

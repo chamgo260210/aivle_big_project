@@ -180,7 +180,8 @@ frontEnd/src/features/twin-survey/
       (마케팅 게이트는 `selectedSnapshot` 기반). `requiredInputs` 를 `financialSnapshotId` 로 잡는다.
 - [ ] `V11__twin_survey.sql` — **번호를 만들기 직전에 재확인**할 것
 
-**부동소수점 금지**: taskInput 에는 `n`·가격(원, 정수)·문자열만. 실수는
+**부동소수점 금지**(이 모듈의 입력 계약이다 — canonical hash 가 아니다. 2026-08-12 정정):
+taskInput 에는 `n`·가격(원, 정수)·문자열만. 실수는
 `MarketResearchInputFactory:31-33` 수법대로 JSON 문자열로 감싸 `textContents` 에 넣는다.
 
 ### 4-3. 프론트 배선

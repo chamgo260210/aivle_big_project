@@ -20,8 +20,12 @@ export function useProjectJobs(projectId, { onTerminal, refreshKey = 0 } = {}) {
         const available = [...active, ...recent];
         if (manualSelection.current && current && available.some((job) => job.jobId === current)) return current;
         if (active[0]?.jobId && active[0].jobId !== current) return active[0].jobId;
-        if (current && available.some((job) => job.jobId === current)) return current;
-        return active[0]?.jobId ?? recent[0]?.jobId ?? null;
+        if (current && active.some((job) => job.jobId === current)) return current;
+        // Completed/history jobs are displayed from their persisted summary.
+        // They must not open the live SSE endpoint: old job records can no
+        // longer have an event stream and would otherwise produce 404 noise
+        // every time the user changes a pipeline screen.
+        return active[0]?.jobId ?? null;
       });
     } catch (error) {
       setState((current) => ({ ...current, loading: false, error }));
@@ -37,7 +41,8 @@ export function useProjectJobs(projectId, { onTerminal, refreshKey = 0 } = {}) {
     return () => clearTimeout(timer);
   }, [projectId, refresh, refreshKey]);
 
-  const events = useJobEvents(selectedJobId);
+  const selectedIsActive = state.active.some((job) => job.jobId === selectedJobId);
+  const events = useJobEvents(selectedIsActive ? selectedJobId : null);
   useEffect(() => {
     if (!events.terminal || !selectedJobId || handledTerminal.current === selectedJobId) return;
     handledTerminal.current = selectedJobId;

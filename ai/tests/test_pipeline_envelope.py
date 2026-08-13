@@ -463,3 +463,266 @@ def test_layer_two_refuses_a_cell_that_dropped_a_boundary():
     with pytest.raises(serialize.ContractDrift):
         serialize.assert_caveats_reached(
             cells, [{"id": "C-F010", "caveats": ["전사 매출 — 시장 매출 아님"]}])
+
+
+# ══════════════════════════════════════════════════════════════
+# 실린 컨셉 — 사업안이 들어오는 문
+# ══════════════════════════════════════════════════════════════
+def _envelope_of(concept: dict) -> list[dict]:
+    """`MarketResearchInputFactory.full` 이 싸는 모양. 여기서는 청크 하나면 충분하다."""
+    return [{"contentKey": "concept", "contentType": "TEXT", "language": "ko-KR",
+             "chunks": [{"index": 0, "text": json.dumps(concept, ensure_ascii=False)}]}]
+
+
+def _ledger_concept_id() -> str:
+    """원장이 기록한 `concept_id`. **여기 값을 손으로 적지 않는다** — 적으면 갈라진다."""
+    path = os.path.join(pipeline.RESEARCH_HOME, "runs", SEED_RUN, "result.json")
+    with io.open(path, encoding="utf-8") as handle:
+        return ((json.load(handle).get("input") or {}).get("concept") or {}).get("concept_id")
+
+
+def test_inline_concept_ignores_everything_that_is_not_a_concept():
+    """**못 읽으면 없는 것으로 본다.** 화면이 오래 `null` 을 보내던 자리다.
+
+    여기서 조용히 실패하는 대신 예외를 던지면, 견본 이름표로 도는 기존 경로가 통째로 죽는다.
+    """
+    def read(contents):
+        return pipeline._inline_concept({"textContents": contents})
+
+    assert read(None) is None
+    assert read([]) is None
+    # ① 화면이 컨셉 자리에 null 을 보내던 값. 백엔드가 "null" 문자열로 날랐다
+    assert read([{"contentKey": "concept", "chunks": [{"text": "null"}]}]) is None
+    # ② BM 모드가 싣는 봉투 — JSON 이 아니다
+    assert read([{"contentKey": "concept-ref",
+                  "chunks": [{"text": "conceptId=beauty-noshow"}]}]) is None
+    # ③ concept_id 가 없으면 원장과 대조할 수 없다 — 컨셉으로 치지 않는다
+    assert read([{"contentKey": "concept", "chunks": [{"text": '{"name":"이름뿐"}'}]}]) is None
+
+
+def test_inline_concept_joins_chunks_without_a_separator():
+    """청크는 원문을 **코드포인트로 자른 것**이다. 사이에 무엇이든 끼우면 JSON 이 깨진다."""
+    text = json.dumps({"concept_id": "CPT-X", "name": "쪼개진 컨셉"}, ensure_ascii=False)
+    half = len(text) // 2
+    value = pipeline._inline_concept({"textContents": [
+        {"contentKey": "concept",
+         "chunks": [{"index": 0, "text": text[:half]}, {"index": 1, "text": text[half:]}]}]})
+
+    assert value == {"concept_id": "CPT-X", "name": "쪼개진 컨셉"}
+
+
+@needs_ledger
+def test_inline_concept_becomes_the_file_the_engine_loads(monkeypatch):
+    """엔진 함수들은 dict 가 아니라 **경로**를 받는다 — 실린 컨셉은 파일로 떨어져야 한다.
+
+    그리고 그 파일은 `data/` **밖**이어야 한다. 안에 두면 `_concept_path_of` 의 되짚기가
+    같은 `concept_id` 를 가진 파일을 둘 중 아무거나 집게 된다.
+    """
+    concept = {"concept_id": _ledger_concept_id(), "name": "실린 사업안",
+               "hypotheses": [], "_계열": {"계열": "A", "왜": "고객이 사업체다"}}
+    seen: dict = {}
+
+    def _record(source_run, concept_path, concept_id, run_id, budget, rescore,
+                collect=False, as_of="", recollect=None):
+        assert not collect, "이미 있는 원장이면 수집을 다시 사지 않는다"
+        with io.open(concept_path, encoding="utf-8") as handle:
+            seen["concept"] = json.load(handle)
+        seen["path"] = concept_path
+        return serialize.envelope(runId=run_id, conceptId=concept_id)
+
+    monkeypatch.setattr(pipeline, "_full", _record)
+    asyncio.run(pipeline.run_market_research(
+        {"mode": "RESCORE", "sourceRun": SEED_RUN, "conceptId": "beauty-noshow",
+         "textContents": _envelope_of(concept)}, "test-inline-used", 600))
+
+    assert seen["concept"] == concept
+    assert os.path.dirname(os.path.abspath(seen["path"])) != os.path.join(
+        pipeline.RESEARCH_HOME, "data")
+    # 실행이 끝나면 남지 않는다 — 작업 파일이 `data/` 처럼 쌓이면 되짚기가 다시 헷갈린다
+    assert not os.path.exists(seen["path"])
+
+
+@needs_ledger
+def test_the_sample_table_still_wins_when_nothing_is_loaded(monkeypatch):
+    """실린 컨셉이 없으면 **견본 이름표 경로가 그대로 돈다.** 회귀 기준선을 깨지 않는다."""
+    seen: dict = {}
+
+    def _record(source_run, concept_path, concept_id, run_id, budget, rescore,
+                collect=False, as_of="", recollect=None):
+        seen["path"] = concept_path
+        return serialize.envelope(runId=run_id, conceptId=concept_id)
+
+    monkeypatch.setattr(pipeline, "_full", _record)
+    asyncio.run(pipeline.run_market_research(
+        {"mode": "RESCORE", "conceptId": "beauty-noshow"}, "test-preset-used", 600))
+
+    assert seen["path"] == pipeline.CONCEPTS["beauty-noshow"][0]
+
+
+@needs_ledger
+def test_inline_concept_must_be_the_ledgers_concept():
+    """**카페 사고를 막는 그물.** 기존 그물은 `CONCEPTS` 표 세 줄만 보므로 이 길을 못 본다.
+
+    막지 않으면 「관측은 미용실, 잣대는 내 사업안」이 되고 읽는 사람은 구분하지 못한다.
+    """
+    concept = {"concept_id": "CPT-CAFE-INV", "name": "다른 컨셉", "hypotheses": []}
+
+    with pytest.raises(Exception) as failure:
+        asyncio.run(pipeline.run_market_research(
+            {"mode": "RESCORE", "sourceRun": SEED_RUN, "conceptId": "beauty-noshow",
+             "textContents": _envelope_of(concept)}, "test-inline-mismatch", 600))
+
+    assert "FIELD_CONSTRAINT_VIOLATION" in str(failure.value)
+
+
+# ══════════════════════════════════════════════════════════════
+# 수집 배선 — 원장이 없으면 **만든다**
+# ══════════════════════════════════════════════════════════════
+def _collect_input(concept: dict) -> dict:
+    return {"mode": "FULL", "conceptId": concept["concept_id"], "asOf": "2026-08-11",
+            "llmBudget": 200, "textContents": _envelope_of(concept)}
+
+
+def test_a_business_plan_without_a_ledger_triggers_collection(monkeypatch):
+    """**여기가 2단계의 전부다.** 예전에는 「sourceRun 원장 없음」으로 죽었다.
+
+    새 사업안에는 원장이 없다. 죽이면 사용자가 얻는 값이 0 이고, 견본 원장을 붙이면
+    「관측은 미용실, 잣대는 내 사업안」이 된다 — 그래서 **만드는 것만이 답이다.**
+    """
+    concept = {"concept_id": "CPT-STORE-OPS", "name": "소상공인 매장 운영 SaaS",
+               "hypotheses": [], "_계열": {"계열": "A", "왜": "고객이 사업체다"}}
+    seen: dict = {}
+
+    def _record(source_run, concept_path, concept_id, run_id, budget, rescore,
+                collect=False, as_of="", recollect=None):
+        seen.update(source_run=source_run, collect=collect, as_of=as_of)
+        return serialize.envelope(runId=run_id, conceptId=concept_id)
+
+    monkeypatch.setattr(pipeline, "_full", _record)
+    asyncio.run(pipeline.run_market_research(
+        _collect_input(concept), "test-collect-new", 600))
+
+    assert seen["collect"] is True
+    # 원장 이름은 **이름표**다 — 같은 사업안을 다시 눌렀을 때 재채점으로 이어지는 고리다.
+    assert seen["source_run"] == "CPT-STORE-OPS"
+    assert seen["as_of"] == "2026-08-11"
+
+
+@needs_ledger
+def test_an_existing_ledger_is_rescored_not_re_collected(monkeypatch):
+    """**수집은 유료다. 누를 때마다 다시 사지 않는다.**"""
+    concept = {"concept_id": _ledger_concept_id(), "name": "이미 원장이 있다",
+               "hypotheses": []}
+    seen: dict = {}
+
+    def _record(source_run, concept_path, concept_id, run_id, budget, rescore,
+                collect=False, as_of="", recollect=None):
+        seen.update(collect=collect)
+        return serialize.envelope(runId=run_id, conceptId=concept_id)
+
+    monkeypatch.setattr(pipeline, "_full", _record)
+    asyncio.run(pipeline.run_market_research(
+        {"mode": "FULL", "sourceRun": SEED_RUN, "conceptId": "beauty-noshow",
+         "asOf": "2026-08-11", "llmBudget": 3,
+         "textContents": _envelope_of(concept)}, "test-collect-existing", 600))
+
+    assert seen["collect"] is False
+
+
+@needs_ledger
+def test_recollect_reopens_a_ledger_that_was_otherwise_frozen(monkeypatch):
+    """**재수집 지시가 있으면 원장이 있어도 다시 산다** (판 ㉜).
+
+    이 길이 없어서 **설계가 나쁜 채로 한 번 돌면 그 사업안은 영영 그 설계를 썼다.**
+    엔진에는 부분 재수집이 이미 완성돼 있었는데(`run.py --from a4 --collect-slots`)
+    오케스트레이터가 인자를 안 넘겨 닿지 못했을 뿐이다.
+    """
+    concept = {"concept_id": _ledger_concept_id(), "name": "원장이 있다", "hypotheses": []}
+    seen: dict = {}
+
+    def _record(source_run, concept_path, concept_id, run_id, budget, rescore,
+                collect=False, as_of="", recollect=None):
+        seen.update(collect=collect, recollect=recollect)
+        return serialize.envelope(runId=run_id, conceptId=concept_id)
+
+    monkeypatch.setattr(pipeline, "_full", _record)
+    asyncio.run(pipeline.run_market_research(
+        {"mode": "FULL", "sourceRun": SEED_RUN, "conceptId": "beauty-noshow",
+         "asOf": "2026-08-11", "llmBudget": 3,
+         "recollect": {"slots": "S1,S5", "slotsFrom": "current"},
+         "textContents": _envelope_of(concept)}, "test-recollect", 600))
+
+    assert seen["collect"] is True, "재수집 지시가 있으면 다시 산다"
+    assert seen["recollect"] == {"slots": "S1,S5", "from": "a4", "slotsFrom": "current"}
+
+
+@needs_ledger
+def test_a_malformed_recollect_instruction_changes_nothing(monkeypatch):
+    """**모양이 아니면 조용히 기본 경로다.** 반쯤 이해한 지시로 유료 수집을 태우지 않는다."""
+    concept = {"concept_id": _ledger_concept_id(), "name": "원장이 있다", "hypotheses": []}
+    seen: dict = {}
+
+    def _record(source_run, concept_path, concept_id, run_id, budget, rescore,
+                collect=False, as_of="", recollect=None):
+        seen.update(collect=collect, recollect=recollect)
+        return serialize.envelope(runId=run_id, conceptId=concept_id)
+
+    monkeypatch.setattr(pipeline, "_full", _record)
+    for bad in ("문자열", {"from": "없는단계"}, {"slotsFrom": "이상함"}, 7):
+        asyncio.run(pipeline.run_market_research(
+            {"mode": "FULL", "sourceRun": SEED_RUN, "conceptId": "beauty-noshow",
+             "asOf": "2026-08-11", "llmBudget": 3, "recollect": bad,
+             "textContents": _envelope_of(concept)}, "test-recollect-bad", 600))
+        assert seen["collect"] is False, f"{bad!r} 로는 유료 수집이 시작되면 안 된다"
+        assert seen["recollect"] == {}
+
+
+def test_recollect_without_a_ledger_is_refused(monkeypatch):
+    """재수집은 **기존 원장 위에서만** 한다 — 없는 것을 다시 살 수는 없다.
+
+    ⚠ 사유 문구로는 못 잰다: `runner._fail` 이 `detail` 을 받고도 `ProviderFailure` 에
+      **안 싣는다**(docstring 은 「상세는 메시지로 간다」라고 적혀 있는데 코드가 안 그렇다).
+      그래서 **코드와 「수집이 시작되지 않았다」는 사실**로 잰다 — 그쪽이 본론이기도 하다.
+    """
+    concept = {"concept_id": "CPT-STORE-OPS", "name": "원장이 없다", "hypotheses": []}
+    seen: dict = {}
+
+    def _record(*a, **kw):
+        seen["called"] = True
+        return serialize.envelope(runId="r", conceptId="c")
+
+    monkeypatch.setattr(pipeline, "_full", _record)
+    with pytest.raises(Exception) as bad:
+        asyncio.run(pipeline.run_market_research(
+            {"mode": "FULL", "conceptId": "CPT-STORE-OPS", "llmBudget": 3,
+             "recollect": {"slots": "S1"},
+             "textContents": _envelope_of(concept)}, "test-recollect-noledger", 600))
+    assert getattr(bad.value, "reason", "") == "FIELD_CONSTRAINT_VIOLATION"
+    assert "called" not in seen, "거절했으면 수집 갈래로 넘어가지 않는다"
+
+
+def test_bm_never_starts_a_collection(monkeypatch):
+    """BM 은 1단계 원장 위에서만 선다. 여기서 수집이 시작되면 **캔버스가 근거 없이** 나온다."""
+    concept = {"concept_id": "CPT-STORE-OPS", "name": "원장이 없다", "hypotheses": []}
+
+    with pytest.raises(Exception) as refused:
+        asyncio.run(pipeline.run_market_research(
+            {**_collect_input(concept), "mode": "BM"}, "test-collect-bm", 600))
+
+    assert "FIELD_CONSTRAINT_VIOLATION" in str(refused.value)
+
+
+def test_collection_is_not_started_when_the_budget_cannot_finish_it():
+    """완주 못 할 지출은 **시작조차 낭비다**(전원 응시 원칙 ⓑ).
+
+    하네스 3회 + 수집 80회를 못 대면 시작하지 않는다 — 반쯤 사고 멈추면 돈만 나가고
+    원장은 안 남는다.
+    """
+    concept = {"concept_id": "CPT-STORE-OPS", "name": "예산이 모자란다", "hypotheses": []}
+
+    with pytest.raises(Exception) as broke:
+        asyncio.run(pipeline.run_market_research(
+            {**_collect_input(concept), "llmBudget": 5}, "test-collect-poor", 600))
+
+    # 실패 어휘는 백엔드 화이트리스트 안의 것이어야 한다(runner._ALLOWED).
+    assert str(broke.value) == "TRANSIENT_EXECUTION_FAILURE"

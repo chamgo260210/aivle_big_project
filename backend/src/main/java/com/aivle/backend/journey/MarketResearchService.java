@@ -39,6 +39,9 @@ public class MarketResearchService {
     private final com.aivle.backend.taskrun.service.CanonicalInputHasher hasher;
     private final MarketResearchInputFactory inputs;
     private final BmPlanPreparationService bmPlans;
+    private final com.aivle.backend.pipeline.marketseed.application.MarketAnalysisSeedLookup seeds;
+    private final ResearchConceptFactory concepts;
+    private final ResearchCompetitorSeedService competitorSeeds;
     private final ObjectMapper mapper;
 
     public MarketResearchService(ProjectRepository projects, MarketResearchRunRepository runs,
@@ -46,18 +49,48 @@ public class MarketResearchService {
                                  TaskRunService taskRuns,
                                  com.aivle.backend.taskrun.service.CanonicalInputHasher hasher,
                                  MarketResearchInputFactory inputs,
-                                 BmPlanPreparationService bmPlans, ObjectMapper mapper) {
+                                 BmPlanPreparationService bmPlans,
+                                 com.aivle.backend.pipeline.marketseed.application.MarketAnalysisSeedLookup seeds,
+                                 ResearchConceptFactory concepts,
+                                 ResearchCompetitorSeedService competitorSeeds, ObjectMapper mapper) {
         this.projects = projects; this.runs = runs; this.versions = versions;
         this.taskResults = taskResults; this.taskRuns = taskRuns; this.hasher = hasher;
-        this.inputs = inputs; this.bmPlans = bmPlans; this.mapper = mapper;
+        this.inputs = inputs; this.bmPlans = bmPlans; this.seeds = seeds;
+        this.concepts = concepts; this.competitorSeeds = competitorSeeds; this.mapper = mapper;
     }
 
-    /** 1단계 — 시장조사 전 구간. 90~266초 걸린다. */
+    /**
+     * 1단계 — 시장조사 전 구간.
+     *
+     * <p><b>갈래가 하나다.</b> 확정된 Market Seed 를 {@code concept.json} 으로 바꿔 실어
+     * 보낸다. 이름표는 시드의 컨셉 식별자이고 그것이 원장 이름이 된다. AI 쪽에 그 원장이
+     * 없으면 <b>수집부터</b> 돈다(LLM ≈80회 · 유료).
+     *
+     * <p>⚠ <b>화면이 보낸 {@code concept}·{@code conceptId} 는 언제나 무시한다.</b>
+     * 예전에는 시드가 없으면 화면이 보낸 <b>견본 이름표로 떨어졌고</b>, 그것이
+     * 「되돌리기 안전판」이라고 적혀 있었다. <b>안전판이 아니라 조용한 오답 장치였다</b> —
+     * 2026-08-12 실측: 사업안 B 를 선택했지만 아직 확정 전이라(status
+     * {@code LEGAL_REPORT_READY}) 시드가 없었고, 그래서 <b>미용실 노쇼 견본 원장</b>이
+     * 재채점돼 「TAM 10.2억원 · 6/6 · SUCCEEDED」가 나왔다. 사용자는 냉동 간편식 사업안의
+     * 결과라고 읽는다. 실패보다 나쁜 것은 <b>남의 자료로 성공했다고 말하는 것</b>이다.
+     *
+     * <p>그래서 시드가 없으면 <b>실패시킨다</b>(절대 규칙 — 조용한 기본값을 만들지 않는다).
+     * 되돌릴 곳은 견본이 아니라 「사업안을 확정하라」는 말이다.
+     */
     @Transactional
     public RunView startFull(Long ownerId, Long projectId, JsonNode concept, String conceptId, String asOf) {
         Project project = owned(ownerId, projectId);
-        String input = inputs.full(concept, conceptId, asOf);
-        return start(ownerId, project, MarketResearchRun.Kind.FULL, null, input, conceptId);
+        var seed = seeds.current(projectId).orElseThrow(() -> new BusinessException(
+            ErrorCode.RESOURCE_NOT_FOUND,
+            "확정된 사업안이 없다 — 사업안을 선택하고 확정한 뒤에 시장조사를 실행해야 한다"));
+        String label = seeds.conceptIdOf(seed);
+        JsonNode payload = concepts.build(label, mapper.readTree(seed.getSnapshotJson()),
+            bmPlans.current(projectId).constraints(),
+            competitorSeeds.conceptBlock(projectId));
+        log.info("Market research runs on the confirmed business plan projectId={} conceptId={} portfolio={}",
+            projectId, label, seeds.isPortfolio(seed));
+        String input = inputs.full(payload, label, asOf);
+        return start(ownerId, project, MarketResearchRun.Kind.FULL, null, input, label);
     }
 
     /**
@@ -84,6 +117,19 @@ public class MarketResearchService {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND,
                 "1단계 결과에 conceptId 가 없다 — 이어붙일 컨셉을 알 수 없다");
         }
+        // ⚠ **1단계 결과가 «지금 확정된 사업안» 의 것인지 대조한다**(2026-08-12 실측).
+        //    위 주석은 「클라이언트가 보낸 conceptId 로 덮지 않는다」까지만 지켰는데,
+        //    **1단계 결과 자체가 남의 컨셉이면 그대로 이어진다.** 실제로 그렇게 돌았다:
+        //    사업안 B 의 1단계가 아직 안 끝난 시점에 BM 을 눌렀더니 가장 최신 FULL 결과가
+        //    미용실 견본이었고, BM 캔버스가 `conceptId=beauty-noshow` 로 나왔다.
+        //    사업안을 바꾸면 옛 1단계 결과가 그대로 남으므로 재현 조건이 흔하다.
+        String current = seeds.current(projectId).map(seeds::conceptIdOf).orElseThrow(
+            () -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND,
+                "확정된 사업안이 없다 — 사업안을 확정한 뒤에 BM 분석을 실행해야 한다"));
+        if (!current.equals(label)) {
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND,
+                "1단계 결과가 지금 사업안의 것이 아니다 — 이 사업안으로 시장조사를 먼저 실행해야 한다");
+        }
         // 사용자가 앞 화면에서 채운 실행 계획. 없으면 기존 경로 그대로다 —
         // 계획 칸은 견본의 `_bm_plan` 이 있으면 그것으로, 없으면 빈 채로 나간다.
         var plan = bmPlans.forExecution(projectId).orElse(null);
@@ -103,6 +149,20 @@ public class MarketResearchService {
     public BmPlanPreparationService.PlanView currentPlan(Long ownerId, Long projectId) {
         owned(ownerId, projectId);
         return bmPlans.current(projectId);
+    }
+
+    /** 경쟁 씨앗 — 읽기. 소유 검사만 여기서 하고 정규화는 씨앗 서비스가 한다. */
+    @Transactional(readOnly = true)
+    public ResearchCompetitorSeedService.SeedsView currentSeeds(Long ownerId, Long projectId) {
+        owned(ownerId, projectId);
+        return competitorSeeds.current(projectId);
+    }
+
+    @Transactional
+    public ResearchCompetitorSeedService.SeedsView saveSeeds(Long ownerId, Long projectId,
+                                                             JsonNode payload) {
+        owned(ownerId, projectId);
+        return competitorSeeds.replace(projectId, ownerId, payload);
     }
 
     @Transactional

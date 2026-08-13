@@ -15,19 +15,6 @@ import useTwinSurveyPolling from './useTwinSurveyPolling.js';
 import './twin-survey.css';
 
 /**
- * 견본 컨셉. **정본은 AI 서버**(`ai/app/research/pipeline.py` 의 `CONCEPTS`)이고 여기는
- * 이름표만 든다 — 시장조사 화면(`MarketResearchPage`)이 같은 셋을 같은 방식으로 쓴다.
- *
- * 확정된 컨셉이 있으면 서버가 그것을 쓰고 이 고름은 무시된다. 이 목록이 있는 이유는
- * 컨셉 파이프라인이 아직 안 찬 환경에서도 이 단계를 시연·시험할 수 있어야 하기 때문이다.
- */
-const SAMPLE_CONCEPTS = [
-  ['beauty-noshow', '미용실 노쇼 관리'],
-  ['household-ledger', '가계부 앱'],
-  ['pet-treat', '반려동물 수제 간식'],
-];
-
-/**
  * 손으로 만드는 길에 쓰는 빈 쌍.
  *
  * ⚠ **첫 화면의 기본값이 아니다.** 이 빈 칸이 기본이던 것이 이 기능을 못 쓰게 만든
@@ -66,7 +53,6 @@ export default function TwinSurveyPage() {
   const [draft, setDraft] = useState(null);
   const [drafting, setDrafting] = useState(false);
   const [draftError, setDraftError] = useState(null);
-  const [conceptKey, setConceptKey] = useState(SAMPLE_CONCEPTS[0][0]);
   /** 편집 중인 쌍의 인덱스. null 이면 창이 닫혀 있다. */
   const [editing, setEditing] = useState(null);
 
@@ -79,13 +65,13 @@ export default function TwinSurveyPage() {
     setDrafting(true);
     setDraftError(null);
     try {
-      setDraft(await api.draftStimulus(conceptKey));
+      setDraft(await api.draftStimulus());
     } catch (failure) {
       setDraftError(draftFailureText(failure));
     } finally {
       setDrafting(false);
     }
-  }, [api, conceptKey]);
+  }, [api]);
 
   const useDraft = useCallback((draftSituation, chosen) => {
     setSituation(draftSituation);
@@ -118,20 +104,6 @@ export default function TwinSurveyPage() {
               확정한 컨셉에서 <strong>비교할 두 안</strong>을 뽑아 준다.
               「가격은 양쪽 같게, 속성은 하나만」이라는 규칙은 초안이 지킨 채로 나온다.
             </p>
-            {/* 확정된 컨셉이 있으면 서버가 그것을 쓴다 — 이 고름은 그때 무시된다. */}
-            <div className="twin-page__samples" role="group" aria-label="견본 컨셉">
-              {SAMPLE_CONCEPTS.map(([key, label]) => (
-                <Button
-                  key={key}
-                  variant={key === conceptKey ? 'primary' : 'outline'}
-                  aria-pressed={key === conceptKey}
-                  disabled={drafting}
-                  onClick={() => setConceptKey(key)}
-                >
-                  {label}
-                </Button>
-              ))}
-            </div>
             <div className="twin-page__draft-actions">
               <Button onClick={makeDraft} disabled={drafting}>
                 {drafting ? '초안 만드는 중…' : '자극 초안 만들기'}

@@ -29,11 +29,24 @@ import tools.jackson.databind.ObjectMapper;
 @Component
 public class MarketResearchWorker {
     /**
-     * 시장조사 전 구간은 <b>90~266초</b>라 2분 예산으로는 구조적으로 못 끝난다.
-     * lease 는 예산보다 넉넉해야 한다 — 같거나 짧으면 정상 실행이 만료로 회수돼
-     * 260초짜리가 중복 실행된다.
+     * <b>한 TaskType 에 시간 규모가 둘이다.</b>
+     *
+     * <ul>
+     *   <li>저장된 수집 재채점 — <b>90~266초</b> (실측). 6분 예산으로 충분했다.</li>
+     *   <li><b>수집부터</b> — 하네스(LLM ≤3) + 드라이런 + 수집(LLM ≈80 · 3.5분+).
+     *       새 사업안에는 원장이 없어서 이 갈래를 탄다.</li>
+     * </ul>
+     *
+     * <p>예산은 <b>긴 쪽에 맞춘다.</b> 짧게 두면 수집이 구조적으로 완주하지 못한다 —
+     * LLM 값은 이미 지불했는데 원장은 안 남는 것이 가장 나쁜 결말이다.
+     *
+     * <p>⚠ 대가가 있다: 재채점이 매달리면 워커 하나를 예전보다 오래 문다. 어느 갈래인지는
+     * AI 서버만 알아서(원장 존재 여부) 백엔드가 미리 가를 수 없다.
+     *
+     * <p>lease 는 예산보다 넉넉해야 한다 — 같거나 짧으면 정상 실행이 만료로 회수돼
+     * 중복 실행된다.
      */
-    private static final Duration BUDGET = Duration.ofMinutes(6);
+    private static final Duration BUDGET = Duration.ofMinutes(20);
     private static final Duration LEASE = BUDGET.plusMinutes(2);
 
     private static final Set<String> FORBIDDEN_FIELDS = Set.of("storageUrl", "objectKey", "presignedUrl",

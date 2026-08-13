@@ -3,8 +3,6 @@ package com.aivle.backend.journey;
 import com.aivle.backend.common.exception.BusinessException;
 import com.aivle.backend.common.exception.ErrorCode;
 import com.aivle.backend.pipeline.marketseed.domain.MarketAnalysisSeedSnapshot;
-import com.aivle.backend.pipeline.marketseed.repository.MarketAnalysisSeedSnapshotRepository;
-import com.aivle.backend.pipeline.selection.repository.ConceptSelectionRepository;
 import com.aivle.backend.project.entity.Project;
 import com.aivle.backend.project.repository.ProjectRepository;
 import com.aivle.backend.taskrun.contract.TwinStimulusDraftContract;
@@ -56,28 +54,27 @@ public class TwinSurveyStimulusDraftService {
      */
     private static final Pattern PLAIN_KRW = Pattern.compile("(\\d[\\d,]*)\\s*원");
     private static final Pattern SCALED_UNIT = Pattern.compile("\\d\\s*[만억조]");
-    private static final Pattern SAFE_LABEL = Pattern.compile("[A-Za-z0-9._-]{1,64}");
     private static final long PRICE_MAX = 100_000_000L;
 
     private final ProjectRepository projects;
-    private final ConceptSelectionRepository selections;
-    private final MarketAnalysisSeedSnapshotRepository snapshots;
+    private final com.aivle.backend.pipeline.marketseed.application.MarketAnalysisSeedLookup seeds;
     private final TaskRunService taskRuns;
     private final CanonicalInputHasher hasher;
     private final InternalAiExecutionClient client;
     private final ObjectMapper mapper;
 
-    public TwinSurveyStimulusDraftService(ProjectRepository projects, ConceptSelectionRepository selections,
-                                          MarketAnalysisSeedSnapshotRepository snapshots, TaskRunService taskRuns,
+    public TwinSurveyStimulusDraftService(ProjectRepository projects,
+                                          com.aivle.backend.pipeline.marketseed.application.MarketAnalysisSeedLookup seeds,
+                                          TaskRunService taskRuns,
                                           CanonicalInputHasher hasher, InternalAiExecutionClient client,
                                           ObjectMapper mapper) {
-        this.projects = projects; this.selections = selections; this.snapshots = snapshots;
+        this.projects = projects; this.seeds = seeds;
         this.taskRuns = taskRuns; this.hasher = hasher; this.client = client; this.mapper = mapper;
     }
 
-    public JsonNode draft(Long ownerId, Long projectId, String sampleConceptId) {
+    public JsonNode draft(Long ownerId, Long projectId) {
         Project project = owned(ownerId, projectId);
-        String input = mapper.writeValueAsString(material(projectId, sampleConceptId));
+        String input = mapper.writeValueAsString(material(projectId));
         String inputHash = hasher.hash(TaskType.TWIN_STIMULUS_DRAFT, SCHEMA_VERSION, "ko-KR", input);
         // 「다시 뽑기」를 누를 수 있어야 한다 — 같은 컨셉이면 해시가 같아 nonce 없이는
         // 중복 방지에 걸린다. 조사·시장조사와 같은 이유다.
@@ -125,24 +122,18 @@ public class TwinSurveyStimulusDraftService {
      * 마켓 시드 스냅샷에서 <b>필요한 칸만</b> 꺼낸다. 스냅샷 전체를 넘기지 않는 이유는
      * 법률 근거·평가 원문까지 프롬프트에 실리기 때문이다 — 초안에 쓰이지 않는다.
      */
-    private ObjectNode material(Long projectId, String sampleConceptId) {
-        MarketAnalysisSeedSnapshot snapshot = selections
-            .findByProjectIdAndCurrentSelectionTrueAndDeletedAtIsNull(projectId)
-            .flatMap(selection -> snapshots.findBySelectionIdAndProjectIdAndDeletedAtIsNull(
-                selection.getId(), projectId))
-            .orElse(null);
-        if (snapshot == null) {
-            // 견본 컨셉 이름표. 시장조사와 **같은 길**이다 — 재료는 AI 서버가 들고 있고
-            // 백엔드는 이름표만 넘긴다(`research.pipeline.CONCEPTS`). 여기서 아는 이름을
-            // 따로 열거하지 않는 이유는 그 목록이 갈라지기 때문이다 — 모르는 이름이면 AI 가 막는다.
-            if (safeLabel(sampleConceptId)) {
-                ObjectNode label = mapper.createObjectNode();
-                label.put("conceptId", sampleConceptId.trim());
-                return label;
-            }
-            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND,
-                "확정된 컨셉이 없다 — 컨셉을 먼저 고르고 가설을 확정하라");
-        }
+    private ObjectNode material(Long projectId) {
+        // ⚠ **여기가 병합이 남긴 구멍이었다.** 예전에는 레거시 선택 경로만 봐서
+        //    사업안(포트폴리오)으로 확정한 프로젝트의 시드를 **못 봤고**, 조용히 견본
+        //    이름표로 떨어졌다 — 예외도 로그도 없었다. 조회는 이제 한 곳에만 있다.
+        // ⚠ **견본 이름표 갈래를 없앴다**(2026-08-12). 예전에는 시드가 없으면 화면이 보낸
+        //    견본 이름표를 그대로 넘겼는데, 그 갈래가 시장조사에서 실제로 사고를 냈다 —
+        //    사업안을 선택했지만 확정 전이라 시드가 없었고, 미용실 노쇼 견본 원장이
+        //    냉동 간편식 사업안의 결과로 나왔다(6/6 · SUCCEEDED). 여기도 같은 모양이었다.
+        //    조용한 기본값을 만들지 않는다 — 확정 전이면 실패시킨다.
+        MarketAnalysisSeedSnapshot snapshot = seeds.current(projectId).orElseThrow(
+            () -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND,
+                "확정된 사업안이 없다 — 사업안을 선택하고 확정한 뒤에 자극 초안을 만들어야 한다"));
         JsonNode seed = mapper.readTree(snapshot.getSnapshotJson());
         JsonNode concept = seed.path("selectedConcept");
         JsonNode hypotheses = seed.path("finalHypotheses");
@@ -163,14 +154,6 @@ public class TwinSurveyStimulusDraftService {
                 "컨셉 스냅샷에 이름이 없다 — 초안을 만들 재료가 아니다");
         }
         return material;
-    }
-
-    /**
-     * 이름표로 쓸 수 있는 글자인가. 아는 이름인지는 <b>AI 가</b> 정한다 — 여기서는
-     * 경로·주입에 쓰일 수 있는 글자만 막는다({@code _SAFE_RUN_ID} 와 같은 결).
-     */
-    private static boolean safeLabel(String value) {
-        return value != null && SAFE_LABEL.matcher(value.trim()).matches();
     }
 
     /** @return 원 단위 정수, 또는 확실히 못 읽으면 null. */
