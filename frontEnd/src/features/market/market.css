@@ -9,11 +9,50 @@
      (`features/marketing-content/styles/marketing-content.css`). 실제로 `.mk-actions` 가
      겹쳐 이 화면의 「다음」 버튼이 화면 하단에 sticky 로 붙어 버렸다. CSS 는 전역이다. */
 
-.market-page { display: grid; align-content: start; gap: 1.75rem; min-width: 0; }
-.market-page > .pipeline-page-heading { margin-bottom: -1.25rem; }  /* 머리글은 바로 아래와 한 덩이 */
+/* 본문 폭 920px — 목업이 정한 한 컬럼이다. 셸의 `minmax(0,1fr)` 안에 그대로 앉는다.
+   ⚠ 여백은 카드 사이 14px 하나로 통일한다(목업 `.card { margin-bottom:14px }`). */
+.market-page { display: grid; align-content: start; gap: .875rem; min-width: 0; max-width: 920px; }
+.market-page > .pipeline-page-heading { margin-bottom: .5rem; }
 .market-page__actions { display: flex; justify-content: flex-end; gap: .5rem; }
 .market-note { color: var(--color-text-secondary); font-size: .85rem; margin: 0 0 .75rem; }
 .mr-actions { display: flex; justify-content: flex-end; gap: .5rem; }
+
+/* 카드 — 흰 배경 · 1px 테두리 · 12px 반경 · 20px 안여백. **그림자 없음.**
+   그림자는 「떠 있음」을 뜻하는데 이 화면의 카드는 전부 같은 층이다. */
+.market-page .ui-card { padding: 1.25rem; box-shadow: none; }
+.market-page .ui-card__title { margin: 0 0 .25rem; font-size: 1rem; }
+
+/* ── 섹션 머리 — 「시장 분석」·「비즈니스 모델」 ────────────── */
+.bv-sec { display: flex; align-items: baseline; gap: .75rem; margin: 1rem 0 0; }
+.bv-sec h3 { margin: 0; font-size: 1rem; }
+.bv-sec > span { color: var(--color-text-secondary); font-size: .78rem; line-height: 1.6; }
+.bv-sec > .ui-button { margin-left: auto; min-height: 2.25rem; padding: 0 .75rem; font-size: .78rem; }
+
+.bv-foot { display: flex; justify-content: flex-end; gap: .625rem; margin-top: .75rem; }
+.bv-label { margin: 0 0 .5rem; font-size: .82rem; font-weight: 700; }
+
+/* ── 진행바 — **불확정**이다 ────────────────────────────────
+   서버가 진행률을 주지 않는다. 퍼센트로 바꾸면 없는 수를 지어내는 것이다.
+   막대는 「돌고 있다」만 말하고, 얼마나 남았는지는 말하지 않는다. */
+.bv-runbar {
+  height: 6px; margin-top: .875rem; overflow: hidden;
+  border-radius: 3px; background: var(--color-neutral-100);
+}
+.bv-runbar i {
+  display: block; width: 38%; height: 100%;
+  border-radius: 3px; background: var(--color-action-primary);
+  animation: bv-slide 1.6s ease-in-out infinite;
+}
+@keyframes bv-slide { from { margin-left: -38%; } to { margin-left: 100%; } }
+@media (prefers-reduced-motion: reduce) {
+  .bv-runbar i { width: 100%; opacity: .5; animation: none; }
+}
+
+/* 점프 착지 — 900ms 민트 깜빡임. 테두리·그림자로 표시하면 스크롤 도중에는 안 보인다. */
+@keyframes bv-land { from { background: var(--color-mint-50); } to { background: transparent; } }
+@media (prefers-reduced-motion: reduce) {
+  .mr-sub.is-on, .bm-det.is-on { animation: none; background: var(--color-mint-50); }
+}
 
 /* 견본 컨셉 고르기 — 임시 다리. 컨셉이 DB 에서 오면 이 규칙도 같이 사라진다. */
 
@@ -24,15 +63,16 @@
 .num { font-variant-numeric: tabular-nums; }
 
 /* ── KPI 4장 ─────────────────────────────────────────────── */
-.mr-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1rem; }
-@media (max-width: 840px) { .mr-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.mr-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .625rem; }
+@media (max-width: 720px) { .mr-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .mr-kpi {
-  display: grid; gap: .4rem; align-content: start; padding: 1.35rem 1.25rem;
+  display: grid; gap: .25rem; align-content: start; padding: .95rem;
   border: 1px solid var(--color-border-default); border-radius: var(--radius-card);
   background: var(--color-surface); font: inherit; text-align: left; cursor: pointer;
-  transition: border-color var(--motion-fast), background-color var(--motion-fast);
+  transition: border-color var(--motion-fast);
 }
-.mr-kpi:hover { border-color: var(--color-action-primary); background: var(--color-mint-50); }
+/* hover 는 **테두리만** 민트다. 그림자·이동은 카드가 떠 있다는 뜻인데 그렇지 않다. */
+.mr-kpi:hover { border-color: var(--color-action-primary); }
 .mr-kpi > span:first-child { color: var(--color-text-secondary); font-size: .75rem; font-weight: 700; }
 .mr-kpi b { font-size: 1.5rem; font-weight: 800; letter-spacing: -.03em; line-height: 1.25; }
 .mr-kpi small { color: var(--color-text-secondary); font-size: .75rem; }
@@ -83,23 +123,33 @@
 .mr-ledger__reads { display: grid; gap: .4rem; margin: 0; padding: 0; list-style: none; }
 .mr-limits__foot { margin: 0; padding: 0; list-style: none; }
 
-/* ── 과목 섹션 — 성적표 7과목이 곧 목차다 ────────────────── */
-.mr-sec {
-  border: 1px solid var(--color-border-default); border-radius: var(--radius-card);
-  background: var(--color-surface); scroll-margin-top: 5.5rem;
+/* 「이 숫자의 기준」 — KPI 바로 밑 한 줄 카드. 경계 문장이라 접지 않는다. */
+.mr-basis p { margin: 0; color: var(--color-text-secondary); font-size: .82rem; line-height: 1.7; }
+.mr-basis b { color: var(--color-text-primary); }
+
+/* ── 과목 7줄 — 성적표가 곧 목차다 ────────────────────────
+   카드 **하나** 안에 일곱 줄이 1px 상단 구분선으로 들어간다. 과목마다 카드를 세우면
+   첫 화면이 7장으로 불어나 목차 구실을 못 한다. */
+.mr-subs { padding-block: .75rem !important; }
+.mr-sub { border-top: 1px solid var(--color-border-default); scroll-margin-top: 5.5rem; }
+.mr-sub:first-child { border-top: 0; }
+.mr-sub.is-on { animation: bv-land 900ms ease-out; }
+.mr-sub__h {
+  display: grid; grid-template-columns: 1.4rem auto auto minmax(0, 1fr) auto;
+  gap: .5rem; align-items: center; width: 100%;
+  padding: .8rem 0; border: 0; background: none;
+  color: inherit; font: inherit; text-align: left; cursor: pointer;
 }
-.mr-sec.is-on { border-color: var(--color-action-primary); box-shadow: 0 0 0 3px var(--color-mint-50); }
-.mr-sec__h { display: flex; align-items: center; gap: .7rem; padding: 1.25rem 1.5rem; }
-.mr-sec__n {
-  display: grid; place-items: center; width: 1.4rem; height: 1.4rem; border-radius: .35rem;
-  background: var(--color-neutral-100); color: var(--color-text-secondary); font-size: .68rem; font-weight: 800;
+.mr-sub__h:disabled { cursor: default; }
+.mr-sub__n { color: var(--color-border-strong); font-size: .72rem; font-weight: 800; }
+.mr-sub__h > b { font-size: .87rem; }
+.mr-sub__d {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--color-text-secondary); font-size: .81rem;
 }
-.mr-sec__h h3 { margin: 0; font-size: 1rem; }
-.mr-sec__h > span:last-child {
-  margin-left: auto; color: var(--color-text-secondary);
-  font-size: .78rem; line-height: 1.6; text-align: right;
-}
-.mr-sec__b { padding: 1.5rem; border-top: 1px solid var(--color-neutral-100); }
+.mr-sub__c { color: var(--color-mint-700); font-size: .75rem; font-weight: 700; white-space: nowrap; }
+.mr-sub__h:hover:not(:disabled) .mr-sub__c { text-decoration: underline; }
+.mr-sub__b { padding: .25rem 0 1.25rem; overflow-x: auto; }
 
 .mr-figs { display: flex; flex-wrap: wrap; gap: 2.5rem; margin-bottom: 1.35rem; }
 .mr-figs > div > span { display: block; margin-bottom: .2rem; color: var(--color-text-secondary); font-size: .72rem; font-weight: 700; }
@@ -158,22 +208,18 @@
 .bm-plan__split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1.25rem; align-items: start; }
 @media (max-width: 1100px) { .bm-plan__split { grid-template-columns: 1fr; } }
 
-.bm-plan { display: grid; gap: 1.5rem; }
-.bm-plan__row { display: grid; gap: .5rem; }
-.bm-plan__q { display: flex; align-items: baseline; gap: .6rem; flex-wrap: wrap; }
-.bm-plan__q label, .bm-plan__label { font-size: .88rem; font-weight: 700; }
-/* 어느 칸을 채우는지 — 시스템 어휘로 묻지 않으면서 결과와 이어 보게 한다. */
-.bm-plan__cell { margin-left: auto; padding: .1rem .45rem; border-radius: 999px; background: var(--color-bg-subtle); color: var(--color-text-secondary); font-size: .7rem; font-weight: 700; }
-.bm-plan__hint { margin: 0; color: var(--color-text-secondary); font-size: .78rem; line-height: 1.7; }
-.bm-plan__nums { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .75rem; }
-@media (max-width: 620px) { .bm-plan__nums { grid-template-columns: 1fr; } }
+/* 폼 자체(`.bm-plan*`)는 컨셉 단계로 갔다 — `concept-portfolio/styles/business-proposal-polish.css`.
+   여기 남은 둘은 아직 이 폴더의 `BmPlanPreview.jsx` 가 쓴다. */
 .bm-plan__preview { display: grid; gap: .6rem; }
 .bm-plan__preview h3 { margin: 0; font-size: 1rem; }
 
 /* ═══ BM 캔버스 ═══════════════════════════════════════════ */
-.bm-verdict { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; padding: 1.1rem 1.25rem; }
-.bm-verdict h3 { margin: 0; font-size: .95rem; }
-.bm-verdict p { flex: 1 1 16rem; margin: 0; color: var(--color-text-secondary); font-size: .85rem; }
+/* 목업의 `.verdict` — 큰 배지 + 굵은 한 문장 + 흐린 확신도. */
+.bm-verdict { display: flex; align-items: center; gap: .875rem; flex-wrap: wrap; padding: 1.1rem 1.25rem; }
+.bm-verdict > .ui-badge { font-size: .875rem; padding: .5rem .875rem; }
+.bm-verdict p { flex: 1 1 16rem; margin: 0; font-size: .85rem; }
+.bm-verdict strong { color: var(--color-text-primary); }
+.bm-verdict__conf { color: var(--color-text-secondary); }
 
 .bm-tally { display: flex; flex-wrap: wrap; gap: .75rem; margin: 0; color: var(--color-text-secondary); font-size: .78rem; }
 .bm-tally span { display: inline-flex; align-items: center; gap: .4rem; }
@@ -182,30 +228,20 @@
 .bm-kind--obs { background: #e5f4f8; color: #176275; }
 .bm-kind--plan { background: #edf1f1; color: #51676a; }
 
-/* 9칸을 «의미»로 세 묶음. 5열 포스터 배치는 웹 폭에서 칸당 195px 밖에 안 나와
-   한글이 10~12자마다 끊긴다. 4·3·2 로 나누면 칸당 280px 이상 나오고, 행 병합이
-   사라져 짧은 칸 옆의 빈 구멍도 없어진다. 묶음 순서 = 누구에게 · 어떻게 만들고 · 돈은. */
-.bm-band { display: grid; gap: .75rem; margin-bottom: 1.75rem; }
-.bm-band:last-of-type { margin-bottom: 0; }
-.bm-band__t {
-  display: flex; align-items: center; gap: .6rem;
-  color: var(--color-text-secondary); font-size: .72rem; font-weight: 800; letter-spacing: .06em;
-}
-.bm-band__t::after { content: ""; flex: 1; height: 1px; background: var(--color-neutral-100); }
-.bm-band__row { display: grid; gap: 1rem; align-items: start; }
-.bm-band--4 .bm-band__row { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-.bm-band--3 .bm-band__row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-.bm-band--2 .bm-band__row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-@media (max-width: 1000px) { .bm-band__row { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; } }
-@media (max-width: 620px) { .bm-band__row { grid-template-columns: 1fr !important; } }
+/* 9칸 — **3×3 균등**. 목업(`public/wireframe.html`)이 정본이라 4·3·2 밴드는 걷어냈다.
+   좁아지면 3→2→1 로 접힌다. */
+.bm-canvas { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .5rem; align-items: start; }
+@media (max-width: 720px) { .bm-canvas { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 480px) { .bm-canvas { grid-template-columns: 1fr; } }
 
 .bm-cell {
-  display: flex; flex-direction: column; gap: .85rem; padding: 1.25rem 1.35rem 1.15rem;
-  border: 1px solid var(--color-border-default); border-radius: var(--radius-card);
+  display: flex; flex-direction: column; gap: .5rem; min-height: 6.5rem; padding: .75rem;
+  border: 1px solid var(--color-border-default); border-radius: .625rem;
   background: var(--color-surface); font: inherit; text-align: left; cursor: pointer;
-  transition: border-color var(--motion-fast), background-color var(--motion-fast);
+  transition: border-color var(--motion-fast);
 }
-.bm-cell:hover { border-color: var(--color-action-primary); background: var(--color-mint-50); }
+/* hover 는 **테두리만** 민트다 — 그림자·이동 없음. */
+.bm-cell:hover { border-color: var(--color-action-primary); }
 .bm-cell--plan { background: var(--color-bg-subtle); }
 .bm-cell__h { display: flex; align-items: center; gap: .45rem; }
 .bm-cell__h h4 { margin: 0; color: var(--color-text-primary); font-size: .84rem; font-weight: 700; }
@@ -223,8 +259,8 @@
 /* 구분선을 없앤다. 바닥에 고정된 줄이 짧은 카드 안에 빈 공간을 만들고 있었다. */
 .bm-cell__foot { display: flex; align-items: center; gap: .45rem; color: var(--color-text-secondary); font-size: .73rem; }
 
-.bm-swr { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; align-items: start; }
-@media (max-width: 800px) { .bm-swr { grid-template-columns: 1fr; } }
+.bm-swr { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .625rem; align-items: start; }
+@media (max-width: 720px) { .bm-swr { grid-template-columns: 1fr; } }
 .bm-swr > div {
   padding: 1.35rem 1.35rem 1.5rem; border: 1px solid var(--color-border-default);
   border-radius: var(--radius-card); background: var(--color-surface);
@@ -241,7 +277,7 @@
   border: 1px solid var(--color-border-default); border-radius: var(--radius-card);
   background: var(--color-surface); scroll-margin-top: 5.5rem;
 }
-.bm-det.is-on { border-color: var(--color-action-primary); box-shadow: 0 0 0 3px var(--color-mint-50); }
+.bm-det.is-on { animation: bv-land 900ms ease-out; }
 .bm-det__h { display: flex; align-items: center; gap: .6rem; padding: 1.15rem 1.5rem; }
 .bm-det__h h4 { margin: 0; font-size: .95rem; }
 .bm-det__h > .ui-badge:last-child { margin-left: auto; }
@@ -282,4 +318,114 @@
   display: flex;
   gap: var(--space-2);
   margin-bottom: var(--space-3);
+}
+
+/* 옛 `.bv-progress`(두 걸음 알약)는 2026-08-13 에 걷어냈다 — 목업에 없고, 그 자리는
+   조사 중 카드의 `.bv-runbar` 가 가져갔다. */
+
+/* ═══ 화면 2 「다듬어진 컨셉」 ════════════════════════════════
+   같은 라우트 안의 둘째 뷰다. 색은 전부 토큰이고 파랑은 쓰지 않는다. */
+
+/* 2단계 표시 — 여정 사이드바는 「3. 사업 검증」 한 칸이라, 그 안에 화면이 둘이라는
+   사실을 말할 자리가 여기밖에 없다. */
+.bv-steps { display: flex; gap: .375rem; margin: 0 0 .25rem; padding: 0; list-style: none; }
+.bv-steps button {
+  display: inline-flex; align-items: center; gap: .45rem;
+  padding: .35rem .75rem; border: 1px solid transparent; border-radius: var(--radius-pill);
+  background: none; color: var(--color-text-secondary); font: inherit;
+  font-size: .78rem; font-weight: 700; cursor: pointer;
+}
+.bv-steps button:hover { border-color: var(--color-action-primary); }
+.bv-steps button.is-on { background: var(--color-mint-50); color: var(--color-mint-700); font-weight: 800; }
+.bv-steps__n { color: var(--color-border-strong); font-size: .72rem; font-weight: 800; }
+.bv-steps button.is-on .bv-steps__n { color: var(--color-mint-700); }
+
+.cr-outcome { display: flex; align-items: baseline; gap: .5rem; margin: 0; }
+.cr-outcome .market-note { margin: 0; }
+.cr-foot-note { margin: .25rem 0 0; text-align: right; }
+
+/* 컨셉 원문 — **문서처럼** 읽힌다. 15px / 줄간 2.0 은 목업 그대로다. */
+.cr-doc { font-size: .9375rem; line-height: 2; }
+.cr-doc p { margin: 0 0 .75rem; }
+.cr-doc p:last-child { margin-bottom: 0; }
+/* 서술문 갈래 — 한 문단으로 흐른다. 칸 이름표가 없으니 들여쓰기도 없다. */
+.cr-doc--flow p { margin: 0; }
+.cr-doc__k {
+  display: block; color: var(--color-text-secondary);
+  font-size: .72rem; font-weight: 800; line-height: 1.6; letter-spacing: .02em;
+}
+/* 바뀐 구간 — 초록 배경 + 초록 밑줄 + 위첨자 번호. 누르면 아래 그 항목으로 간다. */
+.cr-chg {
+  padding: .0625rem .1875rem; border: 0; border-bottom: 2px solid var(--color-status-success);
+  border-radius: 3px; background: rgb(46 125 79 / 10%);
+  color: inherit; font: inherit; line-height: inherit; cursor: pointer;
+}
+.cr-chg:hover { background: rgb(46 125 79 / 18%); }
+.cr-chg sup {
+  margin-left: .125rem; padding: 0 .3125rem; border-radius: .5rem;
+  background: var(--color-status-success); color: var(--color-text-inverse);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: .625rem; font-weight: 800;
+}
+
+/* 「무엇이, 왜 바뀌었나요」 — 카드를 쪼개지 않고 1px 상단 구분선으로 나눈다. */
+.cr-why { border-top: 1px solid var(--color-border-default); padding: .9375rem 0; scroll-margin-top: 5.5rem; }
+.cr-why:first-of-type { border-top: 0; padding-top: 0; }
+.cr-why.is-on { animation: bv-land 900ms ease-out; }
+.cr-why__h { display: flex; align-items: center; gap: .5rem; margin: 0; }
+.cr-why__h b { font-size: .875rem; }
+.cr-tag {
+  padding: .0625rem .4375rem; border-radius: .5rem;
+  background: var(--color-status-success); color: var(--color-text-inverse);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: .6875rem; font-weight: 800;
+}
+.cr-diff { margin: .375rem 0 0; font-size: .84rem; line-height: 1.75; }
+.cr-old { color: var(--color-border-strong); text-decoration: line-through; }
+.cr-why__r { margin: .375rem 0 0; color: var(--color-text-secondary); font-size: .84rem; line-height: 1.75; }
+/* 「근거 보기」 — 이 화면의 핵심 이동이다. 민트 pill 하나로 화면 1 의 그 과목까지 간다. */
+.cr-from {
+  display: inline-flex; align-items: center; gap: .375rem;
+  margin-top: .5rem; padding: .1875rem .625rem;
+  border: 0; border-radius: var(--radius-control);
+  background: var(--color-mint-50); color: var(--color-mint-700);
+  font: inherit; font-size: .78rem; font-weight: 700; cursor: pointer;
+}
+.cr-from:hover { text-decoration: underline; }
+.cr-ev {
+  padding: .0625rem .375rem; border: 1px solid var(--color-action-primary);
+  border-radius: 4px; background: var(--color-mint-50); color: var(--color-mint-700);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: .65rem; font-weight: 600;
+}
+
+/* 법률 검토 — 같은 카드 안의 줄. 경계 문장(「법률 자문이 아니에요」)은 맨 위에 남는다. */
+.cr-law { border-top: 1px solid var(--color-border-default); padding: .9375rem 0; scroll-margin-top: 5.5rem; }
+.cr-law.is-on { animation: bv-land 900ms ease-out; }
+.cr-law__sum { margin: 0 0 .25rem; font-size: .84rem; line-height: 1.75; }
+.cr-law__sum small { color: var(--color-text-secondary); }
+.cr-law__h { display: flex; align-items: center; flex-wrap: wrap; gap: .4375rem; margin: 0; }
+.cr-law__h b { font-size: .875rem; }
+.cr-clause {
+  padding: .0625rem .4375rem; border-radius: 4px;
+  background: var(--color-mint-50); color: var(--color-mint-700);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: .69rem;
+}
+/* 주제 — 검토가 이 컨셉의 말로 적은 한 마디(「「저나트륨」 표시 기준」).
+   조문 번호(.cr-clause)와 같은 자리에 서지만 코드가 아니라 «말»이라 폭이 자유롭다. */
+.cr-topic { color: var(--color-text-secondary); font-size: .78rem; }
+/* 조항이 이 컨셉에 왜 걸리는지 — 법 조문 해설이 아니다. */
+.cr-law__r { margin: .375rem 0 0; color: var(--color-text-secondary); font-size: .84rem; line-height: 1.75; }
+.cr-law__n { margin: .3125rem 0 0; color: var(--color-text-secondary); font-size: .84rem; line-height: 1.75; }
+.cr-law__l { display: grid; gap: .3125rem; margin: .4375rem 0 0; padding: 0; list-style: none; }
+.cr-law__l li {
+  position: relative; padding-left: .9rem;
+  color: var(--color-text-secondary); font-size: .84rem; line-height: 1.75;
+}
+.cr-law__l li::before {
+  content: ""; position: absolute; left: .15rem; top: .7rem;
+  width: 4px; height: 4px; border-radius: 50%; background: var(--color-border-strong);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cr-why.is-on, .cr-law.is-on { animation: none; background: var(--color-mint-50); }
 }

@@ -71,6 +71,36 @@ public class MarketResearchInputFactory {
     }
 
     /**
+     * 사업 검증 — <b>한 실행에 두 걸음</b>(FULL → BM)이 들어간다.
+     *
+     * <p>봉투는 1단계와 같고 계획 4칸만 더 붙는다. AI 쪽 러너가 이 하나를 받아
+     * {@code mode} 를 갈아 끼우며 두 번 부른다 — 그래서 {@code mode} 는 여기서 정하지 않고
+     * 러너가 정한다. 그래도 계약상 칸은 채워야 하므로 {@code VALIDATION} 을 싣는다.
+     *
+     * <p>⚠ 예산은 <b>1단계 상한 그대로</b>다. BM 은 1회짜리라 여기에 더할 것이 없고,
+     * 짧게 잡으면 수집이 「완주 못 할 지출은 시작하지 않는다」로 시작조차 안 한다.
+     */
+    public String validation(JsonNode concept, String conceptId, String asOf,
+                             JsonNode planMaterial, JsonNode constraints) {
+        ObjectNode root = mapper.createObjectNode();
+        root.set("textContents", textContents("concept", mapper.writeValueAsString(concept)));
+        root.put("conceptId", conceptId);
+        root.put("asOf", asOf);
+        root.put("mode", "VALIDATION");
+        root.put("llmBudget", LLM_BUDGET_FULL);
+        // 비어 있으면 칸 자체를 만들지 않는다 — 빈 객체를 실으면 AI 쪽에서 「사용자가
+        // 안 썼다」와 「사용자가 비웠다」가 같아진다. BM 쪽 규칙과 같다.
+        if (planMaterial != null && planMaterial.isObject() && !planMaterial.isEmpty()) {
+            root.set("planMaterial", planMaterial);
+        }
+        if (constraints != null && constraints.isObject() && !constraints.isEmpty()) {
+            assertIntegers(constraints);
+            root.set("executionConstraints", constraints);
+        }
+        return finish(root);
+    }
+
+    /**
      * 2단계 — <b>이름표 하나만</b> 넘긴다.
      *
      * <p>1단계 결과({@code MarketJoinData})를 그대로 실으면 그 안의 부동소수점 31개가

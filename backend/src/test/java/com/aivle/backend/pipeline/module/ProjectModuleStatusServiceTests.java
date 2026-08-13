@@ -18,8 +18,9 @@ import com.aivle.backend.pipeline.conceptportfolio.selection.repository.ConceptP
 import com.aivle.backend.pipeline.idea.domain.IdeaBrief;
 import com.aivle.backend.pipeline.idea.domain.IdeaBriefStatus;
 import com.aivle.backend.pipeline.idea.repository.IdeaBriefRepository;
+import com.aivle.backend.journey.MarketResearchRun;
 import com.aivle.backend.journey.MarketResearchRunRepository;
-import com.aivle.backend.journey.TwinSurveyRunRepository;
+import com.aivle.backend.journey.MarketInterviewRunRepository;
 import com.aivle.backend.pipeline.integration.repository.ModuleRunRepository;
 import com.aivle.backend.pipeline.finance.repository.FinancialInputPreparationRepository;
 import com.aivle.backend.pipeline.finance.repository.FinancialInputSnapshotRepository;
@@ -31,11 +32,11 @@ import com.aivle.backend.pipeline.marketseed.domain.MarketAnalysisSeedSnapshot;
 import com.aivle.backend.pipeline.selection.repository.ConceptSelectionRepository;
 import com.aivle.backend.pipeline.selection.domain.ConceptSelection;
 import com.aivle.backend.pipeline.techops.domain.TechOpsInputPreparation;
-import com.aivle.backend.pipeline.techops.domain.TechOpsInputSnapshot;
 import com.aivle.backend.pipeline.finance.domain.FinancialInputPreparation;
 import com.aivle.backend.pipeline.techops.repository.TechOpsInputPreparationRepository;
 import com.aivle.backend.pipeline.techops.repository.TechOpsInputSnapshotRepository;
 import com.aivle.backend.project.entity.Project;
+import com.aivle.backend.taskrun.domain.TaskRun;
 import com.aivle.backend.project.repository.ProjectRepository;
 import java.time.LocalDateTime;
 import java.util.Optional;
@@ -57,12 +58,12 @@ class ProjectModuleStatusServiceTests {
     private final FinancialInputSnapshotRepository financialSnapshots = mock(FinancialInputSnapshotRepository.class);
     private final FinancialAnalysisReportRepository financialAnalysisReports = mock(FinancialAnalysisReportRepository.class);
     private final MarketResearchRunRepository marketResearchRuns = mock(MarketResearchRunRepository.class);
-    private final TwinSurveyRunRepository twinSurveyRuns = mock(TwinSurveyRunRepository.class);
+    private final MarketInterviewRunRepository marketInterviewRuns = mock(MarketInterviewRunRepository.class);
     private final ProjectModuleStatusService service = new ProjectModuleStatusService(
         projects, briefs, conceptRuns, portfolioSelections, selections, snapshots, runs, marketing, marketingSources,
         techOpsPreparations, techOpsSnapshots, financialPreparations, financialSnapshots,
         financialAnalysisReports,
-        marketResearchRuns, twinSurveyRuns);
+        marketResearchRuns, marketInterviewRuns);
 
     @Test
     void derivesIdeaAndConceptFromCanonicalDomainsWithoutProjectDescription() {
@@ -87,7 +88,7 @@ class ProjectModuleStatusServiceTests {
 
         assertThat(modules).extracting(ProjectModuleStatusResponse::module).containsExactly(
             PipelineModuleType.IDEA, PipelineModuleType.CONCEPT_PORTFOLIO,
-            PipelineModuleType.MARKET_ANALYSIS, PipelineModuleType.BUSINESS_MODEL, PipelineModuleType.TECH_OPS,
+            PipelineModuleType.MARKET_ANALYSIS, PipelineModuleType.TECH_OPS,
             PipelineModuleType.FINANCE, PipelineModuleType.PANEL_SURVEY, PipelineModuleType.MARKETING);
         assertThat(modules.get(0).status()).isEqualTo(PipelineModuleStatus.COMPLETED);
         assertThat(modules.get(0).confirmedSnapshotId()).isEqualTo("brief-snapshot");
@@ -106,10 +107,11 @@ class ProjectModuleStatusServiceTests {
         assertThat(modules.get(1).status()).isEqualTo(PipelineModuleStatus.NOT_READY);
         assertThat(modules.get(3).status()).isEqualTo(PipelineModuleStatus.NOT_READY);
         assertThat(modules.get(4).status()).isEqualTo(PipelineModuleStatus.NOT_READY);
+        // 2=사업 검증, 3=기술·운영, 4=재무, 5=시장 인터뷰, 6=마케팅 — 시장분석과 BM 이
+        // 한 칸으로 접히면서 인덱스가 또 한 번 당겨졌다. 칸은 일곱이다.
+        assertThat(modules).hasSize(7);
         assertThat(modules.get(5).status()).isEqualTo(PipelineModuleStatus.NOT_READY);
-        // 6번이 트윈 조사, 7번이 마케팅이다 — 컨셉 두 칸이 하나로 접히면서 인덱스가 당겨졌다.
         assertThat(modules.get(6).status()).isEqualTo(PipelineModuleStatus.NOT_READY);
-        assertThat(modules.get(7).status()).isEqualTo(PipelineModuleStatus.NOT_READY);
     }
 
     @Test
@@ -162,18 +164,13 @@ class ProjectModuleStatusServiceTests {
         assertThat(techOps.nextAction().route()).isEqualTo("/tech-ops");
     }
 
+    /** 재무는 「사업 검증」이 끝나야 열린다 — 게이트는 검증 실행(BM)이지 기술·운영 스냅샷이 아니다. */
     @Test
-    void exposesIndependentFinancialPreparationStatusAfterTechOpsSnapshotFinalization() {
+    void exposesIndependentFinancialPreparationStatusAfterBusinessValidationSucceeds() {
         when(projects.findByIdAndOwnerIdAndDeletedAtIsNull(41L, 7L)).thenReturn(Optional.of(mock(Project.class)));
-        ConceptSelection selection = mock(ConceptSelection.class); MarketAnalysisSeedSnapshot seed = mock(MarketAnalysisSeedSnapshot.class);
-        TechOpsInputSnapshot techOpsSnapshot = mock(TechOpsInputSnapshot.class);
         FinancialInputPreparation preparation = mock(FinancialInputPreparation.class);
-        when(selection.getId()).thenReturn(13L); when(seed.getId()).thenReturn("market-seed-1"); when(techOpsSnapshot.getId()).thenReturn("tech-1");
-        when(selections.findByProjectIdAndCurrentSelectionTrueAndDeletedAtIsNull(41L)).thenReturn(Optional.of(selection));
-        when(snapshots.findBySelectionIdAndProjectIdAndDeletedAtIsNull(13L, 41L)).thenReturn(Optional.of(seed));
-        when(techOpsSnapshots.findBySourceMarketSeedSnapshotIdAndProjectIdAndDeletedAtIsNull("market-seed-1", 41L))
-            .thenReturn(Optional.of(techOpsSnapshot));
-        when(financialPreparations.findByProjectIdAndSourceTechOpsSnapshotIdAndDeletedAtIsNull(41L, "tech-1"))
+        succeededValidationRun(31L);
+        when(financialPreparations.findByProjectIdAndSourceMarketResearchRunIdAndDeletedAtIsNull(41L, 31L))
             .thenReturn(Optional.of(preparation));
 
         var finance = service.findAll(7L, 41L).stream()
@@ -182,6 +179,18 @@ class ProjectModuleStatusServiceTests {
         assertThat(finance.status()).isEqualTo(PipelineModuleStatus.NEEDS_INPUT);
         assertThat(finance.requiredInputs()).containsExactly("financialRequiredInputs");
         assertThat(finance.nextAction().route()).isEqualTo("/finance");
+    }
+
+    /** 검증이 끝나기 전에는 재무가 「사업 검증 결과」를 가리킨다 — 없어진 BM 칸이 아니라. */
+    @Test
+    void financeGateNamesTheBusinessValidationResultBeforeValidationSucceeds() {
+        when(projects.findByIdAndOwnerIdAndDeletedAtIsNull(41L, 7L)).thenReturn(Optional.of(mock(Project.class)));
+
+        var finance = service.findAll(7L, 41L).stream()
+            .filter(item -> item.module() == PipelineModuleType.FINANCE).findFirst().orElseThrow();
+
+        assertThat(finance.status()).isEqualTo(PipelineModuleStatus.NOT_READY);
+        assertThat(finance.requiredInputs()).containsExactly("businessValidationResult");
     }
 
     /**
@@ -198,7 +207,7 @@ class ProjectModuleStatusServiceTests {
         assertThat(twin.status()).isEqualTo(PipelineModuleStatus.NOT_READY);
         assertThat(twin.requiredInputs())
             .containsExactly("marketAnalysisSeedSnapshotId", "financialSnapshotId");
-        assertThat(twin.nextAction().route()).isEqualTo("/panel-survey");
+        assertThat(twin.nextAction().route()).isEqualTo("/market-interview");
     }
 
     @Test
@@ -214,6 +223,60 @@ class ProjectModuleStatusServiceTests {
 
         assertThat(twin.status()).isEqualTo(PipelineModuleStatus.NOT_READY);
         assertThat(twin.requiredInputs()).containsExactly("financialSnapshotId");
+    }
+
+    /**
+     * 시장조사만 끝난 상태는 「사업 검증」 전체로는 아직 안 끝난 것이다 — 다음 걸음(BM)이 남아 있다.
+     * COMPLETED 로 보이면 사용자는 끝나지도 않은 검증을 끝났다고 읽는다.
+     */
+    @Test
+    void businessValidationStaysReadyWhileOnlyTheMarketResearchLegSucceeded() {
+        when(projects.findByIdAndOwnerIdAndDeletedAtIsNull(41L, 7L)).thenReturn(Optional.of(mock(Project.class)));
+        MarketResearchRun marketRun = mock(MarketResearchRun.class);
+        TaskRun marketTaskRun = taskRun("task-market");
+        when(marketRun.getState()).thenReturn(MarketResearchRun.State.SUCCEEDED);
+        when(marketRun.getId()).thenReturn(29L);
+        when(marketRun.getTaskRun()).thenReturn(marketTaskRun);
+        when(marketResearchRuns.findTopByProjectIdAndKindAndDeletedAtIsNullOrderByCreatedAtDescIdDesc(
+            41L, MarketResearchRun.Kind.FULL)).thenReturn(Optional.of(marketRun));
+
+        var validation = businessValidation();
+
+        assertThat(validation.status()).isEqualTo(PipelineModuleStatus.READY);
+        assertThat(validation.nextAction().route()).isEqualTo("/business-validation");
+    }
+
+    /** BM 까지 끝나야 칸이 완료다. 그 실행이 칸의 얼굴이 된다. */
+    @Test
+    void businessValidationCompletesOnlyOnceTheBusinessModelLegSucceeded() {
+        when(projects.findByIdAndOwnerIdAndDeletedAtIsNull(41L, 7L)).thenReturn(Optional.of(mock(Project.class)));
+        succeededValidationRun(31L);
+
+        var validation = businessValidation();
+
+        assertThat(validation.status()).isEqualTo(PipelineModuleStatus.COMPLETED);
+        assertThat(validation.activeRunId()).isEqualTo("31");
+    }
+
+    private void succeededValidationRun(long runId) {
+        MarketResearchRun businessRun = mock(MarketResearchRun.class);
+        TaskRun businessTaskRun = taskRun("task-bm");
+        when(businessRun.getState()).thenReturn(MarketResearchRun.State.SUCCEEDED);
+        when(businessRun.getId()).thenReturn(runId);
+        when(businessRun.getTaskRun()).thenReturn(businessTaskRun);
+        when(marketResearchRuns.findTopByProjectIdAndKindAndDeletedAtIsNullOrderByCreatedAtDescIdDesc(
+            41L, MarketResearchRun.Kind.BM)).thenReturn(Optional.of(businessRun));
+    }
+
+    private TaskRun taskRun(String id) {
+        TaskRun taskRun = mock(TaskRun.class);
+        when(taskRun.getId()).thenReturn(id);
+        return taskRun;
+    }
+
+    private ProjectModuleStatusResponse businessValidation() {
+        return service.findAll(7L, 41L).stream()
+            .filter(item -> item.module() == PipelineModuleType.MARKET_ANALYSIS).findFirst().orElseThrow();
     }
 
     private ProjectModuleStatusResponse panelSurvey() {

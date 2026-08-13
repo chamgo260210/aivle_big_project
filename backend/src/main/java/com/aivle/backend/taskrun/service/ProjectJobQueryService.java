@@ -139,16 +139,20 @@ public class ProjectJobQueryService {
             case TECH_OPS_PROPOSAL -> JobModule.TECH_OPS;
             case FINANCE_ESTIMATE -> JobModule.FINANCE;
             case MARKETING_CONTENT_GENERATION -> JobModule.MARKETING;
-            case MARKET_RESEARCH -> JobModule.MARKET;
-            case TWIN_SURVEY, TWIN_STIMULUS_DRAFT -> JobModule.PANEL_SURVEY;
+            // 사업 검증은 시장조사와 같은 칸이다 — 여정 3번 한 칸이 둘을 다 대표한다.
+            case MARKET_RESEARCH, BUSINESS_VALIDATION -> JobModule.MARKET;
+            // 여정 7번 칸은 「시장 인터뷰」로 바뀌었다. enum 값 이름(PANEL_SURVEY)은 상태 API
+            // 계약이라 그대로 두고, 라우트와 라벨만 옮겼다. 옛 TWIN_* 은 도달 불가로 남는다.
+            case TWIN_SURVEY, TWIN_STIMULUS_DRAFT, MARKET_INTERVIEW -> JobModule.PANEL_SURVEY;
         };
     }
 
     private enum JobModule {
         IDEA("/idea"), CONCEPT_PORTFOLIO("/concepts"), CONCEPT_FACTORY("/concepts"),
         CONCEPT_SELECTION("/concepts/compare"),
-        TECH_OPS("/tech-ops"), FINANCE("/finance"), MARKETING("/marketing"), MARKET("/market"),
-        PANEL_SURVEY("/panel-survey");
+        // MARKET 은 「사업 검증」 칸이다 — enum 값 이름은 계약이라 두고 경로만 옮겼다.
+        TECH_OPS("/tech-ops"), FINANCE("/finance"), MARKETING("/marketing"), MARKET("/business-validation"),
+        PANEL_SURVEY("/market-interview");
         private final String route;
         JobModule(String route) { this.route = route; }
     }

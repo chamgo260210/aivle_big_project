@@ -16,10 +16,11 @@ class InternalAiExecutionClientRoutingTests {
         RestClient longRead = RestClient.builder().build();
         RestClient survey = RestClient.builder().build();
         RestClient conceptPortfolio = RestClient.builder().build();
+        RestClient validation = RestClient.builder().build();
         AiServerProperties properties = new AiServerProperties("http://localhost",
             Duration.ofSeconds(3), Duration.ofSeconds(30), Duration.ofMinutes(15), "token");
         InternalAiExecutionClient client = new InternalAiExecutionClient(
-            normal, longRead, survey, conceptPortfolio, properties, new ObjectMapper());
+            normal, longRead, survey, conceptPortfolio, validation, properties, new ObjectMapper());
 
         assertThat(client.clientFor(TaskType.CONCEPT_PORTFOLIO_V2_RUN)).isSameAs(conceptPortfolio);
         assertThat(client.clientFor(TaskType.CONCEPT_PORTFOLIO_V2_CONTINUE)).isSameAs(conceptPortfolio);
@@ -28,6 +29,8 @@ class InternalAiExecutionClientRoutingTests {
         // 짧아야 할 호출이 900초를 매달리거나, 긴 호출이 30초에 죽고 재시도로 비용이 배가 된다.
         assertThat(client.clientFor(TaskType.MARKET_RESEARCH)).isSameAs(longRead);
         assertThat(client.clientFor(TaskType.TWIN_SURVEY)).isSameAs(survey);
+        // 사업 검증은 FULL(실측 23분)+BM 이라 트윈(900s)으로도 모자란다 — 또 나눈 등급이다.
+        assertThat(client.clientFor(TaskType.BUSINESS_VALIDATION)).isSameAs(validation);
         assertThat(client.clientFor(TaskType.IDEA_BRIEF_DERIVATION)).isSameAs(normal);
         assertThat(properties.readTimeout()).isEqualTo(Duration.ofSeconds(30));
         assertThat(properties.conceptPortfolioReadTimeout()).isEqualTo(Duration.ofMinutes(15));

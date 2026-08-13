@@ -80,7 +80,7 @@ export default function TechOpsPage() {
   return <main className="tech-ops-page commercialization-start-page">
     <header className="commercialization-start-page__hero">
       <div className="pipeline-page-heading">
-      <p>5. 기술·운영 분석</p>
+      <p>4. 기술·운영 분석</p>
       <h1>기술·운영 상용화 검증</h1>
       <span>시장 가설과 BM 가정이 실제 구현, 운영, 파트너, 품질, 파일럿 조건과 충돌하는 지점을 확인합니다.</span>
       </div>

@@ -31,7 +31,7 @@ color: blue
    (`ppt/99_MISSING_MATERIALS.md` E절 X-01~X-11). 문서를 인용할 땐 **코드와 대조**하고,
    어긋나면 어긋난다고 쓴다
 4. **개수·경로·클래스 존재 여부는 문서 말고 코드로 센다.** `python scripts/verify-docs.py` 가 있다
-5. 열지 말 것: `docs/rebuild/`(174개, 이력) · `docs/archive/`(27개, 폐기).
+5. 열지 말 것: `docs/legacy/`(213개 — `rebuild/` 이력 · `archive/` 폐기).
    헤더가 `Status: TARGET_CANONICAL` 이거나 `Implementation Status: NOT_STARTED/PARTIAL`
    인 문서는 **목표지 실적이 아니다**
 

@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  CANVAS_BANDS, CANVAS_LAYOUT, CELL_KIND, NOT_FOUND_GROUP, NOT_FOUND_VIEW,
+  CANVAS_LAYOUT, CELL_KIND, CELL_STATUS_VIEW, NOT_FOUND_GROUP, NOT_FOUND_VIEW, SCORE_STATE_VIEW,
   bucketEvidence, competitorGaps, formatValue, gradeView, hostOf, normalizeMarketResult,
 } from './marketResult.js';
 
@@ -203,12 +203,17 @@ describe('normalizeMarketResult — BM', () => {
 });
 
 describe('캔버스 배치와 칸의 성격', () => {
-  it('밴드가 9칸을 빠짐없이 한 번씩 덮는다 — 배치표와 갈리면 칸이 사라진다', () => {
-    const banded = CANVAS_BANDS.flatMap(([, cells]) => cells);
-    expect(banded).toHaveLength(9);
-    expect(new Set(banded).size).toBe(9);
-    expect(banded).toEqual(CANVAS_LAYOUT.map((slot) => slot.cell));
+  it('배치표가 9칸을 빠짐없이 한 번씩 덮는다 — 빠지면 칸이 조용히 사라진다', () => {
+    const cells = CANVAS_LAYOUT.map((slot) => slot.cell);
+    expect(cells).toHaveLength(9);
+    expect(new Set(cells).size).toBe(9);
     expect(CANVAS_LAYOUT.every((slot) => slot.label)).toBe(true);
+    // 순서의 정본은 목업 `public/wireframe.html` 의 3×3 이다.
+    expect(cells).toEqual([
+      'KEY_PARTNERS', 'KEY_ACTIVITIES', 'VALUE_PROPOSITIONS',
+      'CUSTOMER_RELATIONSHIPS', 'CUSTOMER_SEGMENTS', 'CHANNELS',
+      'KEY_RESOURCES', 'COST_STRUCTURE', 'REVENUE_STREAMS',
+    ]);
   });
 
   it('9칸이 전부 관측/계획으로 갈려 있다 — 안 갈리면 정상 결과가 미완성으로 읽힌다', () => {
@@ -223,6 +228,21 @@ describe('캔버스 배치와 칸의 성격', () => {
     const cost = canvas.find((cell) => cell.cell === 'COST_STRUCTURE');
     expect(cost.kind).toBe('계획');
     expect(cost.origin).toContain('입력 제약');
+  });
+});
+
+describe('어휘 — 성적표와 캔버스 칸이 같은 낱말을 쓰지 않는다', () => {
+  it('⭐ 「확인됨」은 성적표 쪽 하나뿐이다 — 겹치면 한 화면에서 두 뜻으로 뜬다', () => {
+    expect(SCORE_STATE_VIEW.FILLED.label).toBe('확인됨');
+    expect(Object.values(CELL_STATUS_VIEW).map((view) => view.label)).not.toContain('확인됨');
+  });
+
+  it('두 표의 라벨 집합이 겹치지 않는다', () => {
+    const scores = new Set(Object.values(SCORE_STATE_VIEW).map((view) => view.label));
+    const overlap = Object.values(CELL_STATUS_VIEW)
+      .map((view) => view.label)
+      .filter((label) => scores.has(label));
+    expect(overlap).toEqual([]);
   });
 });
 

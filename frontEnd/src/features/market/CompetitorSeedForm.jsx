@@ -57,7 +57,7 @@ export default function CompetitorSeedForm({ api, disabled }) {
       apply(await api.saveCompetitorSeeds(rows));
       setSaved(true);
     } catch (failure) {
-      setError(failure?.message ?? '경쟁 씨앗을 저장하지 못했다.');
+      setError(failure?.message ?? '경쟁 씨앗을 저장하지 못했어요.');
     } finally {
       setBusy(false);
     }
@@ -68,9 +68,9 @@ export default function CompetitorSeedForm({ api, disabled }) {
   return (
     <form className="competitor-seeds" onSubmit={submit}>
       <p className="competitor-seeds__why">
-        이미 이 문제를 풀고 있는 서비스를 아는 만큼 적어라. 조사가 <strong>경쟁을 찾는
-        출발점</strong>으로 쓴다. <strong>씨앗이지 조사 결과가 아니다</strong> — 조사가 스스로
-        찾은 것과 합쳐 같은 잣대로 검증한다.
+        이미 이 문제를 풀고 있는 서비스를 아는 만큼 적어 주세요. 조사가 <strong>경쟁을 찾는
+        출발점</strong>으로 써요. <strong>씨앗이지 조사 결과가 아니에요</strong> — 조사가 스스로
+        찾은 것과 합쳐 같은 잣대로 검증해요.
       </p>
 
       {rows.map((row, index) => (
@@ -87,22 +87,22 @@ export default function CompetitorSeedForm({ api, disabled }) {
             value={row.reason}
             onChange={set(index, 'reason')}
             disabled={locked}
-            placeholder="예: 예약금으로 노쇼를 막는다 — 우리 차별점과 정면으로 겹친다"
+            placeholder="예: 예약금으로 노쇼를 막아요 — 우리 차별점과 정면으로 겹쳐요"
           />
           <TextInput
             label="운영사 (선택)"
             value={row.operatorName}
             onChange={set(index, 'operatorName')}
             disabled={locked}
-            placeholder="법인명. 모르면 비워라"
+            placeholder="법인명. 모르면 비워 두세요"
           />
         </div>
       ))}
 
       <p className="competitor-seeds__hint">
-        운영사는 <strong>법인명</strong>이다(서비스 이름이 아니다). 공시 자료 조회가 법인명으로만
-        되기 때문이고, <strong>모르면 비우는 편이 낫다</strong> — 틀린 이름으로 조회하면 다른
-        회사의 숫자가 붙는다.
+        운영사는 <strong>법인명</strong>이에요(서비스 이름이 아니에요). 공시 자료 조회가 법인명으로만
+        되기 때문이고, <strong>모르면 비우는 편이 나아요</strong> — 틀린 이름으로 조회하면 다른
+        회사의 숫자가 붙어요.
       </p>
 
       <div className="competitor-seeds__actions">
@@ -118,7 +118,7 @@ export default function CompetitorSeedForm({ api, disabled }) {
       </div>
 
       {error ? <Alert tone="danger">{error}</Alert> : null}
-      {saved && !error ? <Alert tone="success">저장했다.</Alert> : null}
+      {saved && !error ? <Alert tone="success">저장했어요.</Alert> : null}
       {/* 막지 않는 경고다. 서버가 문구의 정본이라 화면이 다시 쓰지 않는다. */}
       {warning ? <Alert tone="warning">{warning}</Alert> : null}
     </form>

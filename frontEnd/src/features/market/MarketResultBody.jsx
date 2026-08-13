@@ -1,129 +1,131 @@
-import { useCallback, useMemo } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import { useApiClient } from '../../shared/api/ApiClientProvider.jsx';
-import { createMarketApi } from './marketApi.js';
-import { projectRoutes } from '../../app/routing/projectRoutes.js';
-import { Accordion, Alert, Badge, Button, Card, LoadingState } from '../../shared/ui';
+import { useState } from 'react';
+import { Alert, Badge, Card } from '../../shared/ui';
 import { GradeBadge, SourceLink } from './BmCanvas.jsx';
 import AssumptionLedger from './AssumptionLedger.jsx';
 import Emphasis from './emphasis.jsx';
-import CompetitorSeedForm from './CompetitorSeedForm.jsx';
-import useMarketPolling from './useMarketPolling.js';
-import useCellFocus from './useCellFocus.js';
 import {
-  NOT_FOUND_GROUP, SCORE_STATE_VIEW,
+  NOT_FOUND_GROUP, SCORE_STATE_VIEW, SUBJECT_LABEL,
   abbreviateKrw, bucketEvidence, competitorGaps, formatValue, hostOf,
 } from './marketResult.js';
 import './market.css';
 
 /**
- * 1단계 — 시장조사.
+ * 사업 검증의 <b>첫째 걸음</b> — 시장조사 결과.
  *
  * <p><b>성적표 7과목이 곧 목차다.</b> 성적표를 맨 아래 접어 두면 「무엇을 쟀나」와
- * 「무엇이 나왔나」가 따로 놀아, 읽는 사람이 빠진 과목을 못 본다. 그래서 과목을 섹션으로
- * 세우고 그 과목의 상태·내용을 섹션 머리에 건다.
+ * 「무엇이 나왔나」가 따로 놀아, 읽는 사람이 빠진 과목을 못 본다.
+ *
+ * <p>7과목은 <b>카드 하나 안의 접히는 일곱 줄</b>이다(와이어프레임 정본). 줄은 번호·제목·
+ * 상태·한 줄 요약·「근거 N건」이고, 펼치면 지금까지의 표·근거·출처가 그 자리에 나온다.
+ * 과목마다 카드를 세우면 첫 화면이 7장으로 불어나 목차 구실을 못 한다.
+ *
+ * <p>셸(제목·실행 버튼·진행 표시)은 갖지 않는다. `BusinessValidationPage` 가 갖는다.
  */
-export default function MarketResearchPage() {
-  const { projectId } = useParams();
-  const navigate = useNavigate();
-  const client = useApiClient();
-  const api = useMemo(() => createMarketApi(client, projectId), [client, projectId]);
-  const load = useCallback(() => api.currentMarketResearch(), [api]);
-  // 컨셉은 **서버가 정한다** — 확정된 사업안(Market Seed)이 유일한 입력이다.
-  // 예전에는 여기서 견본 이름표를 보냈고, 사업안을 확정하기 전에 누르면 서버가 그 견본으로
-  // 조용히 떨어져 **남의 컨셉 원장으로 6/6 SUCCEEDED** 를 냈다(2026-08-12 실측: 미용실
-  // 노쇼 견본이 냉동 간편식 사업안의 결과로 나왔다). 지금은 null 을 보내고, 확정된
-  // 사업안이 없으면 서버가 실패시킨다.
-  const start = useCallback(() => api.startMarketResearch(null, today(), null), [api]);
-  const { run, result, error, busy, loading, active, elapsed, trigger } = useMarketPolling(load, start);
-  // KPI → 과목 섹션 착지. 포커스·rAF 함정은 훅 주석에 있다.
-  const focus = useCellFocus('sec-');
-
-  if (loading) return <LoadingState label="시장조사 결과를 불러오는 중" />;
-
-  return (
-    <section className="market-page">
-      <div className="pipeline-page-heading">
-        <p>3. 시장분석·기획 확정</p>
-        <h2>시장조사 결과</h2>
-        {!result ? (
-          <span>공개 통계·공시·언론에서 관측된 것만 모은다.</span>
-        ) : null}
-      </div>
-
-      <div className="market-page__actions">
-        <Button onClick={trigger} disabled={busy || active}>
-          {active ? '조사 중…' : result ? '다시 조사' : '시장조사 실행'}
-        </Button>
-      </div>
-
-      {/* 경쟁 씨앗 — **조사 전에** 받아야 한다. 하네스가 슬롯을 설계할 때 읽으므로
-          조사를 돌린 뒤에 적으면 그 판에는 반영되지 않는다. */}
-      {result ? (
-        <Accordion title="경쟁·현재 대안 (선택)">
-          <CompetitorSeedForm api={api} disabled={busy || active} />
-        </Accordion>
-      ) : (
-        <Card title="경쟁·현재 대안 (선택)">
-          <CompetitorSeedForm api={api} disabled={busy || active} />
-        </Card>
-      )}
-
-      {error ? <Alert tone="danger">{error}</Alert> : null}
-      {active ? <Alert tone="info">조사 중이다 — <strong>{elapsed}초</strong> 경과.</Alert> : null}
-      {run?.state === 'FAILED' ? (
-        <Alert tone="danger">
-          실행이 실패했다{run.errorCode ? ` (${run.errorCode})` : ''}{run.errorReason ? `: ${run.errorReason}` : ''}.
-          {run.retryable ? ' 다시 시도할 수 있다.' : ' 입력을 확인해야 한다.'}
-        </Alert>
-      ) : null}
-
-      {/* ⚠ **조사 중에는 옛 결과를 감춘다.** 예전에는 새 조사가 도는 동안에도 직전 판의
-          표가 그대로 떠 있었다 — 사용자가 「지금 이 사업안의 결과」로 읽는다. 실제로
-          2026-08-12 에 미용실 견본 결과가 냉동 간편식 사업안의 화면에 그대로 떠 있었다.
-          아직 안 나온 값을 화면에 두는 것은 조용한 오답이다(견본 폴백과 같은 계보). */}
-      {active ? null : !result ? (
-        <Card><p>아직 조사한 적이 없다. 「시장조사 실행」을 눌러라.</p></Card>
-      ) : (
-        <ResultBody result={result} activeId={focus.active} onJump={focus.jump} onNext={() =>
-          navigate(projectRoutes.businessModel(projectId))} />
-      )}
-    </section>
-  );
-}
-
-function ResultBody({ result, activeId, onJump, onNext }) {
+export function MarketResultBody({ result, activeId, onJump }) {
   const market = result.market ?? {};
   const bag = bucketEvidence(result);
   const score = Object.fromEntries((result.scorecard ?? []).map((row) => [row.subject, row]));
   const cited = (ids) => ids.map((id) => result.evidenceById.get(id)).filter(Boolean);
+  const priceCited = cited(market.price?.evidenceIds ?? []);
+  const notFound = market.notFound ?? [];
 
-  const section = (n, title, subject, body) => (
-    <Section n={n} title={title} id={`sec-${subject}`} row={score[subject]}
-      active={activeId === subject}>{body}</Section>
-  );
+  // 한 번에 한 과목만 편다. **KPI 착지가 그 과목을 «펼치면서» 내려앉아야** 하므로
+  // 펼침 상태는 바깥의 `activeId` 와 묶인다 — 착지했는데 접혀 있으면 아무 일도 안 한 것처럼 보인다.
+  // ⚠ effect 로 맞추지 않는다(렌더 → effect → 재렌더로 한 프레임 늦게 열린다).
+  //    렌더 중 조정은 React 가 권하는 «prop 이 바뀔 때 state 조정» 패턴이다.
+  const [open, setOpen] = useState(null);
+  const [seenActive, setSeenActive] = useState(null);
+  if (activeId !== seenActive) {
+    setSeenActive(activeId);
+    if (activeId) setOpen(activeId);
+  }
+
+  // 본문은 «열렸을 때만» 만든다 — 7과목의 표를 늘 그려 두면 접힌 화면이 그만큼 무거워진다.
+  const sections = [
+    {
+      subject: 'MARKET_SIZE',
+      count: bag.size.length,
+      body: () => (bag.size.length > 0
+        ? <EvidenceTable rows={bag.size} />
+        : <p className="bm-cell__none">모집단 관측이 없어요.</p>),
+    },
+    {
+      subject: 'GROWTH',
+      count: bag.grow.length,
+      openable: Boolean(market.growth),
+      body: () => <GrowthBody growth={market.growth} rows={bag.grow} />,
+    },
+    {
+      subject: 'COMPETITOR',
+      count: bag.comp.length,
+      body: () => <CompetitorBody rows={bag.comp} gaps={competitorGaps(notFound)} />,
+    },
+    {
+      subject: 'PRICE',
+      count: priceCited.length,
+      openable: Boolean(market.price),
+      body: () => <PriceBody price={market.price} cited={priceCited} />,
+    },
+    {
+      subject: 'DEMAND',
+      count: bag.demand.length,
+      body: () => <EvidenceTable rows={bag.demand} quote />,
+    },
+    {
+      subject: 'CALCULATION',
+      count: bag.calc.length,
+      // 「이 숫자를 읽는 조건」(가정 원장)이 이 과목 안에 산다 — TAM/SAM 계산의 가정이라
+      // 자리가 맞다. 계산 카드가 0장이어도 원장이 있으면 펼 것이 있다.
+      openable: bag.calc.length > 0 || hasLedger(market),
+      body: () => (
+        <>
+          <AssumptionLedger market={market} />
+          <CalcBody cards={bag.calc} />
+        </>
+      ),
+    },
+    {
+      // 7과목인데 6줄만 세우면 성적표의 마지막 줄이 화면에 없다 —
+      // 「찾지 못한 것」은 이 조사에서 **항상 나가는 칸**이라 더더욱 그렇다.
+      subject: 'NOT_FOUND',
+      count: notFound.reduce((sum, block) => sum + block.count, 0),
+      body: () => <NotFoundBody blocks={notFound} />,
+    },
+  ];
 
   return (
     <>
       <Kpis market={market} onJump={onJump} />
-      <AssumptionLedger market={market} />
 
-      {section(1, '시장 크기', 'MARKET_SIZE',
-        bag.size.length > 0
-          ? <EvidenceTable rows={bag.size} />
-          : <p className="bm-cell__none">모집단 관측이 없다.</p>)}
+      {/* 「이 숫자의 기준」 — 결론 숫자 바로 밑에 한 줄로 선다.
+          ⚠ 과목 표 사이에 묻어 두면 KPI 를 읽은 사람에게 닿지 않는다. 경계 문장이다. */}
+      {market.coverageCaveat ? (
+        <Card className="mr-basis">
+          <p><b>이 숫자의 기준</b> — <Emphasis text={market.coverageCaveat} /></p>
+        </Card>
+      ) : null}
 
-      {section(2, '성장률', 'GROWTH', <GrowthBody growth={market.growth} rows={bag.grow} />)}
-
-      {section(3, '경쟁사', 'COMPETITOR',
-        <CompetitorBody rows={bag.comp} gaps={competitorGaps(market.notFound)} />)}
-
-      {section(4, '가격', 'PRICE', <PriceBody price={market.price} cited={cited(market.price?.evidenceIds ?? [])} />)}
-
-      {section(5, '수요 근거', 'DEMAND',
-        bag.demand.length > 0
-          ? <EvidenceTable rows={bag.demand} quote />
-          : <p className="bm-cell__none">수요를 뒷받침하는 관측이 없다.</p>)}
+      <Card className="mr-subs">
+        {sections.map((section, index) => {
+          const openable = section.openable ?? section.count > 0;
+          const isOpen = openable && open === section.subject;
+          return (
+            <Subject
+              key={section.subject}
+              n={index + 1}
+              subject={section.subject}
+              row={score[section.subject]}
+              count={section.count}
+              openable={openable}
+              open={isOpen}
+              focused={activeId === section.subject}
+              onToggle={() => setOpen((current) => (current === section.subject ? null : section.subject))}
+            >
+              {isOpen ? section.body() : null}
+            </Subject>
+          );
+        })}
+      </Card>
 
       {/* 요약은 예산이 모자라면 오지 않는다. 왔을 때만 그린다 — 건너뛴 사유는 실행 기록에 있다. */}
       {result.summary?.length ? (
@@ -139,18 +141,15 @@ function ResultBody({ result, activeId, onJump, onNext }) {
           </ul>
         </Card>
       ) : null}
-
-      {section(6, '시장 규모 계산', 'CALCULATION', <CalcBody cards={bag.calc} />)}
-
-      {/* 7과목인데 6섹션만 세우면 성적표의 마지막 줄이 화면에 없다 —
-          「못 찾은 것」은 이 조사에서 **항상 나가는 칸**이라 더더욱 그렇다. */}
-      {section(7, '못 찾은 것', 'NOT_FOUND', <NotFoundBody blocks={market.notFound} />)}
-
-      <div className="mr-actions">
-        <Button onClick={onNext}>다음 — BM 분석</Button>
-      </div>
     </>
   );
+}
+
+/** 가정 원장이 그릴 것이 있는가. `AssumptionLedger` 의 판단과 같은 조건이다. */
+function hasLedger(market) {
+  const figures = [market.tam, market.sam, market.growth];
+  if (figures.some((figure) => figure && (figure.factors.length > 0 || figure.assumptions.length > 0))) return true;
+  return Boolean(market.price?.baseNote) || !market.som;
 }
 
 /** 결론 숫자를 등급과 **동시에** 준다. 숫자만 먼저 보이면 확정으로 읽힌다. */
@@ -172,12 +171,12 @@ function Kpis({ market, onJump }) {
 
   return (
     <div className="mr-kpis">
-      {tile('TAM', market.tam, 'CALCULATION')}
-      {tile('SAM', market.sam, 'CALCULATION')}
-      {tile('연 성장률', market.growth, 'GROWTH', '2023 → 2024')}
+      {tile('전체 시장 (TAM)', market.tam, 'MARKET_SIZE')}
+      {tile('노릴 수 있는 시장 (SAM)', market.sam, 'MARKET_SIZE')}
+      {tile('연 성장률', market.growth, 'GROWTH')}
       {price ? (
         <button type="button" className="mr-kpi" onClick={() => onJump('PRICE')}>
-          <span>가격대 (월)</span>
+          <span>시장 가격대</span>
           <b className="num">{abbreviateKrw(price.min) ?? formatValue(price.min, price.currency)}
             {'~'}{abbreviateKrw(price.max) ?? formatValue(price.max, price.currency)}</b>
           <small className="num">
@@ -191,12 +190,12 @@ function Kpis({ market, onJump }) {
 }
 
 /**
- * 못 찾은 것 — **갈래로 묶는다.** 「없다」도 결과이고, 갈래마다 다음 행동이 다르다.
+ * 찾지 못한 것 — **갈래로 묶는다.** 「없다」도 결과이고, 갈래마다 다음 행동이 다르다.
  * 더 찾으면 나올 것과 찾아도 없는 것을 한 무더기로 두면 둘 다 못 읽는다.
  */
 function NotFoundBody({ blocks }) {
   if (!blocks || blocks.length === 0) {
-    return <p className="bm-cell__none">못 찾은 것이 기록되지 않았다.</p>;
+    return <p className="bm-cell__none">찾지 못한 것이 기록되지 않았어요.</p>;
   }
   // 갈래 순서는 `NOT_FOUND_GROUP` 선언 순서다 — 모르는 키(group=null)는 맨 뒤에 드러낸다.
   const groups = [...Object.keys(NOT_FOUND_GROUP), null];
@@ -211,7 +210,7 @@ function NotFoundBody({ blocks }) {
           <div key={group ?? '(모르는 갈래)'} className="mr-nf__g">
             <div className="mr-nf__h">
               <Badge tone={view?.tone ?? 'danger'}>{view?.label ?? '분류하지 못한 항목'}</Badge>
-              <span>{view?.note ?? '이 키를 화면이 모른다 — 조용히 묻지 않고 드러낸다'}</span>
+              <span>{view?.note ?? '이 키를 화면이 몰라요 — 조용히 묻지 않고 드러내요'}</span>
             </div>
             {mine.map((block) => (
               <div key={block.key} className="mr-nf__b">
@@ -226,18 +225,36 @@ function NotFoundBody({ blocks }) {
   );
 }
 
-function Section({ n, title, id, row, active, children }) {
+/**
+ * 성적표 한 과목 — <b>눌러서 근거를 편다.</b>
+ *
+ * <p>줄 하나가 「번호 · 제목 · 상태 · 한 줄 요약 · 근거 N건」이다. 접힌 채로도 7과목의
+ * 상태가 한눈에 서고, 편 사람만 값·기간·등급·출처를 본다.
+ *
+ * <p>⚠ <b>근거가 0건이면 못 편다.</b> 열리는 척하고 빈 칸을 보여 주면 「조사가 부실한가」와
+ * 「화면이 고장인가」가 구분되지 않는다 — 「보기」 자체를 감추고 `disabled` 로 말한다.
+ */
+function Subject({ n, subject, row, count, openable, open, focused, onToggle, children }) {
   const view = row ? (SCORE_STATE_VIEW[row.state] ?? { label: row.state, tone: 'neutral' }) : null;
   return (
-    <section id={id} className={`mr-sec${active ? ' is-on' : ''}`}>
-      <div className="mr-sec__h">
-        <span className="mr-sec__n">{n}</span>
-        <h3>{title}</h3>
+    <div id={`sec-${subject}`} className={`mr-sub${focused ? ' is-on' : ''}`}>
+      <button
+        type="button"
+        className="mr-sub__h"
+        onClick={onToggle}
+        disabled={!openable}
+        aria-expanded={openable ? open : undefined}
+      >
+        <span className="mr-sub__n num">{n}</span>
+        <b>{SUBJECT_LABEL[subject] ?? subject}</b>
         {view ? <Badge tone={view.tone}>{view.label}</Badge> : null}
-        <span>{row?.detail ?? ''}</span>
-      </div>
-      <div className="mr-sec__b">{children}</div>
-    </section>
+        <span className="mr-sub__d">{row?.detail ?? ''}</span>
+        {openable ? (
+          <span className="mr-sub__c">{open ? '접기' : `근거 ${count}건 ▾`}</span>
+        ) : null}
+      </button>
+      {open ? <div className="mr-sub__b">{children}</div> : null}
+    </div>
   );
 }
 
@@ -270,7 +287,7 @@ function EvidenceTable({ rows, quote = false }) {
 }
 
 function GrowthBody({ growth, rows }) {
-  if (!growth) return <p className="bm-cell__none">성장률을 산출하지 않았다.</p>;
+  if (!growth) return <p className="bm-cell__none">성장률을 산출하지 않았어요.</p>;
   return (
     <>
       <div className="mr-figs">
@@ -298,7 +315,7 @@ function GrowthBody({ growth, rows }) {
  */
 function CompetitorBody({ rows, gaps }) {
   const names = [...new Set([...rows.map((item) => item.subject), ...gaps.map(([name]) => name)])];
-  if (names.length === 0) return <p className="bm-cell__none">경쟁사 관측이 없다.</p>;
+  if (names.length === 0) return <p className="bm-cell__none">경쟁사 관측이 없어요.</p>;
 
   return (
     <>
@@ -319,7 +336,7 @@ function CompetitorBody({ rows, gaps }) {
                 </div>
               ))}
               {missing.map((metric) => (
-                <div key={metric}><span>{metric}</span><span className="none">못 찾음</span></div>
+                <div key={metric}><span>{metric}</span><span className="none">찾지 못함</span></div>
               ))}
               {mine.length > 0 ? (
                 <div className="mr-comp__src"><SourceLink item={mine[0]} /></div>
@@ -332,8 +349,8 @@ function CompetitorBody({ rows, gaps }) {
         })}
       </div>
       <div className="mr-note">
-        수집 대상은 가입 매장 수·매출액·요금 같은 숫자다.{' '}
-        <strong>기능·차별점 비교는 조사 항목에 없다.</strong>
+        수집 대상은 가입 매장 수·매출액·요금 같은 숫자예요.{' '}
+        <strong>기능·차별점 비교는 조사 항목에 없어요.</strong>
       </div>
     </>
   );
@@ -341,7 +358,7 @@ function CompetitorBody({ rows, gaps }) {
 
 /** 가격은 밴드로 읽어야 한다. 대표값 하나만 남으면 확정 단가로 읽힌다. */
 function PriceBody({ price, cited }) {
-  if (!price) return <p className="bm-cell__none">표시가격 관측이 없다.</p>;
+  if (!price) return <p className="bm-cell__none">표시가격 관측이 없어요.</p>;
   const hosts = new Set(cited.map((item) => hostOf(item.sourceUrl)).filter(Boolean));
 
   return (
@@ -355,8 +372,8 @@ function PriceBody({ price, cited }) {
       {/* 건수와 독립성은 다르다. 한 도메인에서 3건은 3중 확인이 아니다. */}
       {hosts.size === 1 && cited.length > 1 ? (
         <Alert tone="warning">
-          {cited.length}건이지만 출처 도메인은 <strong>{[...hosts][0]} 하나</strong>다
-          {' — '}{cited.length}중 확인이 아니라 <strong>1중 확인</strong>이다.
+          {cited.length}건이지만 출처 도메인은 <strong>{[...hosts][0]} 하나</strong>예요
+          {' — '}{cited.length}중 확인이 아니라 <strong>1중 확인</strong>이에요.
         </Alert>
       ) : null}
       {price.caveats.map((line) => (
@@ -376,7 +393,7 @@ function PriceBody({ price, cited }) {
  * 가정 원장이 한다(그쪽은 서버가 항마다 판정을 실어 보낸다).
  */
 function CalcBody({ cards }) {
-  if (cards.length === 0) return <p className="bm-cell__none">계산 카드가 없다.</p>;
+  if (cards.length === 0) return <p className="bm-cell__none">계산 카드가 없어요.</p>;
   return (
     <>
       {cards.map((card) => {
@@ -408,7 +425,7 @@ function CalcBody({ cards }) {
                 ? card.materialIds.map((id) => (
                   <Badge key={id} tone="success">{id}</Badge>
                 ))
-                : <Badge tone="warning">관측 재료 없음 — 전부 가정으로 채운 계산이다</Badge>}
+                : <Badge tone="warning">관측 재료 없음 — 전부 가정으로 채운 계산이에요</Badge>}
               {card.assumptions.map((line) => (
                 <div key={line}><Emphasis text={line} /></div>
               ))}
@@ -418,8 +435,4 @@ function CalcBody({ cards }) {
       })}
     </>
   );
-}
-
-function today() {
-  return new Date().toISOString().slice(0, 10);
 }

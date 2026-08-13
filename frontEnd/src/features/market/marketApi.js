@@ -14,6 +14,27 @@ export function createMarketApi(client, projectId) {
     },
     async currentBusinessModel() { return (await client.get(`${root}/business-model/current`)).data; },
 
+    // 사업 검증 — **한 번 눌러 두 걸음**(조사 → 캔버스). 실측 23분+ 이라 옛 둘보다도 길다.
+    // 옛 두 실행도 남는다 — 걸음 하나만 다시 돌릴 길이 있어야 한다.
+    async startBusinessValidation(asOf) {
+      return (await client.post(`${root}/business-validation`, { asOf }, { timeoutMs: 30000 })).data;
+    },
+    async currentBusinessValidation() { return (await client.get(`${root}/business-validation/current`)).data; },
+
+    // 다듬기 결과 — 변경 표와 「못 푼 것」. 라운드 이력 자체는 DB 에만 있다.
+    // ⚠ 질의 파라미터는 **경로에 직접 붙인다.** `apiClient.request` 는 `params` 옵션이
+    //    없어서 객체로 넘기면 조용히 버려지고, 서버가 400/500 으로 답한다(2026-08-13 실측:
+    //    `MissingServletRequestParameterException: selectionId`). 아래 finalize 와 같은 모양이다.
+    async currentRefinement(selectionId) {
+      return (await client.get(
+        `${root}/concept-refinement?selectionId=${encodeURIComponent(selectionId)}`)).data;
+    },
+    // 시장 검증 후 **최종 확정**. 법률보고서 재확정 → 시드 재발급을 순서대로 태운다.
+    async finalizeRefinedConcept(selectionId, idempotencyKey) {
+      return (await client.post(`${root}/concept-refinement/finalize?selectionId=${encodeURIComponent(selectionId)}`,
+        { idempotencyKey }, { timeoutMs: 30000 })).data;
+    },
+
     // 실행 계획 — BM 앞 단계에서 사용자가 채우는 칸. **실행과 따로 저장한다**:
     // 요청 바디에 실어 보내면 새로고침에 사라지고 감사 기록도 안 남는다.
     async currentBmPlan() { return (await client.get(`${root}/business-model/plan`)).data; },

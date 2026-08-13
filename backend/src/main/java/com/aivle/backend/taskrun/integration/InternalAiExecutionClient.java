@@ -68,7 +68,10 @@ public class InternalAiExecutionClient {
             "TWIN_BANK_UNAVAILABLE")),
         Map.entry("RATE_LIMITED", Set.of("DEPENDENCY_RATE_LIMITED")),
         Map.entry("EXECUTION_FAILED", Set.of("TRANSIENT_EXECUTION_FAILURE", "PERMANENT_EXECUTION_FAILURE",
-            "SAFETY_POLICY_BLOCKED")),
+            "SAFETY_POLICY_BLOCKED",
+            // 인터뷰가 표본의 절반도 못 걷었다. 「AI 가 불안정하다」와 다르다 — 다시 눌러
+            // 볼 만한 실패이고, 화면이 그렇게 말할 수 있어야 한다.
+            "MARKET_INTERVIEW_NO_USABLE_RESPONSE")),
         Map.entry("RESULT_SCHEMA_INVALID", Set.of("RESULT_UNKNOWN_FIELD", "RESULT_FIELD_CONSTRAINT_VIOLATION",
             "RESULT_REFERENCE_INVALID", "RESULT_DOMAIN_INVARIANT_VIOLATION", "AI_RESULT_INVALID",
             "PROVIDER_RESPONSE_SCHEMA_REJECTED", "PROVIDER_JSON_INVALID",
@@ -101,13 +104,15 @@ public class InternalAiExecutionClient {
     private final RestClient surveyClient;
     /** 컨셉 포트폴리오 전용. 15분 예산이다. */
     private final RestClient conceptPortfolioClient;
+    /** 사업 검증 전용. FULL(실측 23분)+BM 을 한 실행으로 잇는다 — surveyClient(900s)로도 모자란다. */
+    private final RestClient validationClient;
     private final AiServerProperties properties;
     private final ObjectMapper mapper;
 
     /** 짧은 클라이언트 하나만 주는 형태 — 테스트용. 긴 호출도 같은 것을 쓴다. */
     public InternalAiExecutionClient(RestClient client, AiServerProperties properties,
                                      ObjectMapper mapper) {
-        this(client, client, client, client, properties, mapper);
+        this(client, client, client, client, client, properties, mapper);
     }
 
     @Autowired
@@ -115,11 +120,13 @@ public class InternalAiExecutionClient {
                                      @Qualifier("aiServerLongRestClient") RestClient longClient,
                                      @Qualifier("aiServerSurveyRestClient") RestClient surveyClient,
                                      @Qualifier("conceptPortfolioAiServerRestClient") RestClient conceptPortfolioClient,
+                                     @Qualifier("aiServerValidationRestClient") RestClient validationClient,
                                      AiServerProperties properties, ObjectMapper mapper) {
         this.client = client;
         this.longClient = longClient;
         this.surveyClient = surveyClient;
         this.conceptPortfolioClient = conceptPortfolioClient;
+        this.validationClient = validationClient;
         this.properties = properties;
         this.mapper = mapper;
     }
@@ -169,9 +176,15 @@ public class InternalAiExecutionClient {
     RestClient clientFor(TaskType taskType) {
         return switch (taskType) {
             case MARKET_RESEARCH,MARKETING_CONTENT_GENERATION -> longClient;
+            // 사업 검증은 FULL(실측 23분)+BM 을 한 실행으로 잇는다. 여기를 빠뜨리면 30초
+            // 클라이언트로 부르고, 그 실패가 retryable 로 사상돼 재시도가 23분짜리를 또 태운다.
+            case BUSINESS_VALIDATION -> validationClient;
             // 트윈 조사는 n=300·4쌍이면 셀이 7,200개다. 여기를 빠뜨리면 조용히 30초 클라이언트를
             // 쓰고, 그 실패가 retryable 로 사상돼 재시도가 같은 값을 또 태운다.
             case TWIN_SURVEY -> surveyClient;
+            // 시장 인터뷰는 1인 1셀이라 셀 수는 적지만, 뒤에 전수를 한 프롬프트에 넣는
+            // 주제 코딩 1회가 붙는다. 기본 30초로는 코딩에서 끊긴다.
+            case MARKET_INTERVIEW -> surveyClient;
             case CONCEPT_PORTFOLIO_V2_RUN, CONCEPT_PORTFOLIO_V2_CONTINUE,
                  CONCEPT_PORTFOLIO_V2_SELECTION_ACTION -> conceptPortfolioClient;
             default -> client;

@@ -31,11 +31,11 @@ describe('desktop project navigation and Work Center state', () => {
     render(<MemoryRouter><DesktopStepNavigation
       previous={{ href: '/app/projects/41/idea', shortLabel: '아이디어' }}
       current={{ shortLabel: '사업안' }}
-      next={{ id: 'market', href: '/app/projects/41/market', shortLabel: '시장 분석', status: 'NOT_READY' }}
+      next={{ id: 'market', href: '/app/projects/41/business-validation', shortLabel: '사업 검증', status: 'NOT_READY' }}
     /></MemoryRouter>);
     expect(screen.getByRole('link', { name: '← 아이디어' })).toHaveAttribute('href', '/app/projects/41/idea');
     expect(screen.getByText(/현재 단계 · 사업안/)).toBeInTheDocument();
-    expect(screen.getByText(/시장 분석 →/)).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByText(/사업 검증 →/)).toHaveAttribute('aria-disabled', 'true');
     expect(screen.getByText(/사업안을 선택하고 검증 가정을 확정한 후/)).toBeInTheDocument();
   });
 

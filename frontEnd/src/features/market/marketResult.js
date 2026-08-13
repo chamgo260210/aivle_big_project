@@ -19,12 +19,18 @@ export const GRADE_VIEW = {
 };
 const GRADE_MISSING = { label: '등급 표기 없음', tone: 'danger' };
 
-/** 캔버스 칸 상태. */
+/**
+ * 캔버스 칸 상태.
+ *
+ * ⚠ <b>「확인됨」은 이 표에 없다.</b> 그 말은 성적표(`SCORE_STATE_VIEW`)가 가져갔다
+ * (와이어프레임 정본, 2026-08-13). 칸은 「근거 있음/근거 필요」로 말한다 — 두 표가 같은
+ * 낱말을 쓰면 한 화면에서 「확인됨」이 두 뜻으로 뜬다. 한쪽만 고치지 말 것.
+ */
 export const CELL_STATUS_VIEW = {
-  VERIFIED: { label: '확인됨', tone: 'success' },
+  VERIFIED: { label: '근거 있음', tone: 'success' },
   PARTIAL: { label: '일부 확인', tone: 'warning' },
-  UNVERIFIED: { label: '미확인', tone: 'danger' },
-  PLAN: { label: '계획(근거 없음)', tone: 'neutral' },
+  UNVERIFIED: { label: '근거 필요', tone: 'danger' },
+  PLAN: { label: '작성됨', tone: 'neutral' },
   BLOCKED: { label: '진행 불가', tone: 'danger' },
 };
 
@@ -68,13 +74,14 @@ export const SUBJECT_LABEL = {
   PRICE: '가격',
   DEMAND: '수요 근거',
   CALCULATION: '시장 규모 계산',
-  NOT_FOUND: '못 찾은 것',
+  NOT_FOUND: '찾지 못한 것',
 };
 
+/** 성적표 과목 상태. ⚠ 「확인됨」이 여기 있다 — `CELL_STATUS_VIEW` 와 낱말이 겹치면 안 된다. */
 export const SCORE_STATE_VIEW = {
-  FILLED: { label: '채워짐', tone: 'success' },
-  PARTIAL: { label: '부분', tone: 'warning' },
-  MISSING: { label: '미확보', tone: 'danger' },
+  FILLED: { label: '확인됨', tone: 'success' },
+  PARTIAL: { label: '일부만 확인', tone: 'warning' },
+  MISSING: { label: '비어 있음', tone: 'danger' },
   REPORTED: { label: '보고됨', tone: 'neutral' },
 };
 
@@ -95,48 +102,33 @@ export const SOURCE_KIND_VIEW = {
  * 서버 `serialize._NOT_FOUND` 와 같은 분류다. 갈리면 `marketResult.test.js` 가 잡는다.
  */
 export const NOT_FOUND_GROUP = {
-  NOT_YET: { label: '아직 못 채운 것', note: '더 찾으면 나올 수 있다', tone: 'warning' },
-  ASSUMED: { label: '가정으로 메운 변수', note: '자료가 아니라 판단이 필요하다', tone: 'warning' },
-  CONFIRMED_ABSENT: { label: '찾아도 없는 것', note: '여기가 종착이다', tone: 'neutral' },
-  SCREENED_OUT: { label: '찾았지만 쓰지 않은 것', note: '규격 미달로 걸러냈다', tone: 'info' },
-  DIVERGED: { label: '값이 갈린 것', note: '그 자체가 조사 결과다', tone: 'info' },
+  NOT_YET: { label: '아직 못 채운 것', note: '더 찾으면 나올 수 있어요', tone: 'warning' },
+  ASSUMED: { label: '가정으로 메운 변수', note: '자료가 아니라 판단이 필요해요', tone: 'warning' },
+  CONFIRMED_ABSENT: { label: '찾아도 없는 것', note: '여기가 종착이에요', tone: 'neutral' },
+  SCREENED_OUT: { label: '찾았지만 쓰지 않은 것', note: '규격 미달로 걸러냈어요', tone: 'info' },
+  DIVERGED: { label: '값이 갈린 것', note: '그 자체가 조사 결과예요', tone: 'info' },
 };
 
 /** 진단 키 → 갈래 + 사람이 읽는 이름. 모르는 키는 원문 노출 + `danger` 로 **드러낸다.** */
 export const NOT_FOUND_VIEW = {
   empty_slots: ['NOT_YET', '근거를 하나도 못 찾은 조사 칸'],
   thin_slots: ['NOT_YET', '근거가 기준에 못 미치는 조사 칸'],
-  retry_hints: ['NOT_YET', '재조사 힌트 — 자동으로 돌지 않는다'],
+  retry_hints: ['NOT_YET', '재조사 힌트 — 자동으로 돌지 않아요'],
   url_filtered: ['NOT_YET', '열지 않고 거른 후보'],
   extract_capped: ['NOT_YET', '본문은 받았지만 발췌 상한에 걸려 안 읽은 문서'],
   fetch_empty: ['NOT_YET', '열렸지만 본문을 못 가져온 문서'],
   unknown_error_codes: ['NOT_YET', '분류하지 못한 외부 응답'],
   unfilled_vars: ['ASSUMED', '관측 없이 가정으로 채운 변수'],
   suspect_var: ['ASSUMED', '재조사 1순위 변수'],
-  independent_topdown_blocked: ['CONFIRMED_ABSENT', '위에서 아래로 재는 길이 막혔다'],
+  independent_topdown_blocked: ['CONFIRMED_ABSENT', '위에서 아래로 재는 길이 막혔어요'],
   '자료_부재_확정': ['CONFIRMED_ABSENT', '그 형태로 발행되지 않는 자료'],
   adapters: ['CONFIRMED_ABSENT', '설정되지 않은 수집 경로'],
   off_slot: ['SCREENED_OUT', '조사 칸과 안 맞아 격리한 근거'],
-  contradictions: ['DIVERGED', '같은 대상·단위인데 값이 갈렸다'],
+  contradictions: ['DIVERGED', '같은 대상·단위인데 값이 갈렸어요'],
   unit_mismatch: ['DIVERGED', '단위가 어긋나 멈춘 계산'],
   range_capped: ['DIVERGED', '범위 상한에 부딪힌 추정'],
   skipped_checks: ['DIVERGED', '선행 규칙 위반으로 건너뛴 검사'],
 };
-
-/**
- * 9칸을 «의미»로 세 묶음 — 4·3·2.
- *
- * ⚠ 표준 BMC 5열 배치는 **포스터 판형**이다. 본문 폭 1150px 에서 칸당 195px 밖에 안 나와
- * 한글이 10~12자마다 끊기고, 2행을 차지하는 칸 옆에는 250px 짜리 빈 구멍이 생긴다.
- * 4·3·2 는 칸당 280px 이상을 주고 행 병합을 없앤다.
- *
- * 순서는 장식이 아니다 — 누구에게(고객·가치) → 어떻게 만들고(실행) → 돈은(수익·비용).
- */
-export const CANVAS_BANDS = [
-  ['고객과 가치', ['CUSTOMER_SEGMENTS', 'VALUE_PROPOSITIONS', 'CHANNELS', 'CUSTOMER_RELATIONSHIPS']],
-  ['실행 구조', ['KEY_ACTIVITIES', 'KEY_RESOURCES', 'KEY_PARTNERS']],
-  ['수익과 비용', ['REVENUE_STREAMS', 'COST_STRUCTURE']],
-];
 
 export const CANVAS_CELL_LABEL = {
   KEY_PARTNERS: '핵심 파트너',
@@ -150,10 +142,18 @@ export const CANVAS_CELL_LABEL = {
   REVENUE_STREAMS: '수익원',
 };
 
-/** 배치 순서 = 밴드를 편 순서. 캔버스도 칸별 세부 목록도 이 순서를 따른다. */
-export const CANVAS_LAYOUT = CANVAS_BANDS
-  .flatMap(([, cells]) => cells)
-  .map((cell) => ({ cell, label: CANVAS_CELL_LABEL[cell] }));
+/**
+ * 캔버스 배치 — <b>3×3 균등 9칸.</b> 캔버스도 칸별 세부 목록도 이 순서를 따른다.
+ *
+ * <p>예전에는 4·3·2 세 밴드(「고객과 가치」·「실행 구조」·「수익과 비용」)였다. 와이어프레임
+ * 정본(`public/wireframe.html`)이 3×3 이라 그쪽으로 맞췄다 — 밴드 제목도 같이 뗐다.
+ * 순서는 목업의 9칸 순서를 그대로 옮긴 것이다.
+ */
+export const CANVAS_LAYOUT = [
+  'KEY_PARTNERS', 'KEY_ACTIVITIES', 'VALUE_PROPOSITIONS',
+  'CUSTOMER_RELATIONSHIPS', 'CUSTOMER_SEGMENTS', 'CHANNELS',
+  'KEY_RESOURCES', 'COST_STRUCTURE', 'REVENUE_STREAMS',
+].map((cell) => ({ cell, label: CANVAS_CELL_LABEL[cell] }));
 
 /**
  * 칸의 «성격». 정본은 AI 쪽 `research2/harness/vocab.json` 의 canvas 라우팅 표다.
@@ -162,15 +162,15 @@ export const CANVAS_LAYOUT = CANVAS_BANDS
  * 컨셉 서술·입력 제약에서 온다. 화면이 이 구분을 안 하면 정상 결과가 미완성으로 읽힌다.
  */
 export const CELL_KIND = {
-  CUSTOMER_SEGMENTS: ['관측', '시장조사가 근거로 채운다'],
-  VALUE_PROPOSITIONS: ['관측', '시장조사가 근거로 채운다'],
-  CHANNELS: ['관측', '시장조사가 근거로 채운다'],
-  REVENUE_STREAMS: ['관측', '시장조사가 근거로 채운다'],
-  CUSTOMER_RELATIONSHIPS: ['계획', '컨셉 서술에서 온다'],
-  KEY_RESOURCES: ['계획', '컨셉 서술에서 온다'],
-  KEY_ACTIVITIES: ['계획', '컨셉 서술에서 온다'],
-  KEY_PARTNERS: ['계획', '컨셉 서술에서 온다'],
-  COST_STRUCTURE: ['계획', '입력 제약(예산·팀·기간)에서 온다'],
+  CUSTOMER_SEGMENTS: ['관측', '시장조사가 근거로 채워요'],
+  VALUE_PROPOSITIONS: ['관측', '시장조사가 근거로 채워요'],
+  CHANNELS: ['관측', '시장조사가 근거로 채워요'],
+  REVENUE_STREAMS: ['관측', '시장조사가 근거로 채워요'],
+  CUSTOMER_RELATIONSHIPS: ['계획', '컨셉 서술에서 와요'],
+  KEY_RESOURCES: ['계획', '컨셉 서술에서 와요'],
+  KEY_ACTIVITIES: ['계획', '컨셉 서술에서 와요'],
+  KEY_PARTNERS: ['계획', '컨셉 서술에서 와요'],
+  COST_STRUCTURE: ['계획', '입력 제약(예산·팀·기간)에서 와요'],
 };
 
 /** 캔버스 상태 → 점 색. 배지 라벨은 `CELL_STATUS_VIEW` 가 따로 갖는다. */
@@ -474,6 +474,34 @@ export function bucketEvidence(result) {
     else buckets.demand.push(item);
   }
   return buckets;
+}
+
+/** `bucketEvidence` 의 갈래 → 성적표 과목. 두 이름을 잇는 표는 여기 하나다. */
+const BUCKET_SUBJECT = {
+  size: 'MARKET_SIZE', grow: 'GROWTH', comp: 'COMPETITOR',
+  price: 'PRICE', demand: 'DEMAND', calc: 'CALCULATION',
+};
+
+/**
+ * 근거 id → <b>그 근거가 사는 과목</b>. `bucketEvidence` 를 <b>거꾸로</b> 읽는다.
+ *
+ * <p>화면 2 의 「근거 보기」가 화면 1 의 어느 줄로 착지할지 정하는 표다. 분류를 여기서
+ * 다시 짜면 두 화면이 같은 근거를 다른 과목이라고 말한다 — 그래서 새로 만들지 않고
+ * 같은 함수를 쓴다.
+ */
+export function evidenceSubjectIndex(result) {
+  const index = new Map();
+  const buckets = bucketEvidence(result);
+  for (const [bucket, subject] of Object.entries(BUCKET_SUBJECT)) {
+    for (const item of buckets[bucket]) index.set(item.id, subject);
+  }
+  return index;
+}
+
+/** 과목의 순번(1부터). 화면 1 의 일곱 줄 순서와 같은 곳에서 온다. */
+export function subjectNumber(subject) {
+  const at = Object.keys(SUBJECT_LABEL).indexOf(subject);
+  return at < 0 ? null : at + 1;
 }
 
 /** 「S13 — 네이버 예약 · 매출액 (2025, 원) · …」 한 줄에서 (회사, 지표) 를 뽑는다. */

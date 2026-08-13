@@ -5,6 +5,12 @@ import BusinessProposalWorkspace, { CandidateInput, HypothesisField, LegalReport
 import { useConceptPortfolio } from '../hooks/useConceptPortfolio.js';
 
 vi.mock('../hooks/useConceptPortfolio.js', () => ({ useConceptPortfolio: vi.fn() }));
+// 가설 확인 섹션이 BM 실행 계획도 받는다 — 그 초안은 시장 API 로 읽는다.
+// 게이트 자체는 `BmPlanGate.test.jsx` 가 잰다. 여기서는 화면이 뜨기만 하면 된다.
+vi.mock('../../market/marketApi.js', () => ({ createMarketApi: () => ({
+  currentBmPlan: vi.fn().mockResolvedValue({ plan: {}, constraints: {} }), saveBmPlan: vi.fn(),
+}) }));
+vi.mock('../../../shared/api/ApiClientProvider.jsx', () => ({ useApiClient: () => ({}) }));
 vi.mock('../../../shared/async-events/index.js', () => ({
   jobEventMessage: (event) => event.message ?? event.messageKey,
   useJobEvents: () => ({ events: [], transport: 'idle' }),

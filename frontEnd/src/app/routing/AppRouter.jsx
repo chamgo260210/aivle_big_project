@@ -10,12 +10,11 @@ import PublicOnlyRoute from '../../features/auth/PublicOnlyRoute.jsx';
 import { ProjectCreatePage, ProjectListPage } from '../../features/projects/ProjectPages.jsx';
 import { IdeaIntakePage } from '../../features/idea-intake/index.js';
 import { BusinessProposalWorkspace } from '../../features/concept-portfolio/index.js';
-import MarketResearchPage from '../../features/market/MarketResearchPage.jsx';
-import BmCanvasPage from '../../features/market/BmCanvasPage.jsx';
+import BusinessValidationPage from '../../features/market/BusinessValidationPage.jsx';
 import { MarketingContentPage } from '../../features/marketing-content/index.js';
 import { TechOpsPage } from '../../features/tech-ops/index.js';
 import { FinancePage } from '../../features/finance/index.js';
-import TwinSurveyPage from '../../features/twin-survey/TwinSurveyPage.jsx';
+import MarketInterviewPage from '../../features/market-interview/MarketInterviewPage.jsx';
 import WorkspaceHomePage from '../../features/projects/WorkspaceHomePage.jsx';
 import { AccountSettingsLayout, AccountSettingsRedirect, ProfileSettingsPage, SecuritySettingsPage } from '../../features/settings/AccountSettingsPages.jsx';
 import ProjectSettingsSheet from '../../features/projects/ProjectSettingsSheet.jsx';
@@ -77,11 +76,11 @@ export default function AppRouter() {
             <Route path="idea" element={<IdeaIntakePage />} />
             <Route path="concepts" element={<BusinessProposalWorkspace />} />
             <Route path="concepts/compare" element={<BusinessProposalWorkspace initialMode="compare" />} />
-            <Route path="market" element={<MarketResearchPage />} />
-            <Route path="business-model" element={<BmCanvasPage />} />
+            {/* 여정 3번. 시장조사와 BM 캔버스가 이 한 화면으로 접혔다. */}
+            <Route path="business-validation" element={<BusinessValidationPage />} />
             <Route path="tech-ops" element={<TechOpsPage />} />
             <Route path="finance" element={<FinancePage />} />
-            <Route path="panel-survey" element={<TwinSurveyPage />} />
+            <Route path="market-interview" element={<MarketInterviewPage />} />
             <Route path="marketing" element={<MarketingContentPage />} />
             <Route path="settings" element={<ProjectSettingsSheet />} />
             <Route path="*" element={<ProjectRedirect />} />

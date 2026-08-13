@@ -31,3 +31,8 @@ ai/app/research/research2/runs-generated/
 # 트윈 카드 뱅크(KISDI 파생 마이크로데이터). **재배포 금지 자산이라 커밋하지 않는다.**
 # 만드는 쪽은 저장소 밖 combine_csv/_build/twin/twin_export.py 이고, 배치는 :ro 바인드다.
 ai/app/twin/bank/
+
+# 시장 인터뷰 응답 원장(`MARKET_INTERVIEW_LEDGER_DIR` 기본 위치). 진단용 로컬 기록이고
+# 사용자 사업안의 관측이 들어 있다 — **예외 없이 전부 뺀다.**
+# 읽는 쪽은 `python -m app.tools.recode_ledger`.
+ai/ledgers/market-interview/

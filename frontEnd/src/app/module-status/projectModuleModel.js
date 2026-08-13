@@ -25,12 +25,13 @@ export const PROJECT_MODULES = Object.freeze([
   { id: 'idea', label: '1. 아이디어', shortLabel: '아이디어', routeKey: 'idea', defaultStatus: MODULE_STATUS.NEEDS_INPUT },
   // 컨셉 생성과 컨셉 비교는 한 화면(BusinessProposalWorkspace)으로 합쳐졌다. 칸은 하나다.
   { id: 'concepts', label: '2. 사업안', shortLabel: '사업안', routeKey: 'concepts', defaultStatus: MODULE_STATUS.NOT_READY },
-  { id: 'market', label: '3. 시장 분석', shortLabel: '시장 분석', routeKey: 'market', defaultStatus: MODULE_STATUS.NOT_CONNECTED },
-  { id: 'businessModel', label: '4. BM 분석', shortLabel: 'BM 분석', routeKey: 'businessModel', defaultStatus: MODULE_STATUS.NOT_CONNECTED },
-  { id: 'techOps', label: '5. 기술·운영', shortLabel: '기술·운영', routeKey: 'techOps', defaultStatus: MODULE_STATUS.NOT_READY },
-  { id: 'finance', label: '6. 재무', shortLabel: '재무', routeKey: 'finance', defaultStatus: MODULE_STATUS.NOT_READY },
-  { id: 'panelSurvey', label: '7. 패널 트윈 조사', shortLabel: '트윈 조사', routeKey: 'panelSurvey', defaultStatus: MODULE_STATUS.NOT_READY },
-  { id: 'marketing', label: '8. 마케팅 콘텐츠 제작', shortLabel: '마케팅 콘텐츠', routeKey: 'marketing', defaultStatus: MODULE_STATUS.NOT_READY },
+  // 시장 분석과 BM 분석은 「사업 검증」 한 칸으로 접혔다. id 는 `market` 그대로다 —
+  // 백엔드 `PipelineModuleType.MARKET_ANALYSIS` 와 짝이라 이름을 바꾸면 상태 매핑이 조용히 끊긴다.
+  { id: 'market', label: '3. 사업 검증', shortLabel: '사업 검증', routeKey: 'market', defaultStatus: MODULE_STATUS.NOT_CONNECTED },
+  { id: 'techOps', label: '4. 기술·운영', shortLabel: '기술·운영', routeKey: 'techOps', defaultStatus: MODULE_STATUS.NOT_READY },
+  { id: 'finance', label: '5. 재무', shortLabel: '재무', routeKey: 'finance', defaultStatus: MODULE_STATUS.NOT_READY },
+  { id: 'panelSurvey', label: '6. 시장 인터뷰', shortLabel: '시장 인터뷰', routeKey: 'panelSurvey', defaultStatus: MODULE_STATUS.NOT_READY },
+  { id: 'marketing', label: '7. 마케팅 콘텐츠 제작', shortLabel: '마케팅 콘텐츠', routeKey: 'marketing', defaultStatus: MODULE_STATUS.NOT_READY },
   { id: 'settings', label: '프로젝트 설정', shortLabel: '설정', routeKey: 'settings', defaultStatus: MODULE_STATUS.READY },
 ]);
 
@@ -38,7 +39,9 @@ const API_MODULE_IDS = Object.freeze({
   // ⚠ 컨셉 계열 셋이 모두 'concepts' 한 칸으로 접힌다. Object.fromEntries 는 뒤가 이기므로
   //    백엔드가 보내는 순서(PipelineModuleType 열거 순서)의 **마지막** 것이 화면에 남는다.
   IDEA: 'idea', CONCEPT_PORTFOLIO: 'concepts', CONCEPT_FACTORY: 'concepts',
-  CONCEPT_SELECTION: 'concepts', MARKET_ANALYSIS: 'market', BUSINESS_MODEL: 'businessModel',
+  // ⚠ BUSINESS_MODEL 은 여기 없다. 백엔드 enum 에는 남아 있지만 `findAll()` 이 더는 돌려주지
+  //    않는다 — 「사업 검증」 칸의 상태는 MARKET_ANALYSIS 하나가 대표한다.
+  CONCEPT_SELECTION: 'concepts', MARKET_ANALYSIS: 'market',
   TECH_OPS: 'techOps', FINANCE: 'finance', PANEL_SURVEY: 'panelSurvey', MARKETING: 'marketing',
 });
 

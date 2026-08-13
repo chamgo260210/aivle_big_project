@@ -67,6 +67,29 @@ public class MarketResearchController {
             service.saveSeeds(currentUser.currentUserId(), projectId, body), id(request));
     }
 
+    /**
+     * 사업 검증 — <b>한 번 눌러 두 걸음</b>(시장조사 → BM 캔버스).
+     *
+     * <p>옛 두 엔드포인트({@code /market-research}, {@code /business-model})는 남는다 —
+     * 걸음을 따로 다시 돌릴 길이 있어야 하고, 이미 쌓인 이력을 읽는 {@code /current} 도
+     * 그 갈래를 쓴다.
+     */
+    @PostMapping("/business-validation")
+    public ResponseEntity<ApiResponse<MarketResearchService.RunView>> startValidation(
+            @PathVariable Long projectId, @Valid @RequestBody ValidationRequest body,
+            HttpServletRequest request) {
+        return ResponseEntity.status(HttpStatus.ACCEPTED).body(ApiResponse.success(
+            service.startValidation(currentUser.currentUserId(), projectId, body.asOf()),
+            id(request)));
+    }
+
+    @GetMapping("/business-validation/current")
+    public ApiResponse<MarketResearchService.CurrentView> currentValidation(
+            @PathVariable Long projectId, HttpServletRequest request) {
+        return ApiResponse.success(service.current(currentUser.currentUserId(), projectId,
+            MarketResearchRun.Kind.VALIDATION), id(request));
+    }
+
     /** 2단계 — 「다음」. 1단계 결과를 근거로 캔버스를 만든다. */
     @PostMapping("/business-model")
     public ResponseEntity<ApiResponse<MarketResearchService.RunView>> startBm(
@@ -125,6 +148,20 @@ public class MarketResearchController {
      * 깨지 않으려고 남긴다.
      */
     public record BmRequest(@NotBlank String conceptId, @NotBlank String asOf) { }
+
+    /**
+     * 사업 검증은 <b>이름표를 받지 않는다.</b>
+     *
+     * <p>{@link #startValidation}은 확정된 사업안(Market Seed)에서 {@code conceptId}를 스스로
+     * 정한다. 그래서 {@link BmRequest}의 {@code @NotBlank conceptId}를 그대로 쓰면 화면이
+     * 보내지 않는 칸 때문에 <b>요청이 400으로 죽는다</b>(2026-08-13 실측: 「다시 조사」가
+     * 눌리지 않았다).
+     *
+     * <p>⚠ 화면이 이름표를 보내던 길은 <b>일부러 없앴다.</b> 사업안을 확정하기 전에 누르면
+     * 서버가 견본으로 조용히 떨어져 남의 컨셉 원장으로 6/6 SUCCEEDED 를 냈다(2026-08-12 실측).
+     * 이 record 에 {@code conceptId} 를 되살리지 말 것.
+     */
+    public record ValidationRequest(@NotBlank String asOf) { }
 
     /**
      * ⚠ 두 칸 모두 <b>필수가 아니다.</b> 전부 선택 입력이므로 빈 계획도 정상 요청이고,

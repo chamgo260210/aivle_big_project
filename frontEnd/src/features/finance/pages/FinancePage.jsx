@@ -17,7 +17,7 @@ export default function FinancePage() {
   if (finance.loading) return <section className="finance-state" aria-busy="true">재무 입력을 불러오고 있습니다.</section>;
   if (!finance.preparation) return <section className="finance-state"><h1>재무 분석 준비</h1>
     <p role="alert">{getUserErrorMessage(finance.error)}</p>
-    <Link to={`/app/projects/${projectId}/business-model`}>BM 분석을 완료하고 재무 분석 시작</Link></section>;
+    <Link to={`/app/projects/${projectId}/business-validation`}>사업 검증을 완료하고 재무 분석 시작</Link></section>;
   return <FinanceWorkspace key={`${finance.preparation.preparationId}:${finance.preparation.revision}`} projectId={projectId} finance={finance} />;
 }
 
@@ -137,7 +137,7 @@ function FinanceWorkspace({ projectId, finance }) {
 
   const refreshContainer = () => void finance.refresh({ preserveView: true });
   return <FinanceRefreshContext.Provider value={refreshContainer}><main className="finance-page">
-    <header className="finance-heading"><div><p>6. 재무 분석</p><h1>{locked ? '재무 분석 입력값이 확정되었습니다.' : '재무 분석 입력값을 준비하세요.'}</h1>
+    <header className="finance-heading"><div><p>5. 재무 분석</p><h1>{locked ? '재무 분석 입력값이 확정되었습니다.' : '재무 분석 입력값을 준비하세요.'}</h1>
       <span>기술·운영 분석에서 전달된 값을 확인하고, 부족한 항목만 입력해 재무 분석 Snapshot을 만듭니다.</span></div>
       <strong className="finance-heading__status">{locked ? '입력 확정' : preparation.readyToFinalize ? '확정 준비' : `${preparation.missingRequiredInputs.length}개 입력 필요`}</strong></header>
     {finance.error && <p className="finance-error" role="alert">{getUserErrorMessage(finance.error)}</p>}
@@ -244,9 +244,9 @@ function FinanceWorkspace({ projectId, finance }) {
       </button>
     </section>}
     {finance.analysis && <><AnalysisReport analysis={finance.analysis} />
-      <section className="finance-next-step" aria-label="다음 단계"><div><p>8. 패널 조사</p>
-        <h2>재무 가정을 패널 조사로 검증하세요.</h2><span>가격 수용도와 고객 반응을 확인해 재무 분석의 가정을 보완할 수 있습니다.</span></div>
-        <Link to={`/app/projects/${projectId}/panel-survey`}>다음 - 패널조사</Link></section></>}
+      <section className="finance-next-step" aria-label="다음 단계"><div><p>6. 시장 인터뷰</p>
+        <h2>확정한 사업안을 사람들에게 보여 보세요.</h2><span>무엇을 이해했고 무엇이 걸리는지 응답자의 말로 듣습니다. 가격 수용도·지불의사는 답하지 않습니다.</span></div>
+        <Link to={`/app/projects/${projectId}/market-interview`}>다음 - 시장 인터뷰</Link></section></>}
   </main></FinanceRefreshContext.Provider>;
 }
 

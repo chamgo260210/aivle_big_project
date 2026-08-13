@@ -29,7 +29,11 @@ public final class MarketResearchContract {
         "stages", "degradations",
         "scorecard", "market", "canvas", "bm", "evidence", "summary", "notes");
 
-    private static final Set<String> MODES = Set.of("FULL", "BM");
+    /**
+     * {@code VALIDATION} 은 FULL+BM 을 한 실행으로 이은 것이다(여정 3번 「사업 검증」).
+     * 봉투가 같아 검증기를 나누지 않는다 — 두 걸음의 산출이 원래 비어 있던 칸에 들어갈 뿐이다.
+     */
+    private static final Set<String> MODES = Set.of("FULL", "BM", "VALIDATION");
     private static final Set<String> STAGE_STATES = Set.of("OK", "SKIPPED", "FAILED");
     private static final Set<String> GRADES = Set.of("확정", "실무 신뢰", "추정", "근거 없음");
     private static final Set<String> EVIDENCE_KINDS = Set.of("관측", "계산");
@@ -89,17 +93,25 @@ public final class MarketResearchContract {
 
         Set<String> evidenceIds = evidence(result.get("evidence"));
 
+        // ⚠ 성적표는 **세 모드 모두** 온다. 예전에는 BM 이면 null 을 강제했는데,
+        //    그러면 게이트가 「이 과목이 애초에 수집됐는지」를 모르고 사유의 갈래를
+        //    못 가른다(계획서 1-2).
+        scorecard(result.get("scorecard"));
         if ("FULL".equals(mode)) {
-            scorecard(result.get("scorecard"));
             market(result.get("market"), evidenceIds);
             mustBeNull(result, "canvas");
             mustBeNull(result, "bm");
-        } else {
-            // ⚠ 성적표는 **두 모드 모두** 온다. 예전에는 BM 이면 null 을 강제했는데,
-            //    그러면 게이트가 「이 과목이 애초에 수집됐는지」를 모르고 사유의 갈래를
-            //    못 가른다(계획서 1-2). market 은 여전히 FULL 전용이다.
-            scorecard(result.get("scorecard"));
+        } else if ("BM".equals(mode)) {
             mustBeNull(result, "market");
+            canvas(result.get("canvas"), result.get("evidence"), evidenceIds);
+            bm(result.get("bm"));
+        } else {
+            // VALIDATION — 두 걸음이 **한 봉투**다. 그래서 셋이 다 찬 채로 온다.
+            // ⚠ 예전에는 이 갈래가 BM 과 같은 가지에 있어 `market` 을 null 로 강제했고,
+            //    사업 검증이 매번 RESULT_FIELD_CONSTRAINT_VIOLATION 으로 죽었다
+            //    (2026-08-13 실측: 유료 실행이 71초 만에 거부됐다). 봉투는 안 늘렸지만
+            //    **원래 비어 있던 칸이 찬다**는 것이 이 모드의 정의다.
+            market(result.get("market"), evidenceIds);
             canvas(result.get("canvas"), result.get("evidence"), evidenceIds);
             bm(result.get("bm"));
         }

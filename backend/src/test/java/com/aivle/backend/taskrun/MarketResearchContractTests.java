@@ -45,6 +45,59 @@ class MarketResearchContractTests {
         return node;
     }
 
+    /**
+     * VALIDATION 봉투 — <b>한 실행에 두 걸음</b>이라 {@code market}·{@code canvas}·{@code bm} 이
+     * 다 찬다. 골든 픽스처는 3층 공용이라 고치지 않는다. FULL 의 근거 원장이 BM 것의
+     * 상위집합이므로(BM 은 C-F007·C-F011·C-F001 만 쓴다) 그냥 얹으면 참조가 성립한다.
+     */
+    private static ObjectNode validationPayload() throws Exception {
+        ObjectNode node = payload("full.json");
+        ObjectNode bm = payload("bm.json");
+        node.put("mode", "VALIDATION");
+        node.set("canvas", bm.get("canvas"));
+        node.set("bm", bm.get("bm"));
+        return node;
+    }
+
+    @Test
+    @DisplayName("⭐ VALIDATION 은 market 을 갖고 온다 — 셋이 다 차야 통과한다")
+    void validationCarriesMarketCanvasAndBm() throws Exception {
+        // 2026-08-13 실측 회귀: 이 갈래가 BM 과 같은 가지에 있어 market 을 null 로 강제했고,
+        // 유료 실행이 71초 만에 RESULT_FIELD_CONSTRAINT_VIOLATION 으로 통째로 거부됐다.
+        ObjectNode node = validationPayload();
+        assertThat(node.get("market").isNull()).isFalse();       // 픽스처 전제 확인
+        assertThat(node.get("canvas").isNull()).isFalse();
+        assertThat(node.get("bm").isNull()).isFalse();
+        assertThatCode(() -> MarketResearchContract.validate(node)).doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("VALIDATION 인데 market 이 비면 거부한다 — 검증인데 시장이 없다는 뜻이 된다")
+    void validationWithoutMarketRejected() throws Exception {
+        ObjectNode node = validationPayload();
+        node.putNull("market");
+        assertThatThrownBy(() -> MarketResearchContract.validate(node))
+            .isInstanceOf(ExecutionFailure.class);
+    }
+
+    @Test
+    @DisplayName("BM 은 여전히 market 이 null 이어야 한다 — VALIDATION 완화가 BM 으로 새면 안 된다")
+    void bmModeWithMarketRejected() throws Exception {
+        ObjectNode node = payload("bm.json");
+        node.set("market", payload("full.json").get("market"));
+        assertThatThrownBy(() -> MarketResearchContract.validate(node))
+            .isInstanceOf(ExecutionFailure.class);
+    }
+
+    @Test
+    @DisplayName("FULL 인데 bm 이 차 있으면 거부한다 — 1단계는 판정을 내지 않는다")
+    void fullModeWithBmRejected() throws Exception {
+        ObjectNode node = payload("full.json");
+        node.set("bm", payload("bm.json").get("bm"));
+        assertThatThrownBy(() -> MarketResearchContract.validate(node))
+            .isInstanceOf(ExecutionFailure.class);
+    }
+
     @Test
     @DisplayName("FULL 골든 픽스처가 계약을 통과한다")
     void fullFixturePasses() throws Exception {

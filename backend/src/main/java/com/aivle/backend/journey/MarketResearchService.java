@@ -42,6 +42,7 @@ public class MarketResearchService {
     private final com.aivle.backend.pipeline.marketseed.application.MarketAnalysisSeedLookup seeds;
     private final ResearchConceptFactory concepts;
     private final ResearchCompetitorSeedService competitorSeeds;
+    private final com.aivle.backend.pipeline.refinement.ConceptRefinementService refinement;
     private final ObjectMapper mapper;
 
     public MarketResearchService(ProjectRepository projects, MarketResearchRunRepository runs,
@@ -52,11 +53,14 @@ public class MarketResearchService {
                                  BmPlanPreparationService bmPlans,
                                  com.aivle.backend.pipeline.marketseed.application.MarketAnalysisSeedLookup seeds,
                                  ResearchConceptFactory concepts,
-                                 ResearchCompetitorSeedService competitorSeeds, ObjectMapper mapper) {
+                                 ResearchCompetitorSeedService competitorSeeds,
+                                 com.aivle.backend.pipeline.refinement.ConceptRefinementService refinement,
+                                 ObjectMapper mapper) {
         this.projects = projects; this.runs = runs; this.versions = versions;
         this.taskResults = taskResults; this.taskRuns = taskRuns; this.hasher = hasher;
         this.inputs = inputs; this.bmPlans = bmPlans; this.seeds = seeds;
-        this.concepts = concepts; this.competitorSeeds = competitorSeeds; this.mapper = mapper;
+        this.concepts = concepts; this.competitorSeeds = competitorSeeds;
+        this.refinement = refinement; this.mapper = mapper;
     }
 
     /**
@@ -91,6 +95,38 @@ public class MarketResearchService {
             projectId, label, seeds.isPortfolio(seed));
         String input = inputs.full(payload, label, asOf);
         return start(ownerId, project, MarketResearchRun.Kind.FULL, null, input, label);
+    }
+
+    /**
+     * 사업 검증 — <b>한 번 눌러 두 걸음</b>(시장조사 → BM 캔버스)을 돈다.
+     *
+     * <p>{@link #startFull} 과 같은 게이트를 쓴다. 확정된 사업안이 없으면 실패시킨다 —
+     * 견본으로 떨어뜨리면 <b>남의 자료로 성공했다고 말하는 것</b>이 된다.
+     *
+     * <p>⚠ BM 걸음이 죽으면 조사 결과도 채택되지 않는다(TaskRun 하나에 채택은 한 번).
+     * 완화책은 원장 재사용이다 — 원장 이름이 {@code conceptId} 이고 그 값은 사업안의
+     * {@code portfolioConceptId} 라 <b>시드가 재발급돼도 같다</b>. 다시 눌러도 수집(유료)을
+     * 다시 사지 않고 재채점만 한다.
+     */
+    @Transactional
+    public RunView startValidation(Long ownerId, Long projectId, String asOf) {
+        Project project = owned(ownerId, projectId);
+        var seed = seeds.current(projectId).orElseThrow(() -> new BusinessException(
+            ErrorCode.RESOURCE_NOT_FOUND,
+            "확정된 사업안이 없다 — 사업안을 선택하고 확정한 뒤에 사업 검증을 실행해야 한다"));
+        String label = seeds.conceptIdOf(seed);
+        JsonNode payload = concepts.build(label, mapper.readTree(seed.getSnapshotJson()),
+            bmPlans.current(projectId).constraints(),
+            competitorSeeds.conceptBlock(projectId));
+        log.info("Business validation runs on the confirmed business plan projectId={} conceptId={} portfolio={}",
+            projectId, label, seeds.isPortfolio(seed));
+        // 계획 4칸은 뒤 걸음(BM)이 쓴다. 한 입력에 같이 실어 보낸다 — 실행이 하나라
+        // 중간에 다시 받을 자리가 없다.
+        var plan = bmPlans.forExecution(projectId).orElse(null);
+        String input = inputs.validation(payload, label, asOf,
+            plan == null ? null : plan.plan(), plan == null ? null : plan.constraints());
+        return start(ownerId, project, TaskType.BUSINESS_VALIDATION,
+            MarketResearchRun.Kind.VALIDATION, null, input, label);
     }
 
     /**
@@ -174,12 +210,17 @@ public class MarketResearchService {
 
     private RunView start(Long ownerId, Project project, MarketResearchRun.Kind kind,
                           MarketResearchRun sourceRun, String inputJson, String conceptId) {
-        String inputHash = hasher.hash(TaskType.MARKET_RESEARCH, SCHEMA_VERSION, "ko-KR", inputJson);
+        return start(ownerId, project, TaskType.MARKET_RESEARCH, kind, sourceRun, inputJson, conceptId);
+    }
+
+    private RunView start(Long ownerId, Project project, TaskType taskType, MarketResearchRun.Kind kind,
+                          MarketResearchRun sourceRun, String inputJson, String conceptId) {
+        String inputHash = hasher.hash(taskType, SCHEMA_VERSION, "ko-KR", inputJson);
         // ⚠ **nonce 가 필요하다.** 「누를 때마다 새로 실행」이라 같은 컨셉이면 canonicalInputHash 가
         //    같고, `idx_task_runs_active_conflict` 와 `TaskRunService.create` 의 중복 방지에 걸린다.
         //    마케팅 리포트가 같은 이유로 UUID 를 쓴다.
         String nonce = UUID.randomUUID().toString();
-        TaskRun task = taskRuns.create(ownerId, project.getId(), TaskType.MARKET_RESEARCH,
+        TaskRun task = taskRuns.create(ownerId, project.getId(), taskType,
             "MARKET_RESEARCH_" + kind.name(), conceptId, inputJson, inputHash, nonce, nonce, 1);
         return runView(runs.save(MarketResearchRun.create(project, kind, sourceRun, task, inputHash)));
     }
@@ -221,6 +262,42 @@ public class MarketResearchService {
         materialize(run, mapper.readTree(result.getResultJson()));
         run.succeed();
         runs.save(run);
+        startRefinementLoop(run);
+    }
+
+    /**
+     * 사업 검증이 끝난 <b>바로 그 자리</b>에서 컨셉 다듬기 라운드 1을 건다.
+     *
+     * <p>왜 여기인가. 「방금 검증이 끝났다」를 아는 곳은 여기뿐이다 —
+     * {@link #synchronize} 는 버전이 이미 있으면 위에서 되돌아가므로 이 줄은
+     * <b>한 실행당 정확히 한 번</b> 지나간다. 다듬기 워커는 이미 있는 라운드만 다음으로 밀 뿐
+     * 라운드 1을 거는 자리가 없어, 다듬기가 영원히 시작되지 않았다(2026-08-13 실측).
+     *
+     * <p>{@code VALIDATION} 과 {@code BM} 에서 건다. 옛 두 걸음짜리 실행에서 「검증이 끝났다」가
+     * 성립하는 자리가 <b>바로 BM 걸음이 끝나는 순간</b>이다 — 다듬기 재료(게이트 사유·캔버스·
+     * 근거)가 그때 다 갖춰진다. {@code ConceptRefinementService.material} 도 이미 VALIDATION 이
+     * 없으면 BM 을 읽도록 돼 있어, 재료 쪽은 처음부터 두 갈래를 다 보고 있었다.
+     *
+     * <p>⚠ 예전에는 VALIDATION 만 걸었다. 「두 곳에서 걸면 라운드 1이 두 번 선다」는 우려였는데,
+     * {@code startFirstRound} 가 <b>라운드가 하나라도 있으면 건너뛴다</b> —
+     * 그 우려는 이미 막혀 있다. FULL 은 여전히 안 건다(캔버스가 없어 재료가 반쪽이다).
+     *
+     * <p>⚠ <b>여기서 죽어도 검증 결과는 살아야 한다.</b> 다듬기는 뒤따르는 부가 걸음이지
+     * 채택의 조건이 아니다. 사유는 화면이 아니라 로그로 보낸다.
+     */
+    private void startRefinementLoop(MarketResearchRun run) {
+        if (run.getKind() != MarketResearchRun.Kind.VALIDATION
+            && run.getKind() != MarketResearchRun.Kind.BM) return;
+        try {
+            refinement.startFirstRound(run.getProject().getId()).ifPresent(task ->
+                log.info("Concept refinement round 1 queued projectId={} researchRunId={} taskRunId={}",
+                    run.getProject().getId(), run.getId(), task.getId()));
+        } catch (RuntimeException e) {
+            // 확정된 선택이 없거나(조용히 건너뜀은 서비스 몫), 선택이 이미 다른 액션을 물고
+            // 있는 경우다. 어느 쪽이든 검증 결과를 되돌릴 이유가 아니다.
+            log.warn("Concept refinement round 1 could not be queued projectId={} researchRunId={} reason={}",
+                run.getProject().getId(), run.getId(), e.toString());
+        }
     }
 
     /**

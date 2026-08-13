@@ -5,6 +5,9 @@ import { getUserErrorMessage } from '../../../shared/api/apiError.js';
 import { jobEventMessage, useJobEvents } from '../../../shared/async-events/index.js';
 import { formatLocalTime } from '../../../shared/async-events/formatLocalTime.js';
 import { projectRoutes } from '../../../app/routing/projectRoutes.js';
+import { Dialog } from '../../../shared/ui';
+import BmPlanForm from '../BmPlanForm.jsx';
+import { useBmPlanDraft } from '../hooks/useBmPlanDraft.js';
 import {
   CANDIDATE_FACT_FIELDS, HYPOTHESIS_LABELS, HYPOTHESIS_TYPES, buildHypothesisChanges,
   canOpenComparison, candidateFieldOptions, candidateRequests, createCandidateDraft,
@@ -19,6 +22,7 @@ export default function BusinessProposalWorkspace({ initialMode = 'list' }) {
   const { projectId } = useParams();
   const outlet = useOutletContext() ?? {};
   const portfolio = useConceptPortfolio(projectId, outlet.liveRevision);
+  const plan = useBmPlanDraft(projectId);
   const progressJobId = portfolio.run?.activeTaskRunId ?? portfolio.run?.initialTaskRunId ?? null;
   const progressEvents = useJobEvents(progressJobId);
   const [clock, setClock] = useState(() => Date.now());
@@ -27,6 +31,7 @@ export default function BusinessProposalWorkspace({ initialMode = 'list' }) {
   const [drafts, setDrafts] = useState({});
   const [edits, setEdits] = useState({});
   const [recoveredNotice, setRecoveredNotice] = useState(false);
+  const [pendingEmptyCells, setPendingEmptyCells] = useState(null);
   const selectionBaseline = useRef({ selectionId: null, conceptIds: new Set() });
   const selectedId = selectedConceptId(portfolio.selection);
   const comparedConcepts = portfolio.concepts.filter((concept) => compared.includes(concept.conceptId));
@@ -73,6 +78,17 @@ export default function BusinessProposalWorkspace({ initialMode = 'list' }) {
     if (payload) portfolio.respond(request.inputRequestId, payload, request.question ?? '');
   };
 
+  const confirmAssumptions = () => {
+    setPendingEmptyCells(null);
+    portfolio.confirm(buildHypothesisChanges(portfolio.hypotheses, edits), plan.save);
+  };
+  // 빈 칸이 있으면 **무엇이 빌지 이름으로** 알리고 확인을 받는다. 이 규칙은 화면에서만
+  // 성립한다 — 서버에도 AI 에도 「빈 칸을 확인받는다」는 개념이 없다.
+  const submitAssumptions = () => {
+    if (plan.emptyCells.length > 0) { setPendingEmptyCells(plan.emptyCells); return; }
+    confirmAssumptions();
+  };
+
   if (portfolio.loading) return <main className="business-proposal" aria-busy="true"><p>검토된 사업안을 불러오고 있습니다.</p></main>;
   return <main className="business-proposal">
     <header className="business-proposal__hero">
@@ -103,16 +119,33 @@ export default function BusinessProposalWorkspace({ initialMode = 'list' }) {
       <div>{HYPOTHESIS_TYPES.map((type) => <HypothesisField key={type} type={type} value={hypothesisMap[type]}
         edit={edits[type]} onEdit={(next) => setEdits((current) => ({ ...current, [type]: next }))}
         onAlternative={() => portfolio.alternative(type)} disabled={portfolio.busy || Boolean(portfolio.selection.activeTaskRunId)} />)}</div>
+      {/* BM 분석이 추가로 필요한 것 — 컨셉 계약이 주지 않는 4칸 + 비용 구조.
+          가설과 한 자리에 둔다: 둘 다 「다음 분석에 쓸 값」이고, 따로 두면 사용자가
+          가설만 굳히고 계획은 빈 채로 시장분석까지 내려간다. */}
+      <div className="validation-assumptions__plan">
+        <h3>BM 분석에 이것만 더 필요합니다</h3>
+        <p>수익모델·채널·차별점·가격은 위에서 이미 확정하므로 다시 묻지 않습니다. 전부 선택 입력입니다.</p>
+        <BmPlanForm draft={plan.draft} onChange={plan.change}
+          busy={portfolio.busy || Boolean(portfolio.selection.activeTaskRunId)} />
+      </div>
       {portfolio.selection.status === 'DELTA_LEGAL_PENDING' && <p role="status">변경사항의 법률·규제 영향을 다시 확인하고 있습니다.</p>}
       <div className="validation-assumptions__actions">
-        <button type="button" disabled={portfolio.busy || Boolean(portfolio.selection.activeTaskRunId)} onClick={() => portfolio.confirm(buildHypothesisChanges(portfolio.hypotheses, edits))}>7개 검증 가정 확인</button>
+        <button type="button" disabled={portfolio.busy || Boolean(portfolio.selection.activeTaskRunId)} onClick={submitAssumptions}>7개 검증 가정 확인</button>
         {portfolio.selection.nextAction === 'REVISE_OR_RETRY' && <button type="button" disabled={portfolio.busy} onClick={portfolio.retryDelta}>변경사항 법률·규제 재검토 다시 시도</button>}
         {portfolio.selection.nextAction === 'REVIEW_LEGAL_REPORT' && <button type="button" disabled={portfolio.busy} onClick={portfolio.finalizeReport}>최종 법률·규제 보고서 확정</button>}
         {portfolio.selection.nextAction === 'FINALIZE_MARKET_SEED' && <button type="button" disabled={portfolio.busy} onClick={portfolio.finalizeMarketSeed}>다음 분석 준비</button>}
       </div>
+      <Dialog open={pendingEmptyCells !== null} onClose={() => setPendingEmptyCells(null)} title="비어 있는 칸이 있습니다">
+        <p><strong>{(pendingEmptyCells ?? []).join(', ')}</strong> 칸이 비어 있습니다.</p>
+        <p>그 칸은 사업안 서술에 내용이 있으면 그것으로 채워지고, 없으면 <strong>빈 채로</strong> 나옵니다 — 모델이 지어내서 메우지 않습니다.</p>
+        <div className="validation-assumptions__actions">
+          <button type="button" onClick={() => setPendingEmptyCells(null)}>돌아가서 채우기</button>
+          <button type="button" disabled={portfolio.busy} onClick={confirmAssumptions}>이대로 진행</button>
+        </div>
+      </Dialog>
     </section>}
     {portfolio.report && <LegalReport report={portfolio.report} />}
-    {portfolio.selection?.status === 'READY_FOR_MARKET' && <section className="business-proposal__ready"><strong>다음 분석 준비 완료</strong><span>확정된 사업안과 검증 가정, 최종 법률 결과가 Market Seed에 고정되었습니다.</span><Link to={projectRoutes.market(projectId)}>시장 분석으로 이동</Link></section>}
+    {portfolio.selection?.status === 'READY_FOR_MARKET' && <section className="business-proposal__ready"><strong>다음 분석 준비 완료</strong><span>확정된 사업안과 검증 가정, 최종 법률 결과가 Market Seed에 고정되었습니다.</span><Link to={projectRoutes.market(projectId)}>사업 검증으로 이동</Link></section>}
   </main>;
 }
 

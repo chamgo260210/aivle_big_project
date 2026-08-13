@@ -40,6 +40,8 @@ public class ConceptPortfolioSelectionService {
     private final ConceptPortfolioSelectionTaskFactory tasks;
     private final TaskRunService taskRuns;
     private final ConceptPortfolioJsonHasher hasher;
+    /** 다듬기가 남긴 오버레이 — 최종 확정 때 시드에 실어 보낸다. */
+    private final com.aivle.backend.pipeline.refinement.ConceptRefinementFinalRepository refinementFinals;
     private final ObjectMapper mapper;
     private final Clock clock;
 
@@ -51,11 +53,13 @@ public class ConceptPortfolioSelectionService {
             MarketAnalysisSeedSnapshotRepository marketSeeds, IdeaBriefFieldRepository briefFields,
             ConceptPortfolioSeedBuilder seedBuilder, ConceptPortfolioSelectionTaskFactory tasks,
             TaskRunService taskRuns,
-            ConceptPortfolioJsonHasher hasher, ObjectMapper mapper, Clock clock) {
+            ConceptPortfolioJsonHasher hasher,
+            com.aivle.backend.pipeline.refinement.ConceptRefinementFinalRepository refinementFinals,
+            ObjectMapper mapper, Clock clock) {
         this.projects=projects; this.runs=runs; this.concepts=concepts; this.selections=selections;
         this.hypotheses=hypotheses; this.deltas=deltas; this.reports=reports; this.marketSeeds=marketSeeds;
         this.briefFields=briefFields; this.seedBuilder=seedBuilder; this.tasks=tasks; this.taskRuns=taskRuns;
-        this.hasher=hasher; this.mapper=mapper; this.clock=clock;
+        this.hasher=hasher; this.refinementFinals=refinementFinals; this.mapper=mapper; this.clock=clock;
     }
 
     @Transactional
@@ -238,6 +242,13 @@ public class ConceptPortfolioSelectionService {
                 selectionId, selection.getHypothesisRevision())
             .ifPresent(value -> approved.add(
                 mapper.readTree(value.getLegalReviewJson()).path("deltaLegalResult")));
+        // 다듬기가 고쳤지만 가설도 BM 계획도 아닌 칸(`targetUsers`·`featureSet`)을 실어 보낸다.
+        // ⚠ **AI 가 시드를 만들 때 얹어야 한다.** 여기서 만든 뒤 Java 가 덮으면 해시 검증
+        // (`snapshotHash.equals(productionCompatibleHash(market))`)이 깨져 저장이 막힌다.
+        refinementFinals.findBySelectionIdAndDeletedAtIsNull(selectionId)
+            .map(com.aivle.backend.pipeline.refinement.ConceptRefinementFinal::getOverlayJson)
+            .filter(json -> json != null && !json.isBlank())
+            .ifPresent(json -> input.set("refinementOverlay", mapper.readTree(json)));
         String snapshotId=UUID.randomUUID().toString(); ObjectNode binding=input.putObject("productionBinding");
         binding.put("projectId", projectId); binding.put("portfolioSelectionId", selectionId);
         binding.put("portfolioConceptId", concept.getId()); binding.put("marketSeedSnapshotId", snapshotId);
@@ -253,6 +264,20 @@ public class ConceptPortfolioSelectionService {
         return new MarketSeedView("market-analysis-seed-snapshot-v1", value.getId(), value.getSchemaVersion(),
             value.getProjectId(), value.getPortfolioSelectionId(), value.getPortfolioConceptId(), value.getLegalReportId(),
             value.getSourceSnapshotHash(), value.getSnapshotHash(), value.getFinalizedAt(), mapper.readTree(value.getSnapshotJson()));
+    }
+
+    /**
+     * 다듬기가 거는 두 액션({@code REFINE_FROM_MARKET}·{@code NARRATE_REFINED})의 <b>입력 뼈대</b>.
+     *
+     * <p>⚠ <b>{@code ConceptPortfolioSelectionTaskFactory} 는 입력을 채워 주지 않는다.</b> 그냥
+     * 받은 것을 해시해서 넘길 뿐이다. 그래서 액션마다 자기 입력을 온전히 만들어야 하는데,
+     * 다듬기는 {@code selectedCandidate} 없이 보내고 있었다 — AI 입력 계약이
+     * {@code REQUEST_SCHEMA_INVALID} 로 거부하고 라운드가 서지 않았다(2026-08-13 실측:
+     * 라운드 0행). 여기를 지나면 그 칸이 반드시 실린다.
+     */
+    public ObjectNode refinementInput(String action, ConceptPortfolioSelection selection) {
+        ConceptPortfolioRun run = runs.findById(selection.getRunId()).orElseThrow();
+        return baseInput(action, run, concept(selection));
     }
 
     TaskRun queueDelta(Long ownerId, ConceptPortfolioSelection selection, String key) {

@@ -50,7 +50,8 @@ class MarketResearchSeedBranchTests {
     private final MarketResearchService service = new MarketResearchService(
         projects(), runs, mock(MarketResearchVersionRepository.class),
         mock(TaskResultRepository.class), taskRuns, hasher(), inputs, bmPlans, seeds,
-        new ResearchConceptFactory(MAPPER), competitorSeeds, MAPPER);
+        new ResearchConceptFactory(MAPPER), competitorSeeds,
+        mock(com.aivle.backend.pipeline.refinement.ConceptRefinementService.class), MAPPER);
 
     private static final String SNAPSHOT = """
         {"contract":"market-analysis-seed-snapshot-v1","schemaVersion":"2.0",

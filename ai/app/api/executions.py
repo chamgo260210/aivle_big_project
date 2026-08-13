@@ -32,8 +32,11 @@ TASK_TYPES = {
     "FINANCE_ESTIMATE",
     "MARKETING_CONTENT_GENERATION",
     "MARKET_RESEARCH",
+    # 사업 검증 — FULL+BM 을 한 실행으로 잇는다. 봉투는 MARKET_RESEARCH 와 같다.
+    "BUSINESS_VALIDATION",
     "TWIN_SURVEY",
     "TWIN_STIMULUS_DRAFT",
+    "MARKET_INTERVIEW",
 }
 
 
@@ -159,8 +162,8 @@ async def execute(request: Request, body: InternalExecutionRequestV1):
     if calculated_hash != body.canonicalInputHash:
         return internal_error(correlation, "INVALID_REQUEST", "HASH_MISMATCH", 400, False,
                               body.taskRunId, body.taskAttemptId)
-    if body.taskType == "MARKET_RESEARCH":
-        # 시장조사만 textContents 봉투를 쓴다 (MarketResearchInputFactory 가 그렇게 싼다).
+    if body.taskType in {"MARKET_RESEARCH", "BUSINESS_VALIDATION"}:
+        # 시장조사 계열만 textContents 봉투를 쓴다 (MarketResearchInputFactory 가 그렇게 싼다).
         # 나머지 pipeline task 들은 raw JSON 이라 아래 분기로 간다.
         reason = validate_text_contents(body.input)
         if reason:
@@ -227,7 +230,14 @@ async def execute(request: Request, body: InternalExecutionRequestV1):
                   "externalSourceReferences": [], "generatedAt": generated_at, "verificationNeeded": True}
     execution_warnings: list[dict[str, Any]] = []
     try:
-        if body.taskType == "MARKET_RESEARCH":
+        if body.taskType == "BUSINESS_VALIDATION":
+            # 사업 검증은 시장조사(FULL)와 BM 을 **한 실행**으로 잇는다. 새 엔진이 아니라
+            # 기존 파이프라인을 두 번 부르고 봉투를 합치는 오케스트레이션이다.
+            # 봉투는 MARKET_RESEARCH 와 같고 `mode` 만 `VALIDATION` 이다.
+            from app.validation import execute_business_validation
+            budget = (deadline - datetime.now(timezone.utc)).total_seconds()
+            result = await execute_business_validation(body.input, body.taskAttemptId, budget)
+        elif body.taskType == "MARKET_RESEARCH":
             # 시장조사는 프롬프트 1회가 아니라 다단계 파이프라인이라 단일 프롬프트 실행 경로를
             # 타지 않는다. 남은 deadline 을 그대로 예산으로 넘긴다.
             # ⚠ 한 TaskType 에 **두 모드**(FULL·BM)가 있고 가르는 것은 `input.mode` 다.
@@ -247,6 +257,12 @@ async def execute(request: Request, body: InternalExecutionRequestV1):
             # 다듬은 뒤에야 TWIN_SURVEY 로 간다 — 이 태스크는 카드 뱅크를 건드리지 않는다.
             from app.twin.stimulus_draft import execute_twin_stimulus_draft
             result = await execute_twin_stimulus_draft(body.input)
+        elif body.taskType == "MARKET_INTERVIEW":
+            # 시장 인터뷰도 다단계다 — n 명 수집(1인 1셀) + 주제 코딩 1회. 남은 deadline 을
+            # 예산으로 넘기면 오케스트레이터가 코딩 몫을 떼어 두고 수집에 쓴다.
+            from app.interview import execute_market_interview
+            budget = (deadline - datetime.now(timezone.utc)).total_seconds()
+            result = await execute_market_interview(body.input, budget)
         elif body.taskType == "CONCEPT_PORTFOLIO_V2_RUN":
             from app.tasks.concept_portfolio_v2 import (
                 ConceptPortfolioProductionContractError,
@@ -361,12 +377,17 @@ async def execute(request: Request, body: InternalExecutionRequestV1):
             return internal_error(correlation, "UNSUPPORTED_TASK_TYPE", "TASK_TYPE_UNSUPPORTED", 422, False,
                                   body.taskRunId, body.taskAttemptId)
     except ProviderFailure as failure:
+        # ⚠ `detail` 을 반드시 찍는다. 코드·사유 두 낱말만 남기면 무엇이 왜 죽었는지
+        #   **어디에서도** 알 수 없다 — 유료 실행이 실패해도 원인을 못 밝힌다(2026-08-13 실측).
+        #   화면에는 안 간다(`MarketResearchService.safeErrorReason` 이 막는다). 여기가 유일한 자리다.
         logger.warning(
             "AI execution failed taskType=%s taskRunId=%s taskAttemptId=%s correlationId=%s "
-            "code=%s reason=%s retryable=%s schemaName=%s upstreamStatus=%s "
+            "code=%s reason=%s retryable=%s detail=%s schemaName=%s upstreamStatus=%s "
             "providerErrorType=%s providerErrorParam=%s retryAfterMs=%s validationFields=%s",
             body.taskType, body.taskRunId, body.taskAttemptId, correlation,
-            failure.code, failure.reason, failure.retryable, failure.schema_name,
+            failure.code, failure.reason, failure.retryable,
+            getattr(failure, "safe_provider_message", None),
+            failure.schema_name,
             failure.upstream_status, failure.provider_error_type, failure.provider_error_param,
             failure.retry_after_ms,
             failure.validation_fields,

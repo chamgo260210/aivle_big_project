@@ -267,7 +267,10 @@ public class TaskRunService {
             "SCHEMA_REPAIR_EXHAUSTED", "INTERNAL_STATE_FAILURE", "REQUEST_CONTRACT_INVALID",
             // 트윈 조사의 두 이유는 「AI 응답을 해석 못 했다」가 아니다. 접으면 화면이
             // 「성적이 없는 유형이라 거절」과 「뱅크가 안 붙었다」를 말할 수 없다.
-            "TWIN_TASK_TYPE_NOT_SERVICEABLE", "TWIN_BANK_UNAVAILABLE").contains(reason)) return reason;
+            "TWIN_TASK_TYPE_NOT_SERVICEABLE", "TWIN_BANK_UNAVAILABLE",
+            // 인터뷰가 표본의 절반도 못 걷었다. 접으면 화면이 「다시 눌러 보라」와
+            // 「AI 가 죽었다」를 구분해 말할 수 없다.
+            "MARKET_INTERVIEW_NO_USABLE_RESPONSE").contains(reason)) return reason;
         return switch (internal) {
         case "PAYLOAD_TOO_LARGE" -> "PAYLOAD_TOO_LARGE";
         case "DEADLINE_EXCEEDED" -> "TASK_TIMEOUT";

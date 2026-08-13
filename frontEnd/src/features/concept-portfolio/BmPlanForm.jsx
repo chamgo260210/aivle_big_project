@@ -1,5 +1,5 @@
-import { Button, Textarea, TextInput } from '../../shared/ui';
-import Emphasis from './emphasis.jsx';
+import { Textarea, TextInput } from '../../shared/ui';
+import Emphasis from '../market/emphasis.jsx';
 import {
   CONSTRAINT_FIELDS, LIST_FIELDS, PLAN_FIELDS,
 } from './bmPlan.js';
@@ -13,15 +13,16 @@ import {
  *
  * <p>⚠ <b>전부 선택 입력이다.</b> 필수 표시를 달지 않는다. 비운 칸은 캔버스에서 그만큼
  * 비고, 그 사실을 제출 전에 확인받는다 — 모델이 지어내서 메우지 않는다.
+ *
+ * <p>제출 버튼은 여기 없다. 이 폼은 가설 확인 섹션 안에 살고, <b>가설 확인 버튼 하나</b>가
+ * 계획 저장과 가설 확정을 그 순서로 한다 — 버튼이 둘이면 사용자가 계획만 저장하고
+ * 가설을 안 굳힌 채 다음 단계로 갈 수 있다.
  */
-export default function BmPlanForm({ draft, onChange, onSubmit, busy }) {
+export default function BmPlanForm({ draft, onChange, busy }) {
   const set = (key) => (event) => onChange(key, event.target.value);
 
   return (
-    <form
-      className="bm-plan"
-      onSubmit={(event) => { event.preventDefault(); onSubmit(); }}
-    >
+    <div className="bm-plan">
       {PLAN_FIELDS.map(([key, question, cell, hint]) => (
         <div key={key} className="bm-plan__row">
           <div className="bm-plan__q">
@@ -69,12 +70,6 @@ export default function BmPlanForm({ draft, onChange, onSubmit, busy }) {
           우리가 문장을 숫자로 추측하면 쓰지 않은 정밀도를 지어내는 것이다.
         </p>
       </div>
-
-      <div className="mr-actions">
-        <Button type="submit" disabled={busy}>
-          {busy ? '저장 중…' : '저장하고 캔버스 만들기'}
-        </Button>
-      </div>
-    </form>
+    </div>
   );
 }
