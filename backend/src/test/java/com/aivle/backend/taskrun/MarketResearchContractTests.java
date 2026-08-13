@@ -136,6 +136,67 @@ class MarketResearchContractTests {
     }
 
     @Test
+    @DisplayName("게이트 사유가 통째로 빠지면 거부한다 — 게이트를 안 돈 결과를 받으면 안 된다")
+    void missingGateReasonsRejected() throws Exception {
+        ObjectNode node = payload("bm.json");
+        ((ObjectNode) node.get("bm")).remove("gateReasons");
+        assertThatThrownBy(() -> MarketResearchContract.validate(node))
+            .isInstanceOf(ExecutionFailure.class);
+    }
+
+    @Test
+    @DisplayName("게이트 사유가 비어 있는 것은 통과한다 — 규칙이 안 걸린 것이지 검사를 안 한 게 아니다")
+    void emptyGateReasonsAccepted() throws Exception {
+        ObjectNode node = payload("bm.json");
+        ((ObjectNode) node.get("bm")).putArray("gateReasons");
+        assertThatCode(() -> MarketResearchContract.validate(node))
+            .doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("AI 쪽에 없는 게이트 코드는 거부한다 — 두 목록이 갈라지면 여기서 걸린다")
+    void unknownGateCodeRejected() throws Exception {
+        ObjectNode node = payload("bm.json");
+        ArrayNode reasons = (ArrayNode) node.get("bm").get("gateReasons");
+        assertThat(reasons).isNotEmpty();                   // 픽스처 전제 확인
+        ((ObjectNode) reasons.get(0)).put("code", "G99");
+        assertThatThrownBy(() -> MarketResearchContract.validate(node))
+            .isInstanceOf(ExecutionFailure.class);
+    }
+
+    @Test
+    @DisplayName("AI 쪽에 없는 갈래는 거부한다 — cause 두 목록이 갈라지면 여기서 걸린다")
+    void unknownGateCauseRejected() throws Exception {
+        ObjectNode node = payload("bm.json");
+        ArrayNode reasons = (ArrayNode) node.get("bm").get("gateReasons");
+        assertThat(reasons).isNotEmpty();                   // 픽스처 전제 확인
+        ((ObjectNode) reasons.get(0)).put("cause", "MAYBE");
+        assertThatThrownBy(() -> MarketResearchContract.validate(node))
+            .isInstanceOf(ExecutionFailure.class);
+    }
+
+    @Test
+    @DisplayName("갈래가 빠진 사유는 거부한다 — 없으면 A급 미수집이 조용히 묻힌다")
+    void missingGateCauseRejected() throws Exception {
+        ObjectNode node = payload("bm.json");
+        ArrayNode reasons = (ArrayNode) node.get("bm").get("gateReasons");
+        ((ObjectNode) reasons.get(0)).remove("cause");
+        assertThatThrownBy(() -> MarketResearchContract.validate(node))
+            .isInstanceOf(ExecutionFailure.class);
+    }
+
+    @Test
+    @DisplayName("BM 모드도 성적표를 싣는다 — 없으면 게이트가 갈래를 못 가른다")
+    void bmModeCarriesScorecard() throws Exception {
+        ObjectNode node = payload("bm.json");
+        assertThat(node.get("mode").asText()).isEqualTo("BM");
+        assertThat(node.get("scorecard").isArray()).isTrue();
+        assertThat(node.get("scorecard")).isNotEmpty();
+        assertThat(node.get("market").isNull()).isTrue();   // market 은 여전히 FULL 전용
+        MarketResearchContract.validate(node);              // 통과해야 한다
+    }
+
+    @Test
     @DisplayName("요인 판정 어휘 밖의 값은 거부한다 — 관측·가정·가설 셋뿐이다")
     void unknownFactorBasisRejected() throws Exception {
         ObjectNode node = payload("full.json");

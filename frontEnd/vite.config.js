@@ -15,6 +15,10 @@ export default defineConfig({
     proxy: {
       '/api': { target: 'http://localhost:3000', changeOrigin: true },
     },
+    // `wireframe.html` 이 저장소 공용 골든 픽스처(ai/tests/fixtures/...)를 **그대로**
+    // 읽는다. 사본을 두면 갈라지므로 상위 폴더를 열어 둔다. dev 서버에서만 유효하고
+    // 빌드 산출물에는 영향이 없다.
+    fs: { allow: ['..'] },
   },
   test: {
     environment: 'jsdom',

@@ -695,6 +695,9 @@ async def _bm(source_run: str, concept_path: str, concept_id: str,
               run_id: str, budget: Budget,
               plan_material: dict | None = None,
               plan_constraints: dict | None = None) -> dict:
+    import scorecard as SCORECARD                                  # noqa: PLC0415
+
+    from ..validation import citation, gate, mapping               # noqa: PLC0415
     from .bm.flow import run_bm_pipeline_flow                      # noqa: PLC0415
     from .bm.normalize import create_bm_analysis_input             # noqa: PLC0415
 
@@ -702,7 +705,7 @@ async def _bm(source_run: str, concept_path: str, concept_id: str,
     material = await asyncio.to_thread(_bm_material, ledger, source_run,
                                        concept_path, concept_id,
                                        plan_material or {}, plan_constraints or {})
-    cards, market_join, constraints = material
+    cards, market_join, constraints, verdict = material
 
     evidence = serialize.evidence(cards)
 
@@ -726,17 +729,45 @@ async def _bm(source_run: str, concept_path: str, concept_id: str,
     stage.llm_calls = 1
 
     result = _read_result(source_run)
+    # ⚠ 게이트는 **직렬화 뒤**에 돈다. `canvas_cells()` 안의 `_stamp_user_plan()` 이 근거를
+    #   인용하지 않은 칸을 PLAN 으로 내리므로, 그 전에 재면 사용자 계획을 관측으로 착각한다.
+    # ⚠ **강등이 먼저다.** 근거 없이 「확인됨」이라고 쓴 칸을 UNVERIFIED 로 내린 뒤에
+    #   직렬화한다. 순서를 바꾸면 화면이 근거 0건인 칸 옆에 「확인됨」을 그대로 단다.
+    # ⚠ **매핑이 맨 앞이다.** 근거 id·출처 라벨·상태는 기계가 확정한다(LLM 0회). 이 자리가
+    #   `serialize.canvas_cells()` 보다 뒤로 가면 칸의 경계가 id 에서 파생되지 않아
+    #   `assert_caveats_reached`(그리고 자바 `requireCaveats`)가 결과를 통째로 거부한다.
+    #   순서: mapping → citation.enforce(강등만) → _stamp_user_plan(계획칸) → gate.
+    analysis, corrections = citation.enforce(
+        mapping.apply(out["bm_analysis"], cards, verdict))
+    if corrections:
+        ledger.degrade("bm", "UNCITED_CLAIM",
+                       f"근거 없이 확인을 주장한 {len(corrections)}칸을 미확인으로 내렸다: "
+                       + ", ".join(f"{item.cell}({item.was})" for item in corrections))
+    cells = serialize.canvas_cells(
+        analysis.canvas, evidence,
+        _user_planned_cells(plan_material, plan_constraints))
+    # ⚠ **성적표를 BM 모드에서도 낸다**(계획서 1-2). LLM 0회다 — 저장된 원장을 다시 셀 뿐이다.
+    #   이것이 없으면 게이트가 「이 칸의 근거가 애초에 수집되긴 했는가」를 모르고, 그러면
+    #   사유의 갈래(`cause`)가 전부 `UNMAPPED` 이 되어 A급(재수집)과 B급(인용 누락)을
+    #   구분하지 못한다. 갈래를 못 가르면 **컨셉을 고쳐 A급을 통과시키는 길**이 열린다.
+    score = _timed(ledger, "scorecard",
+                   lambda: SCORECARD.build(source_run, concept_path, verdict=verdict))
+    scorecard = serialize.scorecard(score)
+    gate_reasons = gate.evaluate(cells, scorecard)
+    decision = gate.apply_decision(out["final_result"].decision.value, gate_reasons)
     return serialize.envelope(
         runId=run_id, conceptId=concept_id,
         asOf=str(result.get("reference_date") or _now()[:10]),
         generatedAt=_now(), mode="BM",
         stages=[s.as_contract() for s in ledger.stages],
         degradations=ledger.degradations,
-        scorecard=None, market=None,
-        canvas={"cells": serialize.canvas_cells(
-            out["bm_analysis"].canvas, evidence,
-            _user_planned_cells(plan_material, plan_constraints))},
-        bm=serialize.bm(out["final_result"], out["bm_analysis"]),
+        scorecard=scorecard, market=None,
+        canvas={"cells": cells},
+        # ⚠ 판정 블록도 **교정본(`analysis`)** 에서 나온다. 원본 `out["bm_analysis"]` 를
+        #   넘기면 캔버스(매핑·강등 뒤)와 출처가 갈린다 — 지금은 이 함수가
+        #   `market_fit_status`·`consistency_status` 만 읽어 무해하지만, 캔버스를 읽는 날
+        #   조용히 두 갈래가 된다.
+        bm=serialize.bm(out["final_result"], analysis, decision, gate_reasons),
         evidence=evidence, summary=None,
         notes=list(serialize.NOTES_BM))
 
@@ -777,4 +808,7 @@ def _bm_material(ledger: Run, source_run: str, concept_path: str, concept_id: st
                                   cards_doc, concept, source_run, concept_id)
 
     market_join = _timed(ledger, "bm_adapter", adapt)
-    return cards_doc.get("카드") or [], market_join, held.get("constraints") or {}
+    # ⚠ `verdict` 를 같이 돌려준다 — `validation.mapping` 이 칸 상태를 도장에서 파생한다.
+    #   반환 폭이 바뀌면 호출부(`_bm`)의 언패킹도 **같이** 고쳐야 한다.
+    return (cards_doc.get("카드") or [], market_join,
+            held.get("constraints") or {}, verdict)

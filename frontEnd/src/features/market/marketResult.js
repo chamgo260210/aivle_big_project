@@ -35,6 +35,32 @@ export const DECISION_VIEW = {
   BLOCKED: { label: '진행 불가', tone: 'danger' },
 };
 
+/**
+ * 판정 게이트의 규칙 코드 → 사람이 읽는 제목.
+ *
+ * <p>모델이 쓴 status 를 안 믿고 **근거 개수**로 반증한 것들이다. 정본은 AI 쪽
+ * `app/validation/gate.py` — 코드를 늘리면 여기도 늘려야 한다. 모르는 코드는 코드 자체를
+ * 그대로 보여준다(숨기면 화면이 이유를 잃는다).
+ */
+export const GATE_TITLE = {
+  G1: '근거 없음',
+  G4: '관측 미달',
+  G5: '수요 미확인',
+};
+
+/**
+ * 사유의 **갈래** — 「컨셉을 고쳐서 될 일인가」.
+ *
+ * <p>이것이 없으면 세 가지가 한 덩어리로 읽힌다. 특히 `UNCOLLECTED` 는 <b>컨셉을 고쳐도
+ * 안 고쳐진다</b> — 그걸 모르고 컨셉을 다듬어 통과시키면 그게 우리가 만든 방식의 「다 패스」다.
+ * 정본은 AI 쪽 `app/validation/gate.py` 의 `_cause`.
+ */
+export const GATE_CAUSE_VIEW = {
+  UNCOLLECTED: { label: '못 찾음', tone: 'danger', note: '컨셉을 고쳐도 안 고쳐져요 — 다시 조사해야 해요' },
+  UNCITED: { label: '연결 안 됨', tone: 'warning', note: '찾아 놓고 이 칸에 붙이지 못했어요' },
+  UNMAPPED: { label: '판별 불가', tone: 'neutral', note: '조사 항목에 없어서 갈래를 알 수 없어요' },
+};
+
 export const SUBJECT_LABEL = {
   MARKET_SIZE: '시장 크기',
   GROWTH: '성장률',
@@ -112,7 +138,7 @@ export const CANVAS_BANDS = [
   ['수익과 비용', ['REVENUE_STREAMS', 'COST_STRUCTURE']],
 ];
 
-const CANVAS_CELL_LABEL = {
+export const CANVAS_CELL_LABEL = {
   KEY_PARTNERS: '핵심 파트너',
   KEY_ACTIVITIES: '핵심 활동',
   KEY_RESOURCES: '핵심 자원',
@@ -360,6 +386,16 @@ export function normalizeMarketResult(raw) {
     bm: raw.bm && typeof raw.bm === 'object'
       ? {
         decision: text(raw.bm.decision),
+        gateReasons: Array.isArray(raw.bm.gateReasons)
+          ? raw.bm.gateReasons.map((reason) => ({
+            code: text(reason?.code),
+            cell: text(reason?.cell),
+            message: text(reason?.message) ?? '사유 없음',
+            evidenceIds: list(reason?.evidenceIds),
+            // 옛 결과에는 없다 — 그때는 「판별 불가」다. undefined 면 화면이 터진다.
+            cause: text(reason?.cause) ?? 'UNMAPPED',
+          }))
+          : [],
         confidence: text(raw.bm.confidence),
         summary: text(raw.bm.summary),
         marketFitStatus: text(raw.bm.marketFitStatus),

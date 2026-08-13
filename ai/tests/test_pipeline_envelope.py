@@ -411,7 +411,8 @@ def test_bm_block_matches_the_golden_key_set():
         concept_id="c1", concept_name="n", canvas=_canvas_items("C-F010"),
         market_fit_status="PARTIAL", consistency_status="PASS",
         market_fit_summary="a", consistency_summary="b")
-    block = serialize.bm(final, analysis)
+    block = serialize.bm(final, analysis, "REVISION_REQUIRED", [
+        {"code": "G1", "cell": "CHANNELS", "message": "자료 0건", "evidenceIds": []}])
     golden = _golden("bm.json")["bm"]
     assert set(block) == set(golden)
     assert set(block["legal"]) == set(golden["legal"])
@@ -447,7 +448,13 @@ def test_bm_mode_derives_caveats_end_to_end(monkeypatch):
         "test-envelope-bm", 600))
 
     assert out["mode"] == "BM"
-    assert out["scorecard"] is None and out["market"] is None
+    # 1-2: **성적표는 BM 모드에서도 실린다.** 게이트가 사유의 갈래(cause)를 가르려면
+    # 「이 과목이 애초에 수집됐는지」를 알아야 한다. `market` 은 여전히 FULL 전용이다.
+    assert out["market"] is None
+    assert out["scorecard"] and {row["subject"] for row in out["scorecard"]} >= {
+        "MARKET_SIZE", "DEMAND", "PRICE"}
+    causes = {reason["cause"] for reason in out["bm"]["gateReasons"]}
+    assert causes <= {"UNCOLLECTED", "UNCITED", "UNMAPPED"}
     assert set(out) == _keys(_golden("bm.json"))
 
     by_id = {item["id"]: item for item in out["evidence"]}

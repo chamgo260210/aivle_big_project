@@ -9,7 +9,7 @@ import BmPlanForm from './BmPlanForm.jsx';
 import BmPlanPreview from './BmPlanPreview.jsx';
 import useCellFocus from './useCellFocus.js';
 import useMarketPolling from './useMarketPolling.js';
-import { DECISION_VIEW } from './marketResult.js';
+import { CANVAS_CELL_LABEL, DECISION_VIEW, GATE_CAUSE_VIEW, GATE_TITLE } from './marketResult.js';
 import { draftFrom, emptyCellNames, emptyDraft, toPayload } from './bmPlan.js';
 import './market.css';
 
@@ -89,6 +89,8 @@ export default function BmCanvasPage() {
 
       {!result ? null : (
         <>
+          <GateReasons reasons={bm?.gateReasons} />
+
           {bm ? (
             <div className="ui-card bm-verdict">
               <h3>판정</h3>
@@ -116,6 +118,47 @@ export default function BmCanvasPage() {
         </>
       )}
     </section>
+  );
+}
+
+/**
+ * 판정 게이트가 남긴 반증 사유 — <b>판정보다 먼저</b> 읽혀야 한다.
+ *
+ * <p>왜 맨 위인가. 판정 badge 만 보면 「조건부」가 「거의 다 됐다」로 읽힌다. 실제로는
+ * 채널 칸의 자료가 0건이라 확인할 방법 자체가 없는 것일 수 있다. 그 사실이 판정 옆이 아니라
+ * <b>앞에</b> 서야 한다.
+ *
+ * <p>비어 있으면 아무것도 그리지 않는다 — 「이유 0건」은 「검사를 안 했다」로 오해된다.
+ *
+ * <p><b>갈래(`cause`)를 같이 보인다.</b> 「못 찾음」은 컨셉을 고쳐도 안 고쳐지고,
+ * 「연결 안 됨」은 사용자가 할 일이 없다. 이 둘이 한 덩어리로 보이면 사용자가 컨셉을 다듬어
+ * 수집 실패를 통과시키는 길이 열린다 — 그게 우리가 만든 방식의 「다 패스」다.
+ */
+function GateReasons({ reasons }) {
+  if (!reasons?.length) return null;
+  return (
+    <Alert tone="danger">
+      <strong>아직 상품이 아니다 — 이유 {reasons.length}</strong>
+      <ul>
+        {reasons.map((reason, index) => {
+          const cause = GATE_CAUSE_VIEW[reason.cause] ?? GATE_CAUSE_VIEW.UNMAPPED;
+          return (
+            <li key={`${reason.code}-${reason.cell ?? index}`}>
+              {GATE_TITLE[reason.code] ?? reason.code}
+              {reason.cell ? ` · ${CANVAS_CELL_LABEL[reason.cell] ?? reason.cell}` : ''}
+              {' — '}
+              {reason.message}
+              {reason.evidenceIds.length
+                ? ` (근거 ${reason.evidenceIds.join(', ')})`
+                : ''}
+              {' '}
+              <Badge tone={cause.tone}>{cause.label}</Badge>
+              <div className="market-note">{cause.note}</div>
+            </li>
+          );
+        })}
+      </ul>
+    </Alert>
   );
 }
 

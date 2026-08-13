@@ -547,15 +547,19 @@ def assert_caveats_reached(cells: list[dict], evidence_items: list[dict]) -> Non
                 f"{cell['canvasCell']} 이 인용한 근거의 경계가 칸에 없다: {sorted(missing)}")
 
 
-def bm(final, analysis) -> dict:
+def bm(final, analysis, decision: str, gate_reasons: list[dict]) -> dict:
     """`BMFinalResult` + `BMAnalysisResult` → 계약 `bm`. 이름만 바꾼다 — 판정을 다시 안 한다.
 
     ⚠ **두 물건이 필요하다.** `marketFitStatus`·`consistencyStatus` 는 최종 결과가 아니라
       **핵심 판정**에 있다. 최종 결과에는 그 «요약 문장»만 실려 있어서, 하나만 받으면
       상태 칸을 채울 수 없다(그러려면 요약에서 되짚어야 하고 그건 추측이다).
+
+    `decision` 은 **게이트가 내린 뒤의** 값을 받는다. 여기서 다시 재지 않는 이유는 위와 같다 —
+    이 함수는 이름만 바꾸는 자리다. 판정은 `app.validation.gate` 가 하고 부른 쪽이 넘긴다.
     """
     return {
-        "decision": final.decision.value,
+        "decision": decision,
+        "gateReasons": [dict(reason) for reason in gate_reasons],
         "confidence": final.confidence,
         "summary": _text(final.summary, "요약 없음"),
         "marketFitStatus": analysis.market_fit_status,
@@ -607,6 +611,8 @@ NOTES_FULL = (
 NOTES_BM = (
     "칸의 caveats 는 인용한 근거에서 기계가 파생한 것이다 — 모델이 쓴 문장이 아니다.",
     "content 만 떼어 쓰면 경계가 사라진다. 값과 같은 자리에 두어라.",
+    "gateReasons[].cause 가 UNCOLLECTED 이면 컨셉을 고쳐도 안 고쳐진다 — 재수집이 답이고, "
+    "그래도 없으면 「미확보」로 확정하고 멈춘다.",
 )
 
 

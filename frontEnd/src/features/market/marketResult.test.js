@@ -162,8 +162,37 @@ describe('normalizeMarketResult — BM', () => {
   });
 
   it('판정과 신뢰도가 온다', () => {
-    expect(result.bm.decision).toBe('CONDITIONAL');
+    // 게이트가 내린 뒤의 값이다 — 모델은 CONDITIONAL 을 냈지만 CHANNELS 자료가 0건이다.
+    expect(result.bm.decision).toBe('REVISION_REQUIRED');
     expect(result.bm.confidence).toBe('MEDIUM');
+  });
+
+  it('게이트 사유가 근거 id 를 달고 온다', () => {
+    expect(result.bm.gateReasons.map((reason) => reason.code)).toEqual(['G1', 'G4']);
+    const [channels] = result.bm.gateReasons;
+    expect(channels.cell).toBe('CHANNELS');
+    expect(channels.message).toContain('0건');
+  });
+
+  // 칸 하나가 아니라 캔버스 전체를 두고 걸리는 규칙(G4)은 cell 이 null 이다.
+  // 화면이 그 분기를 안 그리면 「· undefined」 가 붙는다.
+  it('캔버스 전체 규칙은 cell 이 null 이다', () => {
+    const whole = result.bm.gateReasons.find((reason) => reason.code === 'G4');
+    expect(whole.cell).toBeNull();
+  });
+
+  it('사유마다 갈래가 온다 — 옛 결과는 판별 불가로 읽는다', () => {
+    expect(result.bm.gateReasons.every((reason) => reason.cause)).toBe(true);
+    const raw = fixture('bm.json');
+    raw.bm.gateReasons.forEach((reason) => { delete reason.cause; });
+    expect(normalizeMarketResult(raw).bm.gateReasons.map((r) => r.cause))
+      .toEqual(['UNMAPPED', 'UNMAPPED']);
+  });
+
+  it('게이트 사유가 없으면 빈 배열이다 — undefined 면 화면이 터진다', () => {
+    const raw = fixture('bm.json');
+    delete raw.bm.gateReasons;
+    expect(normalizeMarketResult(raw).bm.gateReasons).toEqual([]);
   });
 
   it('칸의 근거가 id 가 아니라 근거 그대로 실려 온다', () => {

@@ -58,6 +58,18 @@ public final class MarketResearchContract {
 
     private static final Set<String> DECISIONS = Set.of(
         "PASS", "CONDITIONAL", "REVISION_REQUIRED", "BLOCKED");
+    /** AI 쪽 {@code app/validation/gate.py} 의 규칙 코드와 같은 목록이어야 한다. */
+    private static final Set<String> GATE_CODES = Set.of("G1", "G4", "G5");
+
+    /**
+     * 사유의 <b>갈래</b>. 「컨셉을 고쳐서 될 일인가」가 여기서 갈린다.
+     *
+     * <p>{@code UNCOLLECTED} 는 <b>재수집이 답</b>이고 컨셉을 고쳐도 안 고쳐진다.
+     * {@code UNCITED} 는 찾아 놓고 인용을 안 한 것이라 사용자가 할 일이 없다.
+     * {@code UNMAPPED} 는 성적표가 그 칸을 재지 않아 <b>갈래를 모른다</b>는 뜻이다.
+     * 정본은 AI 쪽 {@code app/validation/gate.py} — 값을 늘리면 여기도 늘린다.
+     */
+    private static final Set<String> GATE_CAUSES = Set.of("UNCOLLECTED", "UNCITED", "UNMAPPED");
     private static final Set<String> CONFIDENCES = Set.of("HIGH", "MEDIUM");
     private static final Set<String> FIT_STATES = Set.of("PASS", "PARTIAL", "FAIL");
     private static final Set<String> LEGAL_STATUSES = Set.of(
@@ -83,7 +95,10 @@ public final class MarketResearchContract {
             mustBeNull(result, "canvas");
             mustBeNull(result, "bm");
         } else {
-            mustBeNull(result, "scorecard");
+            // ⚠ 성적표는 **두 모드 모두** 온다. 예전에는 BM 이면 null 을 강제했는데,
+            //    그러면 게이트가 「이 과목이 애초에 수집됐는지」를 모르고 사유의 갈래를
+            //    못 가른다(계획서 1-2). market 은 여전히 FULL 전용이다.
+            scorecard(result.get("scorecard"));
             mustBeNull(result, "market");
             canvas(result.get("canvas"), result.get("evidence"), evidenceIds);
             bm(result.get("bm"));
@@ -267,8 +282,10 @@ public final class MarketResearchContract {
 
     private static void bm(JsonNode bm) {
         if (bm == null || bm.isNull()) return;      // BM 이 죽어도 시장조사 결과는 살린다
-        exact(bm, Set.of("decision", "confidence", "summary", "marketFitStatus", "marketFitSummary",
+        exact(bm, Set.of("decision", "gateReasons", "confidence", "summary",
+            "marketFitStatus", "marketFitSummary",
             "consistencyStatus", "consistencySummary", "strengths", "weaknesses", "risks", "legal"));
+        gateReasons(bm.get("gateReasons"));
         if (!DECISIONS.contains(text(bm, "decision"))
             || !CONFIDENCES.contains(text(bm, "confidence"))
             || !FIT_STATES.contains(text(bm, "marketFitStatus"))
@@ -282,6 +299,28 @@ public final class MarketResearchContract {
         nullableText(legal.get("summary"));
         stringArray(legal.get("risks"));
         stringArray(legal.get("requiredActions"));
+    }
+
+    /**
+     * 판정 게이트가 남긴 반증 사유. AI 쪽 {@code app/validation/gate.py} 가 낸다.
+     *
+     * <p><b>비어 있을 수 있다</b> — 규칙이 하나도 안 걸린 것이지 검사를 안 한 것이 아니다.
+     * 반대로 {@code null} 이면 게이트를 안 돈 결과라 거부한다.
+     *
+     * <p>{@code cell} 은 null 일 수 있다 — 칸 하나가 아니라 캔버스 전체를 두고 걸리는
+     * 규칙(G4)이 있다.
+     */
+    private static void gateReasons(JsonNode reasons) {
+        if (reasons == null || !reasons.isArray()) invalid();
+        for (JsonNode reason : reasons) {
+            exact(reason, Set.of("code", "cell", "message", "evidenceIds", "cause"));
+            if (!GATE_CODES.contains(text(reason, "code"))) invalid();
+            if (!GATE_CAUSES.contains(text(reason, "cause"))) invalid();
+            text(reason, "message");
+            JsonNode cell = reason.get("cell");
+            if (cell != null && !cell.isNull() && !CANVAS_CELLS.contains(cell.asText())) invalid();
+            stringArray(reason.get("evidenceIds"));
+        }
     }
 
     private static void summary(JsonNode summary, Set<String> evidenceIds) {
