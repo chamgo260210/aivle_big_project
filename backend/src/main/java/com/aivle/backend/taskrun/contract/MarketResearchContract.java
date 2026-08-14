@@ -27,7 +27,9 @@ public final class MarketResearchContract {
     private static final Set<String> ENVELOPE = Set.of(
         "runId", "conceptId", "asOf", "generatedAt", "mode",
         "stages", "degradations",
-        "scorecard", "market", "canvas", "bm", "evidence", "summary", "notes");
+        "scorecard", "market", "canvas", "bm", "evidence", "summary", "notes",
+        // 판 ㊸ — 사람 보고서의 2·8·9절. AI 쪽 {@code serialize.ENVELOPE} 와 같은 집합이다.
+        "judgment", "prescriptions", "synthesis");
 
     /**
      * {@code VALIDATION} 은 FULL+BM 을 한 실행으로 이은 것이다(여정 3번 「사업 검증」).
@@ -46,8 +48,20 @@ public final class MarketResearchContract {
      */
     private static final Set<String> FACTOR_BASES = Set.of("관측", "가정", "가설");
 
+    /**
+     * 성적표 과목 = <b>화면의 목차</b>다({@code MarketResultBody} 「성적표 과목이 곧 목차다」).
+     *
+     * <p>판 ㊸ 에서 셋이 늘었다 — {@code CHANNEL}·{@code UNIT_ECONOMICS}·{@code REGULATION}.
+     * 절 체인(문서를 절 단위로 읽는 경로)이 채우는 과목이고, 엔진의 과목표에는 없어
+     * <b>실린 사실 건수</b>에서 성적이 나온다.
+     *
+     * <p>⚠ AI 쪽 {@code serialize._SUBJECT} + {@code _SECTION_SUBJECT} 와 <b>같은 집합</b>이어야
+     * 한다. 아래 {@code seen.equals(SUBJECTS)} 가 정확히 일치를 요구하므로, 한쪽만 고치면
+     * 결과가 통째로 거부된다.
+     */
     private static final Set<String> SUBJECTS = Set.of(
-        "MARKET_SIZE", "GROWTH", "COMPETITOR", "PRICE", "DEMAND", "CALCULATION", "NOT_FOUND");
+        "MARKET_SIZE", "GROWTH", "COMPETITOR", "PRICE", "DEMAND", "CALCULATION",
+        "CHANNEL", "UNIT_ECONOMICS", "REGULATION", "NOT_FOUND");
     private static final Set<String> SCORE_STATES = Set.of("FILLED", "PARTIAL", "MISSING", "REPORTED");
 
     private static final Set<String> CANVAS_CELLS = Set.of(
@@ -116,6 +130,67 @@ public final class MarketResearchContract {
             bm(result.get("bm"));
         }
         summary(result.get("summary"), evidenceIds);
+        judgment(result.get("judgment"));
+        prescriptions(result.get("prescriptions"));
+        synthesis(result.get("synthesis"));
+    }
+
+    // ── 판 ㊸ — 사람 보고서의 2·8·9절 ────────────────────────────────────
+    /**
+     * 2절 <b>가격 판단</b>. 셋 다 {@code null} 이 정상이다(BM 모드·절 체인 미실행).
+     *
+     * <p>⚠ {@code conclusion} 을 필수로 만들지 않는다. 비교쌍이 안 갖춰지면 기계가
+     * <b>결론을 안 쓴다</b> — 그것이 설계이고, 여기서 강제하면 지어내라는 압력이 된다.
+     */
+    private static void judgment(JsonNode node) {
+        if (node == null || node.isNull()) return;
+        exact(node, Set.of("price", "lines", "conclusion"));
+        nullableNumber(node.get("price"));
+        nullableText(node.get("conclusion"));
+        JsonNode lines = node.get("lines");
+        if (lines == null || !lines.isArray()) invalid();
+        for (JsonNode line : lines) {
+            exact(line, Set.of("what", "sentence", "formula", "silentBecause", "sources"));
+            text(line, "what");
+            for (String f : List.of("sentence", "formula", "silentBecause")) nullableText(line.get(f));
+            JsonNode sources = line.get("sources");
+            if (sources == null || !sources.isArray()) invalid();
+            for (JsonNode s : sources) {
+                exact(s, Set.of("raw", "subject", "period", "url"));
+                for (String f : List.of("raw", "subject", "url")) text(s, f);
+                // 연도는 없을 수 있다 — **없는 것을 지어내지 않는다.**
+                nullableText(s.get("period"));
+            }
+        }
+    }
+
+    /** 8절 <b>처방</b> — 「무엇을 못 구했나 / 왜 / 어디서」. 셋째 열이 처방이다. */
+    private static void prescriptions(JsonNode items) {
+        if (items == null || items.isNull()) return;
+        if (!items.isArray()) invalid();
+        for (JsonNode item : items) {
+            exact(item, Set.of("section", "kind", "kindLabel", "what", "why", "where"));
+            for (String f : List.of("section", "kind", "kindLabel", "what", "why", "where")) {
+                text(item, f);
+            }
+        }
+    }
+
+    /** 9절 <b>지지 / 흔듦</b>. 검사에서 버려진 문장은 AI 쪽에서 이미 빠진다. */
+    private static void synthesis(JsonNode items) {
+        if (items == null || items.isNull()) return;
+        if (!items.isArray()) invalid();
+        for (JsonNode item : items) {
+            exact(item, Set.of("key", "stance", "sentence", "what", "sources"));
+            for (String f : List.of("key", "stance", "sentence", "what")) text(item, f);
+            JsonNode sources = item.get("sources");
+            if (sources == null || !sources.isArray()) invalid();
+            for (JsonNode s : sources) {
+                exact(s, Set.of("raw", "subject", "period"));
+                for (String f : List.of("raw", "subject")) text(s, f);
+                nullableText(s.get("period"));
+            }
+        }
     }
 
     // ── 공통 ────────────────────────────────────────────────────────────
@@ -145,13 +220,16 @@ public final class MarketResearchContract {
         for (JsonNode item : items) {
             exact(item, Set.of("id", "kind", "metric", "subject", "period", "value", "unit",
                 "grade", "gradeReason", "sourceUrl", "sourceKind", "retrievedAt", "quote",
-                "caveats", "formula", "inputs", "materialIds", "assumptions"));
+                "caveats", "formula", "inputs", "materialIds", "assumptions",
+                // 판 ㊸ — 절 배치가 **서버 것**이 됐다. 프론트가 다시 추론하지 않는다.
+                "section", "placement", "issuer", "tableKey", "raw"));
             if (!ids.add(text(item, "id"))) invalid();
             if (!EVIDENCE_KINDS.contains(text(item, "kind"))) invalid();
             if (!GRADES.contains(text(item, "grade"))) invalid();
             text(item, "gradeReason");
             for (String field : List.of("metric", "subject", "period", "unit",
-                "sourceUrl", "sourceKind", "retrievedAt", "quote", "formula")) nullableText(item.get(field));
+                "sourceUrl", "sourceKind", "retrievedAt", "quote", "formula",
+                "section", "placement", "issuer", "tableKey", "raw")) nullableText(item.get(field));
             nullableNumber(item.get("value"));
             nullableObject(item.get("inputs"));
             // 경계는 **항상 배열**이다. 없으면 빈 배열 — null 로 두면 「없음」과 「안 실었음」이 같아진다.

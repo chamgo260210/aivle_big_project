@@ -4,7 +4,8 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   CANVAS_LAYOUT, CELL_KIND, CELL_STATUS_VIEW, NOT_FOUND_GROUP, NOT_FOUND_VIEW, SCORE_STATE_VIEW,
-  bucketEvidence, competitorGaps, formatValue, gradeView, hostOf, normalizeMarketResult,
+  bucketEvidence, competitorGaps, evidenceSubjectIndex, formatValue, gradeView, hostOf,
+  normalizeMarketResult, sectionEvidence,
 } from './marketResult.js';
 
 /**
@@ -24,10 +25,39 @@ function fixture(name) {
 describe('normalizeMarketResult — FULL', () => {
   const result = normalizeMarketResult(fixture('full.json'));
 
-  it('7과목이 라벨과 함께 온다', () => {
-    expect(result.scorecard).toHaveLength(7);
+  it('10과목이 라벨과 함께 온다', () => {
+    // 판 ㊸ — 채널·원가·수익성·규제 셋이 늘었다. 절 체인이 채우는 과목이다.
+    expect(result.scorecard).toHaveLength(10);
     expect(result.scorecard.map((item) => item.label)).toContain('시장 크기');
+    expect(result.scorecard.map((item) => item.label)).toContain('채널');
     expect(result.scorecard.every((item) => item.state)).toBe(true);
+  });
+
+  it('절 배치는 **서버가 준 것**을 쓴다 — 화면이 다시 추론하지 않는다', () => {
+    // 서버가 `section` 을 주면 그것이 답이다. 화면이 다시 풀면 두 화면이 같은 근거를
+    // 다른 과목이라고 말한다 — 코드가 그 위험을 주석으로 적어 뒀던 자리다.
+    const bag = sectionEvidence(result);
+    expect(bag.COMPETITOR.map((item) => item.id)).toContain('sec-0001');
+    expect(evidenceSubjectIndex(result).get('sec-0001')).toBe('COMPETITOR');
+  });
+
+  it('승격 근거는 표 묶음과 발행사와 원문 표기를 들고 온다', () => {
+    const promoted = result.evidenceById.get('sec-0001');
+    expect(promoted.section).toBe('COMPETITOR');
+    expect(promoted.placement).toBe('COMPETITOR_FIRM');
+    expect(promoted.issuer).toBe('예시프랜차이즈');
+    // 표 묶음이 없으면 「합 100.0%」도 「⚠ 100%가 아니다」도 못 만든다.
+    expect(promoted.tableKey).toBeTruthy();
+    expect(promoted.raw).toBe('1,240개');
+  });
+
+  it('2·8·9절이 온다 — null 과 빈 배열은 다른 사건이다', () => {
+    // ⚠ 결론을 빼면 「1.37배」에서 끝나고 「그래서 어느 쪽으로 팔라」가 사라진다.
+    expect(result.judgment.conclusion).toBeTruthy();
+    // 못 쓴 갈래도 온다 — 침묵을 「해당 없음」으로 읽히게 두지 않는다.
+    expect(result.judgment.lines.some((line) => line.silentBecause)).toBe(true);
+    expect(result.prescriptions.every((row) => row.where)).toBe(true);
+    expect(result.synthesis.length).toBeGreaterThan(0);
   });
 
   it('근거마다 등급이 있고 id 로 찾을 수 있다', () => {

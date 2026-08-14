@@ -149,6 +149,18 @@ def _hit(text: str, words) -> list:
     return sorted(out)
 
 
+def 절(it: dict) -> str:
+    """**이 사실이 실릴 절.** 게재 판정 뒤의 재배정을 반영한다.
+
+    ⚠ 이 셈이 여섯 군데에 베껴져 있었다(판 ㊸ 2단계에 승격이 일곱째가 될 뻔했다).
+    한 곳이라도 어긋나면 **보고서와 화면이 같은 사실을 다른 절에 넣는다** — 그 어긋남은
+    테스트가 안 잡고 사람이 두 화면을 나란히 봐야 보인다. 답은 여기 하나다.
+    """
+    if it.get("게재_제자리"):
+        return it["section"]
+    return "COMPETITOR" if it.get("게재") == "COMPETITOR_FIRM" else it["section"]
+
+
 def 분류(it: dict, V: dict, R: dict, url: str = "", 발행사: bool = None) -> tuple:
     """(갈래, 왜, **제자리**). **판정 순서가 곧 우선순위다.**
 
@@ -320,21 +332,18 @@ def _퍼센트_파생(d: dict) -> int:
     return n
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("sections", help="sections.json 경로")
-    ap.add_argument("--concept", required=True)
-    ap.add_argument("--out", default="")
-    ap.add_argument("--pdf-refetch", dest="refetch", action="store_true",
-                    help="PDF 를 다시 받아 **지금의** pdf_text 로 본문을 다시 뽑아 대조한다. "
-                         "LLM 0회 — 내려받기만 한다. 원장 본문은 다단 정정 **전**의 추출기가 "
-                         "만든 것이라, 문장 한가운데에 옆 단 제목이 끼어 있어 참인 인용이 "
-                         "구조적으로 탈락한다(실측: 「간편식 국내 판매액 6조 8천억」 3건 전부)")
-    a = ap.parse_args()
+def build(d: dict, concept: dict, *, refetch: bool = False, cache_dir: str = "") -> dict:
+    """**게재 판정을 여기서 한다.** `d`(sections.json 의 내용)를 **제자리에서 고쳐** 돌려준다.
 
+    판 ㊸ 1단계에서 `main()` 밖으로 꺼냈다 — 제품 경로(`pipeline`)가 부를 자리가 필요한데
+    argparse 를 통과시킬 수는 없기 때문이다. **`main()` 은 이 함수를 부른다** — 두 구현이
+    되면 CLI 로 잰 성적과 화면에 나가는 것이 갈린다.
+
+    사람이 읽는 진단은 `print` 로 그대로 둔다. 서버에서는 로그로 흐르고, 지금까지의 측정
+    기록이 전부 이 출력으로 만들어졌다 — **잣대를 조용하게 만들 이유가 없다.**
+    """
     R = _rules()
-    V = _vocab(json.load(io.open(a.concept, encoding="utf-8")), R)
-    d = json.load(io.open(a.sections, encoding="utf-8"))
+    V = _vocab(concept, R)
 
     print("컨셉에서 뽑은 어휘 —")
     for k in ("세그먼트", "대상", "상호", "대체"):
@@ -342,8 +351,8 @@ def main() -> int:
 
     # ── 인용 재채점 (LLM 0회) ─────────────────────────────────
     docs = RS._corpus(d["source_run"])
-    if a.refetch:
-        cache = os.path.join(os.path.dirname(a.sections), "refetched.json")
+    if refetch:
+        cache = os.path.join(cache_dir, "refetched.json")
         if os.path.exists(cache):
             got = json.load(io.open(cache, encoding="utf-8"))
             docs = [{**x, "text": got.get(x["trace_id"], x["text"])} for x in docs]
@@ -498,9 +507,28 @@ def main() -> int:
     for w, n in 떨어진.most_common():
         print(f"  {n:>4}  {w}")
 
-    out = a.out or os.path.join(os.path.dirname(a.sections), "publish.json")
     d["게재_어휘"] = {k: sorted(v) for k, v in V.items()}
     d["게재_요약"] = dict(갈래)
+    return d
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("sections", help="sections.json 경로")
+    ap.add_argument("--concept", required=True)
+    ap.add_argument("--out", default="")
+    ap.add_argument("--pdf-refetch", dest="refetch", action="store_true",
+                    help="PDF 를 다시 받아 **지금의** pdf_text 로 본문을 다시 뽑아 대조한다. "
+                         "LLM 0회 — 내려받기만 한다. 원장 본문은 다단 정정 **전**의 추출기가 "
+                         "만든 것이라, 문장 한가운데에 옆 단 제목이 끼어 있어 참인 인용이 "
+                         "구조적으로 탈락한다(실측: 「간편식 국내 판매액 6조 8천억」 3건 전부)")
+    a = ap.parse_args()
+
+    d = build(json.load(io.open(a.sections, encoding="utf-8")),
+              json.load(io.open(a.concept, encoding="utf-8")),
+              refetch=a.refetch, cache_dir=os.path.dirname(a.sections))
+
+    out = a.out or os.path.join(os.path.dirname(a.sections), "publish.json")
     io.open(out, "w", encoding="utf-8").write(
         json.dumps(d, ensure_ascii=False, indent=1))
     print(f"\n기록: {out}")

@@ -75,10 +75,15 @@ def _corpus(source_run: str) -> list[dict]:
                 r = json.loads(line)
             except Exception:
                 continue
-            if r.get("node") == "a3_candidate":
+            # ⚠ **조회일은 `a3_document` 에만 있다** (실측: a3_candidate 178건 전부 없음,
+            #    a3_document 182건 전부 있음). 승격 카드가 조회일 없이 「확정」으로 앉는 것을
+            #    막으려면 여기서 같이 걷어야 한다 — **지어내지 않고 되찾는다.**
+            if r.get("node") in ("a3_candidate", "a3_document"):
                 p = r.get("payload") or {}
                 if p.get("trace_id"):
-                    meta[p["trace_id"]] = (p.get("url") or "", p.get("title") or "")
+                    old = meta.get(p["trace_id"]) or ("", "", None)
+                    meta[p["trace_id"]] = (p.get("url") or old[0], p.get("title") or old[1],
+                                           p.get("retrieved_at") or old[2])
     seen: dict[str, dict] = {}
     for tid, v in raw.items():
         text = v if isinstance(v, str) else json.dumps(v, ensure_ascii=False)
@@ -88,8 +93,8 @@ def _corpus(source_run: str) -> list[dict]:
         if h in seen:
             seen[h]["별칭"].append(tid)
             continue
-        url, title = meta.get(tid, ("", ""))
-        seen[h] = {"trace_id": tid, "url": url, "title": title,
+        url, title, got = meta.get(tid, ("", "", None))
+        seen[h] = {"trace_id": tid, "url": url, "title": title, "조회일": got,
                    "text": text, "글자": len(text), "별칭": []}
     return sorted(seen.values(), key=lambda d: -d["글자"])
 
@@ -141,7 +146,7 @@ def _read_one(d: dict, meter, cap: int, max_items: int) -> dict:
     """문서 하나. **예외를 올리지 않는다** — 하나가 죽어 전체가 죽으면 안 된다(규칙 5)."""
     body = d["text"][:cap]
     out = {"trace_id": d["trace_id"], "url": d["url"], "글자": d["글자"],
-           "보낸_글자": len(body), "별칭": d["별칭"]}
+           "조회일": d.get("조회일"), "보낸_글자": len(body), "별칭": d["별칭"]}
     try:
         r = meter.create("a3_sections", model=MODEL,
                          input=prompts.render(
@@ -182,39 +187,35 @@ def _read_one(d: dict, meter, cap: int, max_items: int) -> dict:
     return {**out, "status": "found", "note": "", "items": items}
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("source_run")
-    ap.add_argument("--id", required=True, help="새 실행 id (원장을 덮지 않는다)")
-    ap.add_argument("--cap", type=int, default=60000, help="문서당 보낼 글자 상한")
-    ap.add_argument("--max-items", dest="max_items", type=int, default=20)
-    ap.add_argument("--limit", type=int, default=0, help="문서 N건만 (싼 확인용)")
-    ap.add_argument("--only-pdf", dest="only_pdf", action="store_true",
-                    help="PDF 문서만. `--pdf-refetch` 효과를 재는 용도")
-    ap.add_argument("--pdf-refetch", dest="pdf_refetch", action="store_true",
-                    help="PDF 를 다시 받아 **지금의** pdf_text 로 본문을 다시 뽑는다(LLM 0회). "
-                         "원장에 저장된 본문은 옛 추출기가 만든 것이라 다단 조판이 뒤섞여 있다")
-    a = ap.parse_args()
+def build(source_run: str, run_id: str, *, cap: int = 60000, max_items: int = 20,
+          limit: int = 0, only_pdf: bool = False, pdf_refetch: bool = False) -> tuple:
+    """**절 단위로 문서를 읽는다.** LLM 을 문서 수만큼 부른다 — 이 체인에서 가장 비싸다.
 
-    docs = _corpus(a.source_run)
-    if a.only_pdf:
-        docs = [d for d in docs if ".pdf" in (d["url"] or "").lower()
-                or "pdf" in (d["url"] or "").lower()]
-    if a.pdf_refetch:
+    판 ㊸ 1단계에서 `main()` 밖으로 꺼냈다. 돌려주는 것은 `(sections.json 내용, Run)` 이고,
+    `Run` 은 부르는 쪽이 **비용을 셀 수 있게** 같이 준다 — 유료 호출을 하고도 얼마 썼는지
+    모르는 자리를 만들지 않는다.
+    """
+    docs = _corpus(source_run)
+    if only_pdf:
+        docs = [d for d in docs if "pdf" in (d["url"] or "").lower()]
+    if pdf_refetch:
         docs = _refetch_pdfs(docs)
-    if a.limit:
-        docs = docs[:a.limit]
-    보낼 = sum(min(d["글자"], a.cap) for d in docs)
-    print(f"문서 {len(docs)}건 · 보낼 글자 {보낼:,} · 상한 {a.cap:,}자/문서")
+    # **몇 건을 안 봤는지 여기서 센다.** 부르는 쪽이 호출 수로 되짚으면 LLM 실패와
+    # 구분이 안 된다 — 잘림을 아는 것은 자른 자리다.
+    안본 = max(0, len(docs) - limit) if limit else 0
+    if limit:
+        docs = docs[:limit]
+    보낼 = sum(min(d["글자"], cap) for d in docs)
+    print(f"문서 {len(docs)}건 · 보낼 글자 {보낼:,} · 상한 {cap:,}자/문서")
 
     os.environ.setdefault("OPENAI_API_KEY", load_env_key("OPENAI_API_KEY") or "")
     from openai import OpenAI
-    run = Run(a.id, rules=load_rules())
+    run = Run(run_id, rules=load_rules())
     meter = Meter(OpenAI(), run)
 
     results: list = [None] * len(docs)
     with cf.ThreadPoolExecutor(max_workers=WORKERS) as pool:
-        futs = {pool.submit(_read_one, d, meter, a.cap, a.max_items): i
+        futs = {pool.submit(_read_one, d, meter, cap, max_items): i
                 for i, d in enumerate(docs)}
         done = 0
         for fu in cf.as_completed(futs):
@@ -229,19 +230,37 @@ def main() -> int:
     for it in ok:
         per_sec[it["section"]] = per_sec.get(it["section"], 0) + 1
 
-    out = {"source_run": a.source_run, "run_id": a.id, "cap": a.cap,
-           "문서": len(docs), "보낸_글자": sum(r["보낸_글자"] for r in results),
-           "상태": {s: sum(1 for r in results if r["status"] == s)
-                  for s in sorted({r["status"] for r in results})},
-           "인용_총": len(items), "인용_채택": len(ok), "절별": per_sec,
-           "문서별": results}
+    return {"source_run": source_run, "run_id": run_id, "cap": cap,
+            "문서": len(docs), "안_읽은_문서": 안본, "보낸_글자": sum(r["보낸_글자"] for r in results),
+            "상태": {s: sum(1 for r in results if r["status"] == s)
+                   for s in sorted({r["status"] for r in results})},
+            "인용_총": len(items), "인용_채택": len(ok), "절별": per_sec,
+            "문서별": results}, run
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("source_run")
+    ap.add_argument("--id", required=True, help="새 실행 id (원장을 덮지 않는다)")
+    ap.add_argument("--cap", type=int, default=60000, help="문서당 보낼 글자 상한")
+    ap.add_argument("--max-items", dest="max_items", type=int, default=20)
+    ap.add_argument("--limit", type=int, default=0, help="문서 N건만 (싼 확인용)")
+    ap.add_argument("--only-pdf", dest="only_pdf", action="store_true",
+                    help="PDF 문서만. `--pdf-refetch` 효과를 재는 용도")
+    ap.add_argument("--pdf-refetch", dest="pdf_refetch", action="store_true",
+                    help="PDF 를 다시 받아 **지금의** pdf_text 로 본문을 다시 뽑는다(LLM 0회). "
+                         "원장에 저장된 본문은 옛 추출기가 만든 것이라 다단 조판이 뒤섞여 있다")
+    a = ap.parse_args()
+
+    out, run = build(a.source_run, a.id, cap=a.cap, max_items=a.max_items,
+                     limit=a.limit, only_pdf=a.only_pdf, pdf_refetch=a.pdf_refetch)
+    items, ok, per_sec = out["인용_총"], out["인용_채택"], out["절별"]
     path = os.path.join(run.dir, "sections.json")
     io.open(path, "w", encoding="utf-8").write(
         json.dumps(out, ensure_ascii=False, indent=1))
 
     print(f"\n문서 상태 {out['상태']}")
-    print(f"인용 {len(items)}건 · 대조 통과 {len(ok)}건 "
-          f"(떨어짐 {len(items) - len(ok)})")
+    print(f"인용 {items}건 · 대조 통과 {ok}건 (떨어짐 {items - ok})")
     print("절별 " + " · ".join(f"{k} {v}" for k, v in sorted(per_sec.items())) or "절별 없음")
     print(f"기록: {path}")
     run.finish() if hasattr(run, "finish") else None

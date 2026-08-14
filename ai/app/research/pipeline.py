@@ -51,7 +51,9 @@ for _dir in (RESEARCH_HOME,
 # 단계 · 예산 · 실패 등급
 # ══════════════════════════════════════════════════════════════
 #: 8단계. **이름은 계약의 일부다** — 프론트가 이 이름으로 진행 상황을 그린다.
-STAGES_FULL = ("harness", "dryrun", "collect", "verdict", "canvas", "cards", "summary")
+STAGES_FULL = ("harness", "dryrun", "collect", "verdict", "canvas", "cards", "summary",
+               # 판 ㊸ — 문서를 **절 단위로** 다시 읽어 2·8·9절을 만든다. SOFT.
+               "sections")
 STAGES_BM = ("restore", "cards", "bm_adapter", "bm_model")
 
 #: 이름표 하나로 **(컨셉 파일, 원장)** 이 정해진다.
@@ -513,8 +515,16 @@ def _full(source_run: str, concept_path: str, concept_id: str,
     score = _timed(ledger, "scorecard",
                    lambda: SCORECARD.build(source_run, concept_path, verdict=verdict))
 
+    # ⚠ **절 체인을 카드 조립보다 먼저** 돌린다 — 승격 카드가 `evidence[]` 에 합류해야
+    #   화면의 채널·원가·규제 과목이 차고, 9절이 인용한 수를 검산할 자리가 생긴다.
+    #   슬롯 카드 15장과 절 사실 132건은 **겹치지 않는 두 목록**이다(판 ㊸ 0단계 실측).
+    절 = _sections(ledger, budget, source_run, concept_path, run_id, rescore)
+
+    # ⚠ **승격 카드는 `evidence[]` 에만 넣는다.** `serialize.market()` 은 카드에서 가격·
+    #   시장 값을 뽑는데(`_price` 가 카드를 훑는다), 절 사실 132건을 같이 넘기면 TAM·
+    #   대표 단가가 **조용히 다른 값이 된다.** 배선이 판정을 바꾸면 그것은 배선이 아니다.
     cards = cards_doc.get("카드") or []
-    evidence = serialize.evidence(cards)
+    evidence = serialize.evidence(cards + 절["cards"])
     evidence_ids = {item["id"] for item in evidence}
 
     result = _read_result(source_run)
@@ -527,16 +537,132 @@ def _full(source_run: str, concept_path: str, concept_id: str,
 
     summary = _summary(ledger, budget, source_run, concept_path, evidence_ids, rescore)
 
+    # 절이 안 붙은 근거(슬롯 카드)에 절을 붙인다. **답이 나는 자리를 하나로** 만든다 —
+    # 지금까지 프론트 `bucketEvidence` 가 같은 물음을 다시 풀었다.
+    serialize.assign_sections(evidence, market)
+
     return serialize.envelope(
         runId=run_id, conceptId=concept_id,
         asOf=str(result.get("reference_date") or _now()[:10]),
         generatedAt=_now(), mode="FULL",
         stages=[stage.as_contract() for stage in ledger.stages],
         degradations=ledger.degradations,
-        scorecard=serialize.scorecard(score),
+        scorecard=serialize.scorecard(score, 절["counts"]),
         market=market, canvas=None, bm=None,
         evidence=evidence, summary=summary,
-        notes=list(serialize.NOTES_FULL))
+        notes=list(serialize.NOTES_FULL),
+        judgment=절["judgment"], prescriptions=절["prescriptions"],
+        synthesis=절["synthesis"])
+
+
+#: 절 체인이 문서 하나를 읽는 데 LLM 1회. 문서 수를 미리 모르니 **최소 소요**로 잰다.
+#: 이 값보다 예산이 적으면 시작조차 안 한다 — 완주 못 할 지출은 시작이 낭비다.
+_SECTIONS_MIN_CALLS = 30
+
+#: 요약(SOFT)이 쓰는 최소 호출. **절 체인이 이만큼은 남겨 둔다.**
+#: ⚠ 안 남기면 새 것을 얻고 **지금 사용자가 보고 있는 요약을 잃는다** — 절 체인이
+#:   `_summary` 보다 앞에 있어 선착순이면 뒤가 굶는다.
+_SUMMARY_RESERVE = 3
+
+#: 9절 합성 1회. **이것도 예비분에서 빼야 한다** — 안 그러면 읽기가 예비분을 정확히
+#: 3만 남기고, 합성이 그중 1을 먹어 요약이 `minimum=3` 에서 떨어진다.
+#: 고치려던 병(「새 것을 얻고 요약을 잃는다」)이 **잘린 실행에서 그대로 재현**된다.
+_SYNTH_CALLS = 1
+
+
+def _sections(ledger: Run, budget: Budget, source_run: str, concept_path: str,
+              run_id: str, rescore: bool) -> dict:
+    """**절 체인.** 문서를 절 단위로 다시 읽고 → 게재를 판정하고 → 2·8·9절을 만든다.
+
+    돌려주는 것은 `{"cards", "counts", "judgment", "prescriptions", "synthesis"}` 이고
+    **어느 것도 없으면 그 자리는 `None` 이다** — 빈 목록으로 돌려주면 화면이 「할 말이
+    없었다」로 그리고 그것은 거짓이다.
+
+    ## 왜 SOFT 인가
+    이 단계가 죽어도 시장 크기·성적표·캔버스는 그대로 나간다. 판을 죽일 이유가 없다.
+    다만 **조용히 죽지는 않는다** — `degrade` 로 사유가 봉투까지 간다.
+
+    ## ⚠ 비싼 자리
+    `read_sections` 는 **문서 수만큼** LLM 을 부른다(실측 182건). 그래서 원장에 이미
+    `sections.json` 이 있으면 **그것을 쓴다** — 같은 문서를 두 번 사지 않는다.
+    """
+    import runpath                                                 # noqa: PLC0415
+    import judge_lines as JUDGE                                    # noqa: PLC0415
+    import prescribe as PRESCRIBE                                  # noqa: PLC0415
+    import promote_cards as PROMOTE                                # noqa: PLC0415
+    import publish_gate as GATE                                    # noqa: PLC0415
+    import read_sections as READ                                   # noqa: PLC0415
+    import synthesize as SYNTH                                     # noqa: PLC0415
+
+    빈 = {"cards": [], "counts": None, "judgment": None,
+          "prescriptions": None, "synthesis": None}
+    stage = ledger.stage("sections")
+    # ⚠ `concept_path` 는 **research2 뿌리 기준 상대 경로**다(`_concept_path_of`). 그대로
+    #   열면 CWD 가 다른 곳에서 죽는다 — 다른 단계들은 research2 안에서 열려 안 드러났다.
+    path = (concept_path if os.path.isabs(concept_path)
+            else os.path.join(RESEARCH_HOME, concept_path))
+    concept = json.load(io.open(path, encoding="utf-8"))
+
+    cache = os.path.join(runpath.read_dir(source_run), "sections.json")
+    if os.path.isfile(cache):
+        sections = json.load(io.open(cache, encoding="utf-8"))
+    elif rescore:
+        ledger.degrade("sections", "MODE_RESCORE", "재채점 모드는 LLM 을 부르지 않는다")
+        return 빈
+    elif not budget.can_afford(_SECTIONS_MIN_CALLS + _SUMMARY_RESERVE + _SYNTH_CALLS):
+        ledger.degrade("sections", "BUDGET_EXHAUSTED",
+                       f"남은 예산 {budget.remaining()} < 최소 소요 {_SECTIONS_MIN_CALLS}"
+                       f" + 요약 몫 {_SUMMARY_RESERVE} + 9절 {_SYNTH_CALLS}")
+        return 빈
+    else:
+        # ⚠ **문서 상한을 반드시 준다.** 안 주면 원장 전량(실측 182건)을 부르고
+        #    **그 뒤에** 청구한다 — 상한 90짜리 예산이 182를 쓰고 나서 알게 된다.
+        여유 = budget.remaining() - _SUMMARY_RESERVE - _SYNTH_CALLS
+        try:
+            sections, run = READ.build(source_run, f"{run_id}-sec", limit=여유)
+            budget.charge(int(run.counters.get("llm.calls", 0)))
+            # ⚠ **잘림은 호출 수로 되짚지 않는다.** LLM 실패가 섞이면 `쓴 < 여유` 가 되어
+            #    **잘렸는데 표시가 안 붙는다.** 잘림을 아는 것은 `READ.build` 안이다.
+            안본 = int(sections.get("안_읽은_문서") or 0)
+            if 안본:
+                # **읽다 만 것을 다 읽은 것처럼 두지 않는다.** 절이 비면 사업가는
+                # 「없다」로 읽는데, 실제로는 「예산이 끊겼다」다.
+                ledger.degrade("sections", "SECTIONS_TRUNCATED",
+                               f"예산 상한 {여유}건까지만 읽었다 — 원장의 문서 {안본}건을 안 봤다")
+            io.open(os.path.join(runpath.write_dir(source_run), "sections.json"),
+                    "w", encoding="utf-8").write(
+                json.dumps(sections, ensure_ascii=False, indent=1))
+        except Exception as error:                  # noqa: BLE001 — SOFT 다
+            stage.status = "FAILED"
+            ledger.degrade("sections", "SECTIONS_READ_FAILED", str(error)[:200])
+            return 빈
+
+    # ── 여기부터 LLM 0회 ─────────────────────────────────────
+    publish = GATE.build(sections, concept)
+    counts: dict = {}
+    for r in publish.get("문서별") or []:
+        for it in r.get("items") or []:
+            if it.get("게재") and it["게재"] != "OFF_TOPIC":
+                counts[GATE.절(it)] = counts.get(GATE.절(it), 0) + 1
+    judgments = JUDGE.build(publish, concept)
+    out = {"cards": PROMOTE.build(publish), "counts": counts,
+           "judgment": serialize.judgment(judgments),
+           "prescriptions": serialize.prescriptions(
+               PRESCRIBE.build(publish, concept, judgments)),
+           "synthesis": None}
+
+    # ── 9절만 유료다(LLM 1회). 여기가 막혀도 앞의 것은 다 살아 있다 ──
+    if rescore or not budget.can_afford(1):
+        ledger.degrade("sections", "SYNTHESIS_SKIPPED",
+                       "9절 합성은 LLM 1회다 — 예산이 없거나 재채점 모드라 건너뛴다")
+        return out
+    try:
+        out["synthesis"] = serialize.synthesis(
+            SYNTH.build(publish, concept, judgments, run_id=f"{run_id}-synth"))
+        budget.charge(1)
+    except Exception as error:                      # noqa: BLE001 — SOFT 다
+        ledger.degrade("sections", "SYNTHESIS_FAILED", str(error)[:200])
+    return out
 
 
 def _summary(ledger: Run, budget: Budget, source_run: str, concept_path: str,
@@ -769,7 +895,10 @@ async def _bm(source_run: str, concept_path: str, concept_id: str,
         #   조용히 두 갈래가 된다.
         bm=serialize.bm(out["final_result"], analysis, decision, gate_reasons),
         evidence=evidence, summary=None,
-        notes=list(serialize.NOTES_BM))
+        notes=list(serialize.NOTES_BM),
+        # BM 모드는 절 체인을 돌리지 않는다. **빼는 게 아니라 `null` 이다** —
+        # 봉투를 `exact()` 한 번으로 못박으려면 칸은 늘 있어야 한다.
+        judgment=None, prescriptions=None, synthesis=None)
 
 
 def _bm_material(ledger: Run, source_run: str, concept_path: str, concept_id: str,

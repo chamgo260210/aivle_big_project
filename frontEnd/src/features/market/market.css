@@ -429,3 +429,42 @@
 @media (prefers-reduced-motion: reduce) {
   .cr-why.is-on, .cr-law.is-on { animation: none; background: var(--color-mint-50); }
 }
+
+/* ── 판 ㊸ — 사람 보고서의 2·8·9절 · 절 사실 표 ─────────────────── */
+
+/* 원문 표기. 환산값 아래에 작게 — 「36,745억원」을 되짚을 수 있어야 한다. */
+.mr-raw { display: block; font-weight: 400; font-size: .72rem; color: var(--color-text-secondary); }
+
+/* 발행사 꼬리표. **두 회사의 표가 하나로 읽히는 것을 막는다.** */
+.mr-issuer { display: block; font-size: .74rem; color: var(--color-status-warning); }
+
+/* 합이 온전한 표는 경고색이 아니다 — 경고를 남발하면 진짜 경고가 안 읽힌다. */
+.mr-caveat--ok { color: var(--color-text-secondary); font-style: normal; }
+
+/* 같은 표의 행 묶음. 표끼리 붙어 버리면 어디까지가 한 표인지 안 보인다. */
+.mr-tablegroup + .mr-tablegroup { margin-top: 1.4rem; padding-top: 1.1rem; border-top: 2px solid var(--color-neutral-100); }
+
+.mr-judgment__lines { margin: 1rem 0 0; padding: 0; list-style: none; }
+.mr-judgment__lines > li + li { margin-top: 1.1rem; padding-top: 1.1rem; border-top: 1px solid var(--color-neutral-100); }
+.mr-judgment__calc { color: var(--color-text-secondary); font-size: .8rem; }
+.mr-judgment__src { color: var(--color-text-secondary); font-size: .78rem; }
+
+.mr-rx__kind { margin-top: .25rem; color: var(--color-text-secondary); font-size: .74rem; }
+
+.mr-synth__g + .mr-synth__g { margin-top: 1.3rem; }
+.mr-synth__g h4 { margin: 0 0 .6rem; font-size: .87rem; }
+.mr-synth__g ul { margin: 0; padding-left: 1.1rem; }
+.mr-synth__g li + li { margin-top: .7rem; }
+.mr-synth__g--ok h4 { color: var(--color-status-success); }
+.mr-synth__g--warn h4 { color: var(--color-status-warning); }
+.mr-synth__src { margin-top: .2rem; color: var(--color-text-secondary); font-size: .76rem; }
+
+/* 발행사 묶음 — **회사 수와 사실 수는 다른 수다.** 안 묶으면 「경쟁사 41곳」으로 읽힌다. */
+.mr-issuergroup { margin-top: 1.2rem; }
+.mr-issuergroup h4 { margin: 0 0 .5rem; font-size: .84rem; color: var(--color-text-secondary); }
+
+/* 결론이 선 근거의 연도. **결론 자리에 없으면 오늘 값처럼 읽힌다.** */
+.mr-judgment__years { margin-top: .5rem; font-size: .78rem; opacity: .85; }
+
+/* 「덜 조사됐다」의 기계 사유. 사람 문장 아래 작게 — 지우지는 않는다. */
+.mr-shortfall__d { margin-top: .15rem; font-size: .74rem; opacity: .75; }

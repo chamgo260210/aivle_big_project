@@ -57,15 +57,68 @@ def _merge(full: dict, bm: dict) -> dict:
     for name in ("canvas", "bm"):
         merged[name] = bm.get(name)
     # 뒤 걸음이 채운 칸이 있으면 그것이 이긴다 — BM 은 FULL 원장을 읽고 다시 쓴 것이다.
-    for name in ("scorecard", "market", "evidence", "summary"):
+    for name in ("market", "summary"):
         if bm.get(name) is not None:
             merged[name] = bm[name]
+    # ⚠ **`evidence`·`scorecard` 는 통째로 갈아끼우지 않는다.** BM 은 절 체인을 안 돌아
+    #   FULL 보다 **가진 것이 적다**. 통째 교체는 이 함수의 첫 줄(「빈 칸을 채울 뿐이다」)과
+    #   어긋나고, 판 ㊸ 에서 실제로 **FULL 이 승격한 절 사실 132장이 통째로 사라진다.**
+    merged["evidence"] = _merge_evidence(full.get("evidence"), bm.get("evidence"))
+    merged["scorecard"] = _merge_scorecard(full.get("scorecard"), bm.get("scorecard"))
+    # 2·8·9절은 FULL 만 만든다. BM 의 `null` 이 이기면 조사 결과가 조용히 사라진다.
+    for name in ("judgment", "prescriptions", "synthesis"):
+        merged[name] = full.get(name) if full.get(name) is not None else bm.get(name)
     merged["stages"] = list(full.get("stages") or []) + list(bm.get("stages") or [])
     merged["degradations"] = list(full.get("degradations") or []) + list(bm.get("degradations") or [])
     merged["notes"] = _dedupe(list(full.get("notes") or []) + list(bm.get("notes") or []))
     merged["generatedAt"] = bm.get("generatedAt") or full.get("generatedAt")
     merged["mode"] = "VALIDATION"
     return merged
+
+
+def _merge_evidence(full: Any, bm: Any) -> Any:
+    """근거는 **합집합**이다. id 가 겹치면 **절이 붙은 쪽**을 남긴다.
+
+    FULL 은 절 체인으로 승격한 카드(실측 132장)를 들고 오고 BM 은 슬롯 카드(15장)만
+    들고 온다. 통째로 갈아끼우면 사업가가 9절 문장의 수를 검산하러 갔을 때 **근거가
+    없다**. 「뒤 걸음이 이긴다」는 **같은 것을 다시 쓴 경우**의 규칙이지, 덜 가진 봉투가
+    더 가진 봉투를 지우라는 뜻이 아니다.
+    """
+    if not isinstance(bm, list):
+        return full
+    if not isinstance(full, list):
+        return bm
+    out: dict[str, dict] = {}
+    for item in list(full) + list(bm):
+        if not isinstance(item, dict) or not item.get("id"):
+            continue
+        old = out.get(item["id"])
+        if old is not None and old.get("section") and not item.get("section"):
+            continue                    # 절이 붙은 옛것을 절 없는 새것으로 덮지 않는다
+        out[item["id"]] = item
+    return list(out.values())
+
+
+def _merge_scorecard(full: Any, bm: Any) -> Any:
+    """성적표는 **과목별로** 합친다. BM 이 「안 쟀다」인 과목은 FULL 의 성적을 남긴다.
+
+    BM 은 절 체인을 안 돌아 채널·원가·수익성·규제 세 과목을 늘 `MISSING` 으로 낸다.
+    통째로 갈아끼우면 FULL 이 실제로 잰 성적이 **「안 쟀다」로 뒤집힌다.**
+    """
+    if not isinstance(bm, list):
+        return full
+    if not isinstance(full, list):
+        return bm
+    앞 = {r.get("subject"): r for r in full if isinstance(r, dict)}
+    out = []
+    for row in bm:
+        old = 앞.get(row.get("subject")) if isinstance(row, dict) else None
+        # BM 이 비었고 FULL 이 채웠으면 **FULL 이 이긴다.** 그 반대는 원래 규칙대로.
+        if old and row.get("state") == "MISSING" and old.get("state") != "MISSING":
+            out.append(old)
+        else:
+            out.append(row)
+    return out
 
 
 def _dedupe(lines: list[str]) -> list[str]:

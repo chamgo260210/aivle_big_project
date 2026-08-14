@@ -67,6 +67,13 @@ export const GATE_CAUSE_VIEW = {
   UNMAPPED: { label: '판별 불가', tone: 'neutral', note: '조사 항목에 없어서 갈래를 알 수 없어요' },
 };
 
+/**
+ * 성적표 과목 = <b>화면의 목차</b>다. ⚠ **키 순서가 곧 절 번호**다(`subjectNumber`).
+ *
+ * <p>판 ㊸ 에서 셋이 늘었다 — 채널·원가·수익성·규제. 절 체인이 채우는 과목이고,
+ * 「찾지 못한 것」 <b>앞에</b> 끼웠다: 그래야 번호가 밀리는 줄이 그것 하나뿐이다(7→10).
+ * 서버 `serialize._SUBJECT` + `_SECTION_SUBJECT` 와 <b>같은 순서</b>여야 한다.
+ */
 export const SUBJECT_LABEL = {
   MARKET_SIZE: '시장 크기',
   GROWTH: '성장률',
@@ -74,6 +81,9 @@ export const SUBJECT_LABEL = {
   PRICE: '가격',
   DEMAND: '수요 근거',
   CALCULATION: '시장 규모 계산',
+  CHANNEL: '채널',
+  UNIT_ECONOMICS: '원가·수익성',
+  REGULATION: '규제',
   NOT_FOUND: '찾지 못한 것',
 };
 
@@ -178,6 +188,25 @@ export const CELL_DOT = {
   VERIFIED: 'ok', PARTIAL: 'mid', UNVERIFIED: 'none', PLAN: 'off', BLOCKED: 'none',
 };
 
+/**
+ * <b>조사가 덜 된 사유</b> → 사람이 읽는 말. 봉투 `degradations[].code` 중 <b>사용자의
+ * 읽기를 바꾸는 것만</b> 고른다.
+ *
+ * <p>⚠ 이 표가 없던 동안 `degradations` 는 봉투까지 오고 <b>그리는 곳이 0곳</b>이었다.
+ * 「읽다 만 것을 다 읽은 것처럼 두지 않는다」가 <b>개발자 원장에서만 참</b>이었다 —
+ * 화면에는 「채널 · 실린 사실 9건 · 일부만 확인」만 떴다.
+ *
+ * <p>여기 없는 코드(`NOT_WIRED` 등)는 안 그린다. 전부 그리면 정상 실행에도 경고가 깔려
+ * <b>진짜 경고가 안 읽힌다.</b>
+ */
+export const SHORTFALL_VIEW = {
+  SECTIONS_TRUNCATED: '예산 상한에 걸려 **문서를 다 읽지 못했어요.** 빈 절은 「없다」가 아니라 「못 봤다」일 수 있어요',
+  BUDGET_EXHAUSTED: '예산이 모자라 **이 걸음을 아예 돌리지 못했어요.**',
+  SECTIONS_READ_FAILED: '문서 읽기가 **실패했어요.** 절별 사실이 이번 실행에는 없어요',
+  SYNTHESIS_SKIPPED: '**「미는 것과 흔드는 것」을 만들지 못했어요** — 예산이 모자라거나 재채점이었어요',
+  SYNTHESIS_FAILED: '**「미는 것과 흔드는 것」 생성이 실패했어요.**',
+};
+
 /** 경쟁사 지표로 취급하는 계량. ⚠ 임시 — 봉투에 과목 필드가 생기면 이 표는 없어진다. */
 export const COMP_METRICS = [
   '가입 매장 수', '누적 가입자 수', '매출액', '이용 요금', '월 활성 사용자',
@@ -268,6 +297,16 @@ function normalizeEvidence(raw) {
     inputs: raw?.inputs && typeof raw.inputs === 'object' ? raw.inputs : null,
     materialIds: list(raw?.materialIds),
     assumptions: list(raw?.assumptions),
+    // ── 판 ㊸ — 절 배치가 **서버 것**이 됐다 ────────────────────
+    // 이 다섯이 오기 전에는 `bucketEvidence` 가 여기서 같은 물음을 다시 풀었고,
+    // 두 화면이 같은 근거를 다른 과목이라고 말할 위험을 코드가 스스로 적어 뒀다.
+    section: text(raw?.section),
+    placement: text(raw?.placement),
+    issuer: text(raw?.issuer),
+    // 어느 행이 한 표인가. 없으면 「합 100.0%」도 「⚠ 100%가 아니다」도 못 만든다.
+    tableKey: text(raw?.tableKey),
+    // 원문 수 표기(`36,745억원`). 환산값만으로는 원문을 되짚을 수 없다.
+    raw: text(raw?.raw),
   };
 }
 
@@ -420,6 +459,51 @@ export function normalizeMarketResult(raw) {
     evidenceById: byId,
     usedIn: usedInIndex(raw, evidence),
     notes: list(raw.notes),
+    // ── 판 ㊸ — 사람 보고서의 2·8·9절 ────────────────────────────
+    // ⚠ **`null` 과 빈 배열은 다른 사건이다.** null 은 「이 실행은 안 돌렸다」,
+    //   빈 배열은 「돌렸는데 할 말이 없었다」. 화면이 그 둘을 다르게 말해야 한다.
+    judgment: raw.judgment
+      ? {
+        price: typeof raw.judgment.price === 'number' ? raw.judgment.price : null,
+        lines: list(raw.judgment.lines).map((line) => ({
+          what: text(line?.what) ?? '무엇 없음',
+          sentence: text(line?.sentence),
+          formula: text(line?.formula),
+          // 못 쓴 이유도 값이다. 침묵을 「해당 없음」으로 읽히게 두지 않는다.
+          silentBecause: text(line?.silentBecause),
+          // ⚠ **연도를 빼지 마라.** 「배달 한 끼 8,244원」의 자장면값이 2018년인데
+          //    결론 문장에는 그 사실이 없어 오늘 값처럼 읽혔다.
+          sources: list(line?.sources).map((s) => ({
+            raw: text(s?.raw) ?? '', subject: text(s?.subject) ?? '',
+            period: text(s?.period), url: text(s?.url) ?? '',
+          })),
+        })),
+        // ⚠ 이 문장을 빼지 마라. 계산식만 남으면 「1.37배」로 끝나고
+        //   「그래서 어느 쪽으로 팔라」가 사라진다 — 사업가가 사는 것은 뒤쪽이다.
+        conclusion: text(raw.judgment.conclusion),
+      }
+      : null,
+    prescriptions: Array.isArray(raw.prescriptions)
+      ? raw.prescriptions.map((row) => ({
+        section: text(row?.section) ?? 'UNKNOWN',
+        kind: text(row?.kind) ?? 'UNKNOWN',
+        kindLabel: text(row?.kindLabel) ?? '갈래 없음',
+        what: text(row?.what) ?? '',
+        why: text(row?.why) ?? '',
+        where: text(row?.where) ?? '',
+      }))
+      : null,
+    synthesis: Array.isArray(raw.synthesis)
+      ? raw.synthesis.map((row) => ({
+        key: text(row?.key) ?? '',
+        stance: text(row?.stance) ?? '미상',
+        sentence: text(row?.sentence) ?? '',
+        what: text(row?.what) ?? '',
+        sources: list(row?.sources).map((s) => ({
+          raw: text(s?.raw) ?? '', subject: text(s?.subject) ?? '', period: text(s?.period),
+        })),
+      }))
+      : null,
   };
 }
 
@@ -457,6 +541,24 @@ function usedInIndex(raw, evidence) {
  * 어느 과목에도 안 걸린 관측은 「수요 근거」로 떨어진다 — **버리지 않는다는 것이 요점**이다.
  * 서버가 과목을 실어 주면 이 함수는 통째로 없어진다.
  */
+/**
+ * 근거를 <b>과목별로</b> 나눈다. 판 ㊸ 부터 서버가 `evidence[].section` 을 준다.
+ *
+ * <p>⚠ 옛 결과는 그 칸이 없다(DB 에 저장돼 있다). 그래서 <b>한 건도 절이 없을 때만</b>
+ * 옛 셈으로 물러선다 — 섞어 쓰면 새 결과의 채널 사실이 「그 밖」으로 떨어진다.
+ */
+export function sectionEvidence(result) {
+  const items = list(result?.evidence);
+  if (!items.some((item) => item.section)) return bucketByGuess(result);
+  const out = {};
+  for (const key of Object.keys(SUBJECT_LABEL)) out[key] = [];
+  for (const item of items) {
+    if (out[item.section]) out[item.section].push(item);
+  }
+  return out;
+}
+
+/** ⚠ **판 ㊸ 이전 결과 전용 폴백.** 새 결과에는 쓰이지 않는다. */
 export function bucketEvidence(result) {
   const market = result?.market ?? {};
   const idsOf = (...figures) => new Set(figures.flatMap((f) => list(f?.evidenceIds)));
@@ -482,6 +584,15 @@ const BUCKET_SUBJECT = {
   price: 'PRICE', demand: 'DEMAND', calc: 'CALCULATION',
 };
 
+/** 옛 결과용 폴백. 이름을 갈라 「지금 쓰는 것」과 「물러설 자리」를 구분한다. */
+function bucketByGuess(result) {
+  const bag = bucketEvidence(result);
+  const out = {};
+  for (const key of Object.keys(SUBJECT_LABEL)) out[key] = [];
+  for (const [bucket, subject] of Object.entries(BUCKET_SUBJECT)) out[subject] = bag[bucket];
+  return out;
+}
+
 /**
  * 근거 id → <b>그 근거가 사는 과목</b>. `bucketEvidence` 를 <b>거꾸로</b> 읽는다.
  *
@@ -491,9 +602,11 @@ const BUCKET_SUBJECT = {
  */
 export function evidenceSubjectIndex(result) {
   const index = new Map();
-  const buckets = bucketEvidence(result);
-  for (const [bucket, subject] of Object.entries(BUCKET_SUBJECT)) {
-    for (const item of buckets[bucket]) index.set(item.id, subject);
+  // ⚠ `sectionEvidence` 를 쓴다 — 화면 1 과 **같은 함수**여야 한다.
+  //   여기서 따로 세면 「근거 보기」가 그 근거가 없는 줄로 착지한다.
+  const buckets = sectionEvidence(result);
+  for (const [subject, items] of Object.entries(buckets)) {
+    for (const item of items) index.set(item.id, subject);
   }
   return index;
 }

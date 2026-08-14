@@ -52,8 +52,7 @@ def _실린(d: dict) -> list:
         for it in r.get("items", []):
             if not it.get("게재") or it["게재"] == "OFF_TOPIC":
                 continue
-            sec = (it["section"] if it.get("게재_제자리")
-                   else "COMPETITOR" if it["게재"] == "COMPETITOR_FIRM" else it["section"])
+            sec = PG.절(it)
             out.append({**it, "_절": sec, "_url": r.get("url") or ""})
     return out
 
@@ -153,6 +152,28 @@ def 가격_판단(실린: list, 정가: float, R: dict, V: dict) -> dict:
     return {"정가": 정가, "갈래": 갈래, "결론": 결론}
 
 
+def build(d: dict, c: dict) -> dict | None:
+    """**가격 판단**을 낸다. 컨셉에 가격 제안값이 없으면 `None` — **지어내지 않는다.**
+
+    판 ㊸ 1단계에서 `main()` 밖으로 꺼냈다. 돌려주는 모양은 `judgments.json` 과 같다.
+    """
+    R = PG._rules()
+    V = PG._vocab(c, R)
+
+    정가 = ((c.get("_hypotheses_v2") or {}).get("6_수익_가격") or {}).get("제안값_krw_월")
+    if not 정가:
+        return None
+
+    실린 = _실린(d)
+    res = 가격_판단(실린, float(정가), R, V)
+    # ⚠ `year` 를 반드시 들고 간다. 이 판단은 **결론에 가장 가까운 자리**이고, 여기서
+    #   연도가 빠지면 「배달 한 끼 8,244원」이 2018년 자장면값이라는 사실이 사라진다.
+    #   그러면 「8% 차이로 근소」가 8년 묵은 수 위에 선 채 오늘 값처럼 읽힌다.
+    칸 = ("number_raw", "unit_raw", "subject", "quote", "_url", "year")
+    return {"가격": {**res, "갈래": [{**g, "근거": [{k: s.get(k) for k in 칸}
+                                               for s in g["근거"]]} for g in res["갈래"]]}}
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("publish")
@@ -162,18 +183,14 @@ def main() -> int:
 
     d = json.load(io.open(a.publish, encoding="utf-8"))
     c = json.load(io.open(a.concept, encoding="utf-8"))
-    R = PG._rules()
-    V = PG._vocab(c, R)
 
-    정가 = ((c.get("_hypotheses_v2") or {}).get("6_수익_가격") or {}).get("제안값_krw_월")
-    if not 정가:
+    out_doc = build(d, c)
+    if out_doc is None:
         print("컨셉에 가격 제안값이 없다 — **판단을 지어내지 않는다.**")
         return 1
+    res = out_doc["가격"]
 
-    실린 = _실린(d)
-    res = 가격_판단(실린, float(정가), R, V)
-
-    print(f"컨셉 가격 {res['정가']:,.0f}원 — 실린 사실 {len(실린)}건 위에서 잰다\n")
+    print(f"컨셉 가격 {res['정가']:,.0f}원 — 실린 사실 {len(_실린(d))}건 위에서 잰다\n")
     for g in res["갈래"]:
         print(f"■ {g['무엇']}")
         if g.get("문장"):
@@ -190,11 +207,8 @@ def main() -> int:
         print("⇒ (결론 없음) 비교쌍이 갖춰지지 않았다. **지어내지 않는다.**")
 
     out = a.out or os.path.join(os.path.dirname(a.publish), "judgments.json")
-    io.open(out, "w", encoding="utf-8").write(json.dumps(
-        {"가격": {**res, "갈래": [{**g, "근거": [{k: s[k] for k in
-                                             ("number_raw", "unit_raw", "subject", "quote", "_url")}
-                                            for s in g["근거"]]} for g in res["갈래"]]}},
-        ensure_ascii=False, indent=1))
+    io.open(out, "w", encoding="utf-8").write(
+        json.dumps(out_doc, ensure_ascii=False, indent=1))
     print(f"\n기록: {out}")
     return 0
 

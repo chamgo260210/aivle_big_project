@@ -8,6 +8,9 @@ import { useState } from 'react';
 
 import { Alert, Badge, Button, Card } from '../shared/ui';
 import BmCanvas, { GradeBadge, SourceLink } from '../features/market/BmCanvas.jsx';
+// 2·8·9절은 **제품 부품을 그대로 쓴다.** 와이어프레임이 자기 마크업으로 베끼면
+// 화면과 와이어프레임이 갈리고, 그러면 와이어프레임이 거짓말이 된다.
+import { JudgmentCard, PrescriptionCard, SynthesisCard } from '../features/market/MarketResultBody.jsx';
 import Emphasis from '../features/market/emphasis.jsx';
 import useCellFocus from '../features/market/useCellFocus.js';
 import {
@@ -187,6 +190,9 @@ function DonePhase({ bm, secFocus, onAgain, onNext }) {
         ) : null}
       </div>
 
+      {/* 2절 — 값을 보여 주는 것과 **「그래서 어디에 서 있나」를 말해 주는 것**은 다른 일이다. */}
+      <JudgmentCard judgment={result.judgment} />
+
       <Card>
         {SUBJECTS.map(([subject, n]) => (
           <Subject key={subject} subject={subject} n={n} row={SCORE[subject]}
@@ -200,6 +206,12 @@ function DonePhase({ bm, secFocus, onAgain, onNext }) {
           {m.price?.caveats.map((line) => <Emphasis key={line} text={` ${line}`} />)}
         </p>
       </Card>
+
+      {/* 8절 — 「못 구했다」로 끝내면 사업가는 거기서 멈춘다. **어디서 구하는지**까지 적는다. */}
+      <PrescriptionCard rows={result.prescriptions} />
+
+      {/* 9절 — 사업가가 돈을 내는 자리. 사실이 이 사업안을 **미는지 흔드는지**를 말한다. */}
+      <SynthesisCard rows={result.synthesis} />
 
       <div className="wf__sec">
         <h3>비즈니스 모델</h3>

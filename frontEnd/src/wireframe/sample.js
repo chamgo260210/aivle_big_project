@@ -17,45 +17,87 @@ export const SAMPLE_RESULT = {
   mode: 'BM',
   evidence: [
     {
-      id: 'C-F001', kind: '관측', subject: '1인 가구', metric: '가구 수',
+      id: 'C-F001', section: 'DEMAND', kind: '관측', subject: '1인 가구', metric: '가구 수',
       value: 7830000, unit: '가구', period: '2024', grade: '확정',
       sourceUrl: 'https://kosis.kr/example', sourceKind: 'gov_stat',
       quote: '2024년 1인 가구는 783만 가구로, 전체 가구의 35.5%예요.',
       caveats: [],
     },
     {
-      id: 'C-F002', kind: '관측', subject: '가정간편식(HMR)', metric: '시장 규모',
+      id: 'C-F002', section: 'MARKET_SIZE', kind: '관측', subject: '가정간편식(HMR)', metric: '시장 규모',
       value: 5200000000000, unit: 'KRW', period: '2024', grade: '실무 신뢰',
       sourceUrl: 'https://atfis.or.kr/example', sourceKind: 'public_filing',
       caveats: ['**냉동 정찬만이 아니라 즉석밥·컵밥까지 포함한 전체 HMR 수치예요.**'],
     },
     {
-      id: 'C-F003', kind: '관측', subject: '냉동 간편식', metric: '연 성장률',
+      id: 'C-F003', section: 'GROWTH', kind: '관측', subject: '냉동 간편식', metric: '연 성장률',
       value: 7.1, unit: 'PERCENT_PER_YEAR', period: '2023→2024', grade: '확정',
       sourceUrl: 'https://kosis.kr/example-growth', sourceKind: 'gov_stat',
       caveats: ['단순 증감률이에요. 연평균 성장률(CAGR)이 아니에요.'],
     },
     {
-      id: 'C-F004', kind: '관측', subject: 'A사 냉동 도시락', metric: '표시가격',
+      id: 'C-F004', section: 'PRICE', kind: '관측', subject: 'A사 냉동 도시락', metric: '표시가격',
       value: 8900, unit: 'KRW', period: '2026-06', grade: '확정',
       sourceUrl: 'https://example-a.co.kr/menu', sourceKind: 'official_page',
       caveats: [],
     },
     {
-      id: 'C-F005', kind: '관측', subject: 'B사 프리미엄 밀키트', metric: '표시가격',
+      id: 'C-F005', section: 'PRICE', kind: '관측', subject: 'B사 프리미엄 밀키트', metric: '표시가격',
       value: 12000, unit: 'KRW', period: '2026-06', grade: '확정',
       sourceUrl: 'https://example-b.co.kr/menu', sourceKind: 'official_page',
       caveats: [],
     },
     {
-      id: 'C-F006', kind: '관측', subject: '1인 가구', metric: '「간편식」 검색량 증가율',
+      id: 'C-F006', section: 'DEMAND', kind: '관측', subject: '1인 가구', metric: '「간편식」 검색량 증가율',
       value: 34, unit: '%', period: '2025→2026', grade: '추정',
       sourceUrl: 'https://example-news.co.kr/article', sourceKind: 'news',
       quote: '1인 가구의 냉동 간편식 검색이 1년 새 34% 늘었어요.',
       caveats: ['**언론이 인용한 민간 조사예요 — 원자료는 확인하지 못했어요.**'],
     },
+    // ── 판 ㊸ — 절 체인이 채우는 세 과목. **표를 안 찢는 것**을 보이려고
+    //    채널 4행을 같은 `tableKey` 로 묶고, 합이 100%가 아니게 뒀다(경고가 뜬다).
     {
-      id: 'C-F007', kind: '계산', subject: '1인 가구 냉동 정찬', metric: 'SAM',
+      id: 'sec-0001', section: 'CHANNEL', kind: '관측', subject: '대형마트 매출액 — 비중',
+      metric: '매출처별 판매비중', value: 31.05, unit: '%', period: '2025', grade: '확정',
+      raw: '31.05%', issuer: '오뚜기', placement: 'COMPETITOR_FIRM',
+      tableKey: 'T-01|매출처별 판매비중|2025',
+      sourceUrl: 'https://kind.krx.co.kr/example', sourceKind: 'public_filing',
+      caveats: ['⚠ 시장 전체가 아니라 **오뚜기 한 회사**의 매출처 구성비예요.'],
+    },
+    {
+      id: 'sec-0002', section: 'CHANNEL', kind: '관측', subject: '특약점 매출액 — 비중',
+      metric: '매출처별 판매비중', value: 29.65, unit: '%', period: '2025', grade: '확정',
+      raw: '29.65%', issuer: '오뚜기', placement: 'COMPETITOR_FIRM',
+      tableKey: 'T-01|매출처별 판매비중|2025',
+      sourceUrl: 'https://kind.krx.co.kr/example', sourceKind: 'public_filing',
+      caveats: [],
+    },
+    {
+      id: 'sec-0003', section: 'CHANNEL', kind: '관측', subject: '대리점 매출액 — 비중',
+      metric: '매출처별 판매비중', value: 10.21, unit: '%', period: '2025', grade: '확정',
+      raw: '10.21%', issuer: '오뚜기', placement: 'COMPETITOR_FIRM',
+      tableKey: 'T-01|매출처별 판매비중|2025',
+      sourceUrl: 'https://kind.krx.co.kr/example', sourceKind: 'public_filing',
+      caveats: [],
+    },
+    {
+      id: 'sec-0004', section: 'CHANNEL', kind: '관측', subject: '편의점 매출액 — 비중',
+      metric: '매출처별 판매비중', value: 5.99, unit: '%', period: '2025', grade: '확정',
+      raw: '5.99%', issuer: '오뚜기', placement: 'COMPETITOR_FIRM',
+      tableKey: 'T-01|매출처별 판매비중|2025',
+      sourceUrl: 'https://kind.krx.co.kr/example', sourceKind: 'public_filing',
+      caveats: [],
+    },
+    {
+      id: 'sec-0005', section: 'UNIT_ECONOMICS', kind: '관측', subject: '냉동식품 판매단가',
+      metric: '판매단가', value: 6513, unit: '원', period: '2025', grade: '확정',
+      raw: '6,513원', issuer: '오뚜기', placement: 'COMPETITOR_FIRM', tableKey: null,
+      sourceUrl: 'https://kind.krx.co.kr/example-price', sourceKind: 'public_filing',
+      quote: '냉동식품 판매단가는 6,513원이에요.',
+      caveats: ['⚠ 시장 전체가 아니라 **오뚜기 한 회사**의 수예요.'],
+    },
+    {
+      id: 'C-F007', section: 'CALCULATION', kind: '계산', subject: '1인 가구 냉동 정찬', metric: 'SAM',
       value: 380000000000, unit: 'KRW', period: '2024', grade: '추정',
       formula: '1인 가구 수 × 연간 구매 빈도 × 객단가',
       inputs: { '1인 가구 수': 7830000, '연간 구매 빈도(회)': 8, '객단가(원)': 9500 },
@@ -101,6 +143,9 @@ export const SAMPLE_RESULT = {
     { subject: 'PRICE', state: 'PARTIAL', detail: '8,900~12,000원을 확인했어요 · 프리미엄 구간은 못 찾았어요' },
     { subject: 'DEMAND', state: 'FILLED', detail: '검색량 증가율 1건이에요 (언론 인용)' },
     { subject: 'CALCULATION', state: 'FILLED', detail: '계산 1건이에요 · 가정 2개를 밝혀 뒀어요' },
+    { subject: 'CHANNEL', state: 'FILLED', detail: '어디서 팔리나 — 채널별 비중 — 실린 사실 4건' },
+    { subject: 'UNIT_ECONOMICS', state: 'PARTIAL', detail: '한 개 팔면 얼마가 남나 — 실린 사실 1건' },
+    { subject: 'REGULATION', state: 'MISSING', detail: '무엇을 지켜야 하나 — **한 건도 못 구했어요.** 아래 처방을 보세요' },
     { subject: 'NOT_FOUND', state: 'REPORTED', detail: '채우지 못한 항목이 2건 있어요' },
   ],
   canvas: {
@@ -280,3 +325,78 @@ export const SAMPLE_REVISION = {
     },
   ],
 };
+
+/** 2절 — 가격 판단. **기계가 계산한 문장이고 모델이 쓴 것이 아니다.** */
+export const SAMPLE_JUDGMENT = {
+  price: 8900,
+  lines: [
+    {
+      what: '같은 진열대의 한 개 값',
+      sentence: '컨셉 가격 8,900원은 냉동식품 판매단가 6,513원의 1.37배예요.',
+      formula: '8,900 ÷ 6,513 = 1.37',
+      silentBecause: null,
+      sources: [{ raw: '6,513원', subject: '냉동식품 판매단가', url: 'https://kind.krx.co.kr/example-price' }],
+    },
+    {
+      // **못 쓴 갈래도 세운다** — 침묵을 「해당 없음」으로 읽히게 두지 않는다.
+      what: '배달로 대체될 때',
+      sentence: null, formula: null,
+      silentBecause: '배달 한 끼는 음식값과 배달비가 **둘 다** 있어야 셈이 돼요. 지금 실린 것은 음식값뿐이에요.',
+      sources: [],
+    },
+  ],
+  conclusion: '**같은 진열대에서는 값이 위예요.** 값이 아닌 이유(정량·조리 시간·보존)가 서지 '
+    + '않으면 이 가격은 지탱되지 않아요. 어느 쪽으로 팔지는 **이 조사가 정하지 못해요** — 시장 인터뷰에서 물을 것.',
+};
+
+/** 8절 — 처방. **셋째 열(「어디서」)이 이 표의 값어치다.** */
+export const SAMPLE_PRESCRIPTIONS = [
+  {
+    section: 'REGULATION', kind: 'REACHABLE', kindLabel: '공개 자료에 있는데 이 조사가 못 닿았어요',
+    what: '이름은 29건 잡혔는데 **그중 29건이 값 자리에 숫자가 없어요** — 지켜야 할 기준치가 하나도 안 잡혔어요',
+    why: '공개돼 있으나 이 조사의 검색이 닿지 못했어요. 어디를 볼지 적어 드려요.',
+    where: '식품공전 「즉석섭취·편의식품류」 규격의 세균수·대장균군 기준을 보세요',
+  },
+  {
+    section: 'CHANNEL', kind: 'USER_INPUT', kindLabel: '사용자가 직접 넣으면 풀려요',
+    what: '채널별 비중은 잡혔으나 **입점 조건·수수료가 없어요** — 「어디서 팔리나」에는 답하고 「**어디부터 열까**」에는 못 답해요',
+    why: '이 값은 웹에 없어요. 사업가 본인이 답을 갖고 있어요(자기 원가·설비·팀·계약 조건).',
+    where: '입점 조건·수수료율은 채널과의 협상 결과라 회사마다 달라요. 실제 제안서를 받아 넣어야 해요',
+  },
+  {
+    section: 'DEMAND', kind: 'INTERVIEW', kindLabel: '시장 인터뷰에서 물어야 풀려요',
+    what: '침투율은 **컨셉이 스스로 「관측 근거가 없는 순수 가정」이라 적어 둔 값**이에요',
+    why: '사람의 선호·지불 의사·고르는 이유는 문서에 없어요. 다음 단계(시장 인터뷰)의 질문이 돼요.',
+    where: '구매 의향을 직접 물어요. ⚠ 의향은 실제 구매가 아니에요 — 언급 수로만 읽어요',
+  },
+];
+
+/** 9절 — 지지/흔듦. **갈래와 근거는 기계가 정하고 모델은 문장만 쓴다.** */
+export const SAMPLE_SYNTHESIS = [
+  {
+    key: '시장이_자란다', stance: '지지',
+    sentence: '5.2조원 시장이 연 7.1% 자라고 있어 새로 들어갈 자리가 남아 있어요.',
+    what: '시장이 자라고 있나',
+    sources: [{ raw: '5,200,000,000,000원', subject: '가정간편식(HMR) 시장 규모' },
+      { raw: '7.1%', subject: '냉동 간편식 연 성장률' }],
+  },
+  {
+    key: '주_채널이_안_보인다', stance: '흔듦',
+    sentence: '컨셉이 든 편의점은 5.99%뿐이고 같은 표의 최대는 대형마트 31.05% 로 주 채널이 아니에요.',
+    what: '⚠ 이것은 시장 전체가 아니라 **오뚜기 한 회사의 2025년 매출처 구성비**예요',
+    sources: [{ raw: '5.99%', subject: '편의점 매출액 — 비중' },
+      { raw: '31.05%', subject: '대형마트 매출액 — 비중' }],
+  },
+  {
+    key: '값이_위에_있다', stance: '흔듦',
+    sentence: '8,900원은 냉동식품 판매단가 6,513원보다 위여서 값만으로는 고를 이유가 없어요.',
+    what: '우리 가격이 대체 수단보다 위인가',
+    sources: [{ raw: '6,513원', subject: '냉동식품 판매단가' }],
+  },
+];
+
+// 봉투에서 이 셋은 **`result` 안**에 있다. 와이어프레임도 같은 자리에 둔다 —
+// 자리가 다르면 화면 부품이 제품과 다르게 돌고, 그러면 와이어프레임이 거짓말이 된다.
+SAMPLE_RESULT.judgment = SAMPLE_JUDGMENT;
+SAMPLE_RESULT.prescriptions = SAMPLE_PRESCRIPTIONS;
+SAMPLE_RESULT.synthesis = SAMPLE_SYNTHESIS;

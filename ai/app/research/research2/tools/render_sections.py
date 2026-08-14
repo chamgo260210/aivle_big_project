@@ -19,6 +19,9 @@ from __future__ import annotations
 import argparse, html, io, json, os, re, sys
 from collections import Counter, defaultdict
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import publish_gate as PG          # ⚠ 절 배정 규칙의 정본은 PG.절() 하나다
+
 SECTIONS = [
     ("MARKET_SIZE", "1. 시장 크기", "시장·카테고리의 규모와 성장률"),
     ("PRICE", "2. 가격의 자리", "우리 가격이 놓일 지형"),
@@ -182,8 +185,7 @@ def main() -> int:
                 continue
             # `게재_제자리` 는 「출처는 그 회사인데 자리는 이 절」이다 (판 ㊷ R2) —
             # 공시 표의 채널 구성·가동률·품목 단가가 여기로 온다. 꼬리표는 「경쟁사」 그대로다.
-            sec = (it["section"] if it.get("게재_제자리")
-                   else "COMPETITOR" if it["게재"] == "COMPETITOR_FIRM" else it["section"])
+            sec = PG.절(it)
             실림[sec].append((it, r.get("url") or ""))
 
     n실림 = sum(len(v) for v in 실림.values())

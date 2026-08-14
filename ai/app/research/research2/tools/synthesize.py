@@ -21,6 +21,7 @@ for p in (ROOT, HERE, os.path.join(ROOT, "adapters")):
     sys.path.insert(0, p)
 
 import prompts
+import publish_gate as PG          # ⚠ 절 배정 규칙의 정본은 PG.절() 하나다
 from base import load_env_key      # ⚠ `adapters/base.py` 다 — 위 경로 추가가 있어야 뜬다
 from runlog import Meter, Run, load_rules
 
@@ -94,8 +95,7 @@ def _실린(d: dict) -> list:
         for it in r.get("items", []):
             if not it.get("게재") or it["게재"] == "OFF_TOPIC":
                 continue
-            sec = (it["section"] if it.get("게재_제자리")
-                   else "COMPETITOR" if it["게재"] == "COMPETITOR_FIRM" else it["section"])
+            sec = PG.절(it)
             out.append({**it, "_절": sec, "_url": r.get("url") or ""})
     return out
 
@@ -211,19 +211,14 @@ def _고른다(spec: dict, 실린: list, 컨셉: dict, 판단: dict) -> list:
     return 본
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("publish")
-    ap.add_argument("--concept", required=True)
-    ap.add_argument("--id", default="p42-synth")
-    ap.add_argument("--dry-run", dest="dry", action="store_true")
-    a = ap.parse_args()
+def 묶는다(d: dict, c: dict, 판단: dict | None = None) -> list:
+    """**기계가 갈래와 근거를 정한다.** LLM 0회. 판 ㊸ 1단계에서 `main()` 밖으로 꺼냈다.
 
-    d = json.load(io.open(a.publish, encoding="utf-8"))
-    c = json.load(io.open(a.concept, encoding="utf-8"))
+    이 함수와 `build()` 를 가른 이유 — 여기까지가 **공짜**다. 제품 경로에서 키가 없거나
+    예산이 막히면 여기서 멈춰도 「무엇을 말하려 했는지」는 남는다.
+    """
     S = json.load(io.open(os.path.join(ROOT, "rules", "synthesize.v1.json"), encoding="utf-8"))
-    jp = os.path.join(os.path.dirname(a.publish), "judgments.json")
-    판단 = json.load(io.open(jp, encoding="utf-8")) if os.path.exists(jp) else {}
+    판단 = 판단 or {}
     실린 = _실린(d)
 
     묶음 = []
@@ -246,18 +241,19 @@ def main() -> int:
             if 결:
                 m["무엇"] = f"{m['무엇']} — 2절이 이미 낸 결론: {결}"
         묶음.append(m)
+    return 묶음
 
-    지 = [m for m in 묶음 if m["갈래"] == "지지"]
-    흔 = [m for m in 묶음 if m["갈래"] == "흔듦"]
-    print(f"\n기계가 나눈 갈래 — 지지 {len(지)} · 흔드는 것 {len(흔)}")
-    for m in 묶음:
-        print(f"  [{m['갈래']}] {m['키']:<20}{m['무엇']}")
-        for s in m["근거"]:
-            print(f"       · {s['number_raw']}{s.get('unit_raw')}  «{s['subject']}»")
 
-    if a.dry:
-        print("\n--dry-run — 여기서 멈춘다 (LLM 0회 · 0원)")
-        return 0
+def build(d: dict, c: dict, 판단: dict | None = None, *, run_id: str = "p43-synth") -> dict:
+    """9절 「지지 / 흔듦」. **LLM 1회 — 유료다.** 돌려주는 모양은 `synthesis.json` 과 같다.
+
+    기계가 갈래·근거를 정하고(`묶는다`) 모델은 **문장만 쓴다.** 쓴 문장은 여기서 검사해
+    묶음에 없는 수나 금지 평가어가 있으면 **문장째 버린다.**
+    """
+    S = json.load(io.open(os.path.join(ROOT, "rules", "synthesize.v1.json"), encoding="utf-8"))
+    묶음 = 묶는다(d, c, 판단)
+    if not 묶음:
+        return {"문장": []}
 
     h2 = c.get("_hypotheses_v2") or {}
     개념 = (f"{c.get('name')} — {c.get('solution')}\n"
@@ -272,7 +268,7 @@ def main() -> int:
 
     os.environ.setdefault("OPENAI_API_KEY", load_env_key("OPENAI_API_KEY") or "")
     from openai import OpenAI
-    run = Run(a.id, rules=load_rules())
+    run = Run(run_id, rules=load_rules())
     meter = Meter(OpenAI(), run)
     # **온도를 명시한다.** 안 주면 판마다 다른 줄이 금지어에 걸려 **내용 손실이
     # 비결정적**이 된다(실측: `긍정적` → `잠재력`). 이것은 답에 맞춰 깎는 것이 아니라
@@ -286,8 +282,10 @@ def main() -> int:
         # **잘린 것이 통째로 0건이 되게 두지 않는다** (판 ㊶ 교훈). 온 데까지는 쓴다.
         print(f"\n⚠ 응답이 잘렸다 — 낱건으로 건졌다. 건진 문장 {len(got)} / 묶음 {len(묶음)}")
     if not got:
+        # **못 읽은 것을 「할 말이 없었다」로 만들지 않는다.** 빈 목록으로 조용히 돌려주면
+        # 화면이 「9절이 비었다」로 그리고, 그것은 거짓이다 — 말할 것은 있었고 못 읽었을 뿐이다.
         print("\n**하나도 못 읽었다.** 원문 앞머리:", raw[:300])
-        return 1
+        raise RuntimeError("9절 합성 응답을 하나도 읽지 못했다")
 
     # ── 검사: 문장의 모든 수가 그 묶음 안에 있어야 한다 ──────────
     정가 = str(((c.get("_hypotheses_v2") or {}).get("6_수익_가격") or {}).get("제안값_krw_월") or "")
@@ -325,10 +323,44 @@ def main() -> int:
     print(f"비용: {run.counters.get('llm.tokens_in', 0)} in / "
           f"{run.counters.get('llm.tokens_out', 0)} out")
 
+    return {"문장": [{k: v for k, v in x.items() if k != "고르기"} for x in 결과]}
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("publish")
+    ap.add_argument("--concept", required=True)
+    ap.add_argument("--id", default="p42-synth")
+    ap.add_argument("--dry-run", dest="dry", action="store_true")
+    a = ap.parse_args()
+
+    d = json.load(io.open(a.publish, encoding="utf-8"))
+    c = json.load(io.open(a.concept, encoding="utf-8"))
+    jp = os.path.join(os.path.dirname(a.publish), "judgments.json")
+    판단 = json.load(io.open(jp, encoding="utf-8")) if os.path.exists(jp) else {}
+
+    묶음 = 묶는다(d, c, 판단)
+    지 = [m for m in 묶음 if m["갈래"] == "지지"]
+    흔 = [m for m in 묶음 if m["갈래"] == "흔듦"]
+    print(f"\n기계가 나눈 갈래 — 지지 {len(지)} · 흔드는 것 {len(흔)}")
+    for m in 묶음:
+        print(f"  [{m['갈래']}] {m['키']:<20}{m['무엇']}")
+        for s in m["근거"]:
+            print(f"       · {s['number_raw']}{s.get('unit_raw')}  «{s['subject']}»")
+
+    if a.dry:
+        print("\n--dry-run — 여기서 멈춘다 (LLM 0회 · 0원)")
+        return 0
+
+    try:
+        doc = build(d, c, 판단, run_id=a.id)
+    except RuntimeError as e:
+        print(f"\n{e}")
+        return 1
+
     out = os.path.join(os.path.dirname(a.publish), "synthesis.json")
-    io.open(out, "w", encoding="utf-8").write(json.dumps(
-        {"문장": [{k: v for k, v in x.items() if k != "고르기"} for x in 결과]},
-        ensure_ascii=False, indent=1, default=str))
+    io.open(out, "w", encoding="utf-8").write(
+        json.dumps(doc, ensure_ascii=False, indent=1, default=str))
     print(f"기록: {out}")
     return 0
 

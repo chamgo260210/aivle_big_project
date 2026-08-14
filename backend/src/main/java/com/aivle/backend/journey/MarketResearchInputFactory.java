@@ -58,8 +58,24 @@ public class MarketResearchInputFactory {
      * 하네스 3 + 수집 ≈80 + 요약 3 이 필요하다. 어느 갈래인지는 <b>AI 서버만 안다</b>
      * (원장이 있느냐가 가른다). 그래서 상한은 긴 쪽에 맞춘다 — 짧게 두면
      * {@code _collect} 가 「완주 못 할 지출은 시작하지 않는다」로 <b>시작조차 안 한다</b>.
+     *
+     * <p><b>판 ㊸ — 90 → 270.</b> 절 체인(문서를 절 단위로 다시 읽어 2·8·9절을 만드는 걸음)이
+     * 붙었다. 90 이면 수집이 83 을 써서 남는 7 이 최소 소요 30 에 못 미쳐
+     * <b>절 체인이 통째로 안 돌고</b> {@code judgment}·{@code prescriptions}·{@code synthesis}
+     * 가 셋 다 {@code null} 로 나갔다(실측).
+     *
+     * <pre>
+     *   하네스 3 + 수집 80 + 절 체인 182(문서 전량) + 9절 합성 1 + 요약 3 = 269
+     * </pre>
+     *
+     * <p>문서 수 182 는 실측(`0c54ffb5` 원장)이다. ⚠ <b>상한이지 지출이 아니다</b> —
+     * 문서가 적은 사업안은 적게 쓴다. AI 쪽이 남은 예산에서 문서 상한을 파생하므로
+     * ({@code pipeline._sections}) 이 수를 넘겨 쓰는 일은 없고, 모자라면
+     * {@code SECTIONS_TRUNCATED} 로 <b>덜 읽었다는 사실이 원장에 남는다</b>.
+     *
+     * <p>⚠ 실행 1회가 ≈1,200원에서 <b>≈1,600원</b>이 된다. 사람이 정했다(2026-08-15).
      */
-    private static final int LLM_BUDGET_FULL = 90;
+    private static final int LLM_BUDGET_FULL = 270;
     public String full(JsonNode concept, String conceptId, String asOf) {
         ObjectNode root = mapper.createObjectNode();
         root.set("textContents", textContents("concept", mapper.writeValueAsString(concept)));

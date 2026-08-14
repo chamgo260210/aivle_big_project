@@ -22,6 +22,8 @@ ROOT = os.path.dirname(HERE)
 for p in (ROOT, HERE):
     sys.path.insert(0, p)
 
+import publish_gate as PG          # ⚠ 절 배정 규칙의 정본은 PG.절() 하나다
+
 SECTION_말 = {
     "MARKET_SIZE": "시장 크기", "PRICE": "가격의 자리", "COMPETITOR": "경쟁 지형",
     "CHANNEL": "채널", "DEMAND": "수요", "UNIT_ECONOMICS": "원가·수익성", "REGULATION": "규제",
@@ -35,8 +37,7 @@ def _센다(d: dict) -> tuple:
         for it in r.get("items", []):
             if not it.get("게재"):
                 continue
-            sec = (it["section"] if it.get("게재_제자리")
-                   else "COMPETITOR" if it["게재"] == "COMPETITOR_FIRM" else it["section"])
+            sec = PG.절(it)
             if it["게재"] != "OFF_TOPIC":
                 실림[sec] += 1
             else:
@@ -44,15 +45,12 @@ def _센다(d: dict) -> tuple:
     return 실림, 사유
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("publish")
-    ap.add_argument("--concept", required=True)
-    ap.add_argument("--out", default="")
-    a = ap.parse_args()
+def build(d: dict, c: dict, J: dict | None = None) -> list:
+    """8절 처방 **줄 목록**을 낸다. 판 ㊸ 1단계에서 `main()` 밖으로 꺼냈다.
 
-    d = json.load(io.open(a.publish, encoding="utf-8"))
-    c = json.load(io.open(a.concept, encoding="utf-8"))
+    `J` 는 `judge_lines.build()` 의 산출이다. CLI 는 옆의 `judgments.json` 을 읽어 넣고,
+    제품 경로는 방금 만든 것을 그대로 넘긴다 — **파일을 거치지 않는다.**
+    """
     P = json.load(io.open(os.path.join(ROOT, "rules", "prescribe.v1.json"), encoding="utf-8"))
     실림, 사유 = _센다(d)
     문턱 = P["빈약_문턱"]
@@ -94,9 +92,7 @@ def main() -> int:
                    "왜": P["갈래"][s["갈래"]]["왜"], "어디서": s["어디서"]})
 
     # ── 판단이 침묵한 자리도 처방 대상이다 ──
-    jp = os.path.join(os.path.dirname(a.publish), "judgments.json")
-    if os.path.exists(jp):
-        J = json.load(io.open(jp, encoding="utf-8"))
+    if J:
         for g in (J.get("가격") or {}).get("갈래", []):
             if not g.get("문장"):
                 행.append({"절": "PRICE", "절말": "가격의 자리", "실림": None,
@@ -121,6 +117,25 @@ def main() -> int:
                    "갈래": "INTERVIEW", "갈래말": P["갈래"]["INTERVIEW"]["말"],
                    "왜": P["갈래"]["INTERVIEW"]["왜"],
                    "어디서": "구매 의향을 직접 묻는다. ⚠ 의향은 실제 구매가 아니다 — 언급 수로만 읽는다"})
+
+    return 행
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("publish")
+    ap.add_argument("--concept", required=True)
+    ap.add_argument("--out", default="")
+    a = ap.parse_args()
+
+    d = json.load(io.open(a.publish, encoding="utf-8"))
+    c = json.load(io.open(a.concept, encoding="utf-8"))
+    P = json.load(io.open(os.path.join(ROOT, "rules", "prescribe.v1.json"), encoding="utf-8"))
+    문턱 = P["빈약_문턱"]
+
+    jp = os.path.join(os.path.dirname(a.publish), "judgments.json")
+    J = json.load(io.open(jp, encoding="utf-8")) if os.path.exists(jp) else None
+    행 = build(d, c, J)
 
     print(f"8절 처방 — {len(행)}줄 (실린 것이 {문턱}건 미만인 절 + 판단이 침묵한 자리)\n")
     for x in 행:

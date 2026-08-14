@@ -63,6 +63,21 @@
       "detail": "TAM 1,025,336,520원 · 가정 6개 명시"
     },
     {
+      "subject": "CHANNEL",
+      "state": "MISSING",
+      "detail": "이 실행은 절 조사를 돌리지 않았다 — 0건이 아니라 «안 쟀다»다"
+    },
+    {
+      "subject": "UNIT_ECONOMICS",
+      "state": "MISSING",
+      "detail": "이 실행은 절 조사를 돌리지 않았다 — 0건이 아니라 «안 쟀다»다"
+    },
+    {
+      "subject": "REGULATION",
+      "state": "MISSING",
+      "detail": "이 실행은 절 조사를 돌리지 않았다 — 0건이 아니라 «안 쟀다»다"
+    },
+    {
       "subject": "NOT_FOUND",
       "state": "REPORTED",
       "detail": "아직 못 채운 것 26건 · 가정으로 메운 변수 14건 · 걸러낸 것 2건 · 값이 갈린 것 5건 · 찾아도 없는 것 5건"
@@ -279,7 +294,12 @@
       "formula": null,
       "inputs": null,
       "materialIds": [],
-      "assumptions": []
+      "assumptions": [],
+      "section": null,
+      "placement": null,
+      "issuer": null,
+      "tableKey": null,
+      "raw": null
     },
     {
       "id": "C-F011",
@@ -301,7 +321,12 @@
       "formula": null,
       "inputs": null,
       "materialIds": [],
-      "assumptions": []
+      "assumptions": [],
+      "section": null,
+      "placement": null,
+      "issuer": null,
+      "tableKey": null,
+      "raw": null
     },
     {
       "id": "C-F001",
@@ -321,7 +346,12 @@
       "formula": null,
       "inputs": null,
       "materialIds": [],
-      "assumptions": []
+      "assumptions": [],
+      "section": null,
+      "placement": null,
+      "issuer": null,
+      "tableKey": null,
+      "raw": null
     }
   ],
   "summary": null,
@@ -329,5 +359,12 @@
     "칸의 caveats 는 인용한 근거에서 기계가 파생한 것이다 — 모델이 쓴 문장이 아니다.",
     "content 만 떼어 쓰면 경계가 사라진다. 값과 같은 자리에 두어라.",
     "gateReasons[].cause 가 UNCOLLECTED 이면 컨셉을 고쳐도 안 고쳐진다 — 재수집이 답이고, 그래도 없으면 「미확보」로 확정하고 멈춘다."
+  ],
+  "judgment": null,
+  "prescriptions": null,
+  "synthesis": null,
+  "_판㊸_왜_전부_null": [
+    "BM 모드는 절 체인을 돌리지 않는다. **빼는 게 아니라 null 이다** — 봉투를 exact() 한 번으로",
+    "못박으려면 칸은 늘 있어야 한다. 성적표의 새 세 과목도 「0건」이 아니라 「안 쟀다」로 적는다."
   ]
 }
