@@ -33,12 +33,31 @@ from runlog import Meter, Run, load_rules
 MODEL = "gpt-4o-mini"
 WORKERS = 6
 JSON_OBJ = re.compile(r"\{.*\}", re.S)
-#: 인용 대조용 정규화 — 공백만 접는다. 그 이상 관대해지면 「대조했다」가 거짓이 된다.
+#: 인용 대조용 정규화 — 공백과 **문장부호까지만** 접는다.
+#: 그 이상(숫자만 맞으면 통과 따위)으로 관대해지면 「대조했다」가 거짓이 된다.
 _WS = re.compile(r"\s+")
 
 
+def _punct() -> str:
+    """관용할 문장부호. 값은 `rules/publish.v1.json` 에서 온다 (규약 ①).
+
+    **왜 관대해졌나**: 체크리스트 1-6 「냉동간편식 1조 1,666억」의 본문은
+    「…26.2% 증가함」(줄바꿈)이고 모델 인용은 「…26.2% 증가함.」이었다. **마침표 하나로 죽었다.**
+    실측: 이 관용으로 18건이 되살아나고, 그중에 이번 판의 왕관 사실이 들어 있다.
+    """
+    p = os.path.join(ROOT, "rules", "publish.v1.json")
+    try:
+        return ((json.load(io.open(p, encoding="utf-8")).get("인용_관용") or {})
+                .get("문장부호") or "")
+    except Exception:
+        return ""
+
+
+_PUNCT = str.maketrans("", "", _punct())
+
+
 def _norm(s: str) -> str:
-    return _WS.sub("", s or "")
+    return _WS.sub("", s or "").translate(_PUNCT)
 
 
 def _corpus(source_run: str) -> list[dict]:
