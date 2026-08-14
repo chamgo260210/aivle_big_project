@@ -240,19 +240,36 @@ def test_factor_note_is_the_whole_basis_not_a_prefix():
         {"mode": "RESCORE", "sourceRun": SEED_RUN, "conceptId": "smoke"},
         "test-envelope-untruncated", 600))
 
-    checked = 0
+    # ★ 판 ㊳ — **표적이 옮겨졌다.** 계열별 계산식을 들어내면서 시장 크기 칸에서
+    #   규칙(가정)에서 온 요인이 사라졌다 — 이제 그 자리는 **관측 층위**만 담는다.
+    #   그러므로 「규칙 요인이 0개면 실패」는 더 이상 참이 아니다. 대신 둘을 본다:
+    #     ① 규칙에서 온 요인이 **어디에든** 있으면 그 note 는 원문 그대로여야 한다(옛 목적)
+    #     ② 시장 크기 칸에는 **가정 항이 없어야 한다**(새 계약) — 이쪽이 비면 검사가 공허해지므로
+    #        관측 요인이 실제로 있는지도 함께 못 박는다
+    seen_rule, seen_obs = 0, 0
     for name in ("tam", "sam", "som", "growth"):
         figure = out["market"][name]
         if figure is None:
             continue
         for factor in figure["factors"]:
+            if factor["basis"] == "관측":
+                seen_obs += 1
             role = by_role.get(factor["name"])
             # 단가는 규칙이 아니라 **컨셉의 가격 가설**에서 온다 — 대조 대상이 아니다.
             if not role or factor["basis"] == "가설":
                 continue
-            checked += 1
+            seen_rule += 1
             assert factor["note"] == role["basis"], f"{name}/{factor['name']} 이 잘렸다"
-    assert checked, "규칙에서 온 요인이 0개면 이 검사는 아무것도 못 본다"
+
+    assert seen_obs, "관측 요인이 0개면 이 검사는 아무것도 못 본다"
+    for name in ("tam", "sam"):
+        figure = out["market"][name]
+        if figure is None:
+            continue
+        가정 = [f["name"] for f in figure["factors"] if f["basis"] != "관측"]
+        assert not 가정, (
+            f"{name}: 시장 크기 칸에 가정 항이 남아 있다 — 판 ㊳ 이후 여기는 "
+            f"**관측 층위**만 담는다: {가정}")
 
 
 @needs_ledger

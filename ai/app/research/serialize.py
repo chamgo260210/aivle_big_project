@@ -212,20 +212,54 @@ def scorecard(doc: dict) -> list[dict]:
     return out
 
 
+def _what(row: dict, limit: int = 4) -> str:
+    """★ 판 ㊳ — **무엇을 세었는지** 한 줄에 붙인다.
+
+    건수만 보이면 「가격 확인됨 5건」이 참말처럼 읽힌다. 그 5건이 배달비·편의점 도시락이면
+    거짓말이고, 지금까지 그 사실은 화면 어디에도 없었다. 관련성 판정은 여기서 하지
+    않는다 — **이름을 드러내 사람이 알아보게** 한다.
+    """
+    items = [str(x) for x in (row.get("셈한_것") or []) if str(x).strip()]
+    if not items:
+        return ""
+    head = ", ".join(items[:limit])
+    more = f" 외 {len(items) - limit}종" if len(items) > limit else ""
+    return f" — {head}{more}"
+
+
 def _detail(korean: str, row: dict) -> str:
     """사람이 읽는 한 줄. **판정을 새로 하지 않고** 성적표가 이미 센 수를 옮기기만 한다."""
     if korean == "1_시장크기":
-        return f"TAM 밑동 관측 {row.get('n')}건 · 등급 {row.get('등급')}"
+        # ⚠ `등급` 은 리스트다. 그대로 f-string 에 넣으면 화면에 `['확정']` 이라는
+        #   **파이썬 코드 표기**가 뜬다(화면 감사 04). 사람 문장으로 편다.
+        등급 = ", ".join(_strings(row.get("등급"))) or "없음"
+        층 = row.get("층위")
+        겹 = (f"관측 {row.get('n')}건 → **층위 {층}개**"
+              if 층 is not None and 층 != row.get("n") else f"관측 {row.get('n')}건")
+        return f"시장 크기 {겹} · 등급 {등급}{_what(row)}"
     if korean == "2_성장률":
         return (f"{_num(row.get('값_퍼센트'), 2)}% · 갈래 {row.get('갈래')}"
                 " · 단순 증감률이며 CAGR 아님")
     if korean == "3_경쟁사":
         return f"URL 도메인 {row.get('n_url')}곳 — {', '.join(row.get('도메인') or []) or '없음'}"
     if korean == "4_가격":
-        return f"표시가격 {row.get('n')}건"
+        return f"표시가격 {row.get('n')}건{_what(row)}"
     if korean == "5_수요":
-        return f"근거 {row.get('n')}건 · 최고 등급 {row.get('최고_등급')}"
+        return f"근거 {row.get('n')}건 · 최고 등급 {row.get('최고_등급')}{_what(row)}"
     if korean == "6_계산":
+        # 값이 없으면 **없다고 말한다.** 예전에는 `TAM None원 · 가정 1개 명시` 로 나갔다.
+        if row.get("TAM") is None:
+            rng = row.get("범위") or None
+            if rng:
+                lo, hi = rng.get("하한"), rng.get("상한")
+                폭 = f"{_num(lo)} ~ {_num(hi)}원" if lo is not None else f"{_num(hi)}원 이하"
+                return (f"점 추정은 못 했고 **범위**만 냈다 — {폭}"
+                        f" (관측 점유율 {rng.get('근거_점유율_수')}건)")
+            층 = row.get("층위") or 0
+            if 층:
+                return (f"시장 크기를 계산하지 않는다 — 관측 {층}개 층위를 그대로 낸다 "
+                        f"(가정을 곱해 값을 만들지 않는다)")
+            return "시장 크기 관측 0건 — 낼 층위가 없다"
         return f"TAM {_num(row.get('TAM'))}원 · 가정 {row.get('가정수')}개 명시"
     # ⑦행. `건수` 는 이름과 달리 **원본 목록**을 담고 있다(`tools/scorecard.py`). 그대로 join
     # 하면 파이썬 repr 수백 자가 표 한 칸에 쏟아진다 — 갈래별 건수로 접는다.
@@ -288,20 +322,45 @@ def _figure(estimate: dict | None, unit: str, grade: str | None) -> dict | None:
     남는 것은 **표가 말할 수 없는 것**뿐이다(예: 「연평균이 아니다」·「과거 관측이다」).
     요인이 없는 옛 판정 출력은 `가정` 을 그대로 쓴다 — 그때는 표가 아예 없다.
     """
-    if not isinstance(estimate, dict) or estimate.get("값") is None:
+    if not isinstance(estimate, dict):
         return None
+    # ★ 판 ㊳ — **값이 없어도 분해표는 남긴다.**
+    #   값을 못 내는 것과 아무것도 모르는 것은 다르다. 「거래액 38.04조까지는 관측했고
+    #   점유율이 없어 시장 크기로 환산하지 못한다」가 사용자에게 줄 답이다.
+    #   예전에는 여기서 통째로 None 을 돌려줘 요인 표·근거·식이 전부 사라졌다.
+    #   ⚠ 계약은 이미 이것을 허용한다 — `value` 는 nullableNumber 이고
+    #     `GRADES` 에 「근거 없음」이 있다(Java `MarketResearchContract.java:38`).
+    if estimate.get("값") is None:
+        if not estimate.get("요인"):
+            return None            # 표도 없으면 정말 할 말이 없다
+        grade = grade or "근거 없음"
     if grade not in GRADES:
         raise ContractDrift(f"계산값 등급이 계약 밖이다: {grade!r}")
     factors = _factors(estimate.get("요인"))
+    raw = (estimate.get("값_퍼센트") if unit == "PERCENT_PER_YEAR"
+           else estimate.get("값"))
+    # **왜 값이 없는지**는 경계 문장으로 나간다. 빈 칸만 보내면 화면이 「조사를 안 했다」로 읽는다.
+    사유 = [s for s in (estimate.get("값_불가_사유"),) if s]
+    밑동 = estimate.get("관측된_밑동") or None
+    if 밑동 and 밑동.get("값") is not None:
+        사유.append(f"관측한 데까지: {밑동.get('이름')} {_num(밑동.get('값'))}"
+                   f"{(' ' + 밑동['단위']) if 밑동.get('단위') else ''}")
+    # ★ 판 ㊳ — 점 추정을 못 내도 **범위**는 낸다. 계약에 범위 칸이 없으므로 경계 문장으로.
+    rng = estimate.get("범위") or None
+    if rng:
+        lo, hi = rng.get("하한"), rng.get("상한")
+        폭 = (f"{_num(lo)} ~ {_num(hi)}" if lo is not None
+              else f"{_num(hi)} 이하")
+        사유.append(f"관측 점유율로 만든 범위: {폭}")
+        사유.extend(_strings(rng.get("읽는_법")))
     return {
-        "value": float(estimate.get("값_퍼센트") if unit == "PERCENT_PER_YEAR"
-                       else estimate.get("값")),
+        "value": float(raw) if isinstance(raw, (int, float)) else None,
         "unit": unit,
         "grade": grade,
         "formula": estimate.get("식") or None,
         "factors": factors,
-        "assumptions": _strings(estimate.get("해석_경계") if factors
-                                else estimate.get("가정")),
+        "assumptions": _strings(사유 + list(estimate.get("해석_경계") or [])) if factors
+                       else _strings(사유 + list(estimate.get("가정") or [])),
         "caveats": [],
         "evidenceIds": [f"C-{g.get('fact_id')}" for g in (estimate.get("근거") or [])
                         if isinstance(g, dict) and g.get("fact_id")],

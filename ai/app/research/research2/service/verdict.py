@@ -192,6 +192,40 @@ def _가정수(요인들: list) -> int:
     return len([f for f in 요인들 if f["판정"] != "관측"])
 
 
+def _점추정_가능(요인들: list) -> tuple:
+    """★ 판 ㊳ — **관측이 아닌 항을 곱해 만든 값은 값 자리에 앉지 못한다.**
+
+    실측: 계열 C 가 KOSIS 거래액 38.04조에 `추정점유율 0.3`(출처 0건)을 곱해
+    11.41조를 만들었고, 화면은 그것을 「전체 시장(TAM) 11.41조원」으로 그렸다.
+    같은 원장의 엔진 §2 는 같은 칸을 「추정 불가」로 적어 두었다 — 한 화면에
+    **「TAM 추정 불가」와 「TAM 11.41조」가 서로를 모른 채 나란히** 떴다.
+
+    규칙을 하나로 줄인다 — **항이 전부 관측일 때만 값을 낸다.**
+
+    ⚠ **요인 표는 지우지 않는다.** 값을 못 내는 것과 아무것도 모르는 것은 다르다.
+    「거래액 38.04조까지는 관측했고 점유율이 없어 환산을 못 한다」가 사용자에게 줄 답이다.
+    """
+    비관측 = [f for f in 요인들 if f["판정"] != "관측"]
+    if not 비관측:
+        return True, ""
+    항 = " · ".join(f"{f['이름']}({f['판정']})" for f in 비관측)
+    return False, (f"관측이 아닌 항이 {len(비관측)}개 섞여 있어 값을 내지 않는다 — {항}. "
+                   f"관측에 가정을 곱하면 지어낸 수가 관측처럼 보인다")
+
+
+def _엔진_결론(엔진_판정: list, target: str) -> str:
+    """엔진이 같은 칸에 뭐라고 적었는지. **판정 층의 사유에 붙여 둘을 한 줄에 세운다.**
+
+    이 값은 판 ㊳ 이전까지 `엔진_§2` 키에 복사만 되고 **읽는 코드가 0곳**이었다 —
+    즉 엔진의 「추정 불가」 판정은 봉투에도 화면에도 닿지 않고 사라졌다.
+    """
+    for x in (엔진_판정 or []):
+        if x.get("target") == target:
+            st, bd = x.get("status"), x.get("badge")
+            return f" (엔진 §2: {st or bd or '기록 없음'})"
+    return ""
+
+
 # `_SEG_WARN` 은 `_역할_요인` 이 대신한다(판 ㉞). 그 함수가 하던 일 셋 — 값·상한 울타리·
 # 원 근거 서술 — 은 이제 요인 한 줄의 `값`·`울타리`·`설명` 이고, **잘리지 않는다.**
 
@@ -293,169 +327,121 @@ def judge_growth(led: dict) -> dict | None:
 
 
 # ══════════════════════════════════════════════════════════════
-# 5. 시장 크기 — 엔진이 insufficient 면 **판정 층이 가정 승격으로 계산**한다
-#    (결정 2 선례: 관측은 엔진, 계산은 이 층). 엔진 §2 는 그대로 보존한다.
+# 5. 시장 크기 — **관측 층위를 낸다. 계산하지 않는다.**
+#
+# ★ 판 ㊳ 에서 계열별 계산식(T2·T7)과 `_judge_market_t7`·`_pick_money` 를 들어냈다.
+#   두 식 다 관측 하나에 가정 여럿을 곱했고, 가정 곱셈을 막자 **어느 식을 골라도
+#   값이 안 나왔다** — 갈림길이 아무것도 안 가르면서 계열이 틀리면 틀린 사유만 냈다.
+#   고객 단위 정합 검사(`계열_고객_단위`)는 하네스·게이트에 **그대로 살아 있다.**
 # ══════════════════════════════════════════════════════════════
-_MONEY_UNITS = ("원", "KRW")
+_STALE_YEARS = 3
 
 
-def _pick_money(led: dict, claim_types: set, metric: str) -> tuple:
-    """**금액** 밑동을 고른다 (계열 C 의 T7). `_pick_base` 의 금액판.
+def _market_observations(led: dict) -> list:
+    """시장 크기 **관측을 층위 그대로** 모은다. 금액·개수를 가리지 않는다.
 
-    `_pick_base` 는 개수 단위(개·곳·명)만 본다 — 계열 A 전용이다. 여기를 안 만들면
-    거래액 관측이 있어도 **판정 층이 못 읽는다**(판 ⑫ N.R14).
+    ★ 판 ㊳ — 여기가 계열 A~E 를 대체한다. 예전에는 계열이 계산식을 골랐고
+    (T2 = 사업체수 × 세그먼트비중 × 침투율 × 단가 × 12, T7 = 거래액 × 점유율),
+    두 식 모두 **관측 하나에 가정 여럿을 곱하는 것**이었다. 가정 곱셈을 막고 나니
+    **어느 식을 고르든 값이 안 나온다** — 갈림길이 아무것도 안 가르면서, 계열이
+    틀리면 **틀린 사유**만 냈다(실측: 「점유율 관측이 없다」가 「전국 사업체 수 0건」으로).
 
-    ⚠ **metric 으로 한 번 더 좁힌다.** 「금액이고 TAM 슬롯」이면 단가·CAC 도 걸린다 —
-    그것들을 시장 크기의 밑동으로 쓰면 **종류가 틀린 값**이 조용히 흐른다.
+    그래서 식을 고르지 않는다. **관측한 것을 층위 그대로 낸다.**
     """
-    by_slot = {x["slot_id"]: x for x in led["slots"]}
-    cands = [c for c in _confirmed(led, claim_types)
-             if c["value"] is not None and (c["unit"] or "") in _MONEY_UNITS
-             and (by_slot.get(c["slot_id"], {}).get("metric") == metric)]
-    if not cands:
-        return None, [], ""
-    cands = sorted(cands, key=lambda c: c["slot_id"])
-    if len(cands) > 1:
-        return (cands[0]["value"], cands,
-                f"⚠ {sorted(claim_types)} 에 「{metric}」 확인됨이 {len(cands)}건"
-                f"({[c['slot_id'] for c in cands]}) — slot_id 사전순 첫 번째를 썼다")
-    return cands[0]["value"], cands, ""
+    by_slot = {s["slot_id"]: s for s in led["slots"]}
+    as_of = _YEAR.search(str(led.get("reference_date") or ""))
+    올해 = int(as_of.group(0)) if as_of else None
+    본: dict = {}
+    for c in _confirmed(led, {"TAM", "SAM"}):
+        if c.get("value") is None:
+            continue
+        s = by_slot.get(c["slot_id"]) or {}
+        m = _YEAR.search(str(s.get("period") or ""))
+        연도 = int(m.group(0)) if m else None
+        # ⚠ **같은 사실이 여러 슬롯에 채택된다.** 실측: KOSIS 거래액 한 건이 TAM 슬롯과
+        #   SAM 슬롯에 동시에 앉아 TAM=SAM 이 됐다. 층위로 두 번 세면 **없는 층이 생긴다** —
+        #   fact_id 로 접고, 몇 칸에 앉았는지는 정보로 남긴다.
+        #   ⚠ `fact_id` 로는 안 접힌다 — 슬롯마다 새 id 가 붙기 때문이다(실측: F001·F002 가
+        #     같은 KOSIS 표·같은 해·같은 수인데 id 만 달랐다). **값·단위·연도**가 같으면 같은 층이다.
+        키 = (c.get("value"), c.get("unit"), 연도)
+        if 키 in 본:
+            본[키]["앉은_슬롯"].append(c.get("slot_id"))
+            continue
+        본[키] = {
+            "이름": s.get("subject") or s.get("metric") or c["slot_id"],
+            "계량": s.get("metric"),
+            "값": c["value"], "단위": c.get("unit"),
+            "연도": 연도,
+            "낡음": bool(올해 and 연도 and (올해 - 연도) > _STALE_YEARS),
+            "등급": c.get("등급"), "앉은_슬롯": [c.get("slot_id")], "행": c,
+        }
+    # 큰 층위부터 — 사람이 「상한 → 우리 자리」 순으로 읽는다.
+    return sorted(본.values(), key=lambda x: (str(x["단위"]), -(x["값"] or 0)))
 
 
-def _judge_market_t7(led: dict, hyp: dict, spec: dict) -> dict:
-    """계열 C — **TAM = 시장 거래액 × 추정점유율**.
-
-    ⚠ **값이 안 나오는 것과 구조를 모르는 것은 다르다.** 옛 코드는 거래액 관측이 있어도
-    「전국 사업체 수 확인됨 0건」이라 말했다 — **틀린 사유**다. 사유가 틀리면 다음 판이
-    엉뚱한 데를 판다.
-    """
-    head = {x.get("target"): x for x in (led["report"].get("headline_numbers") or [])}
-    by_role = (_rules().get("assumptions") or {}).get("by_role") or {}
-    metric = spec.get("관측_metric") or "거래액"
-    out = {"엔진_§2": [{"target": t, **{k: head.get(t, {}).get(k)
-                                      for k in ("value", "badge", "status")}}
-                     for t in ("TAM", "SAM", "SOM") if t in head],
-           "_구조": spec.get("식"), "_계열_템플릿": spec.get("template"),
-           "_보존": "엔진 §2 의 insufficient 를 덮어쓰지 않는다 — 아래는 판정 층의 별도 추정이다."}
-
-    gmv, ev, warn = _pick_money(led, {"TAM"}, metric)
-    sam_gmv, ev_s, warn_s = _pick_money(led, {"SAM"}, metric)
-    if warn or warn_s:
-        out["선택_주의"] = [w for w in (warn, warn_s) if w]
-
-    share_a = by_role.get(spec.get("점유율_role") or "추정점유율") or {}
-    share = share_a.get("value")
-    # 계열 C 의 `경계` 는 **항에 붙지 않는 해석 경계**다(구조 자체에 대한 단서).
-    # 그래서 요인 표에 넣지 않고 표 밖에 남긴다 — 표가 말할 수 있는 것만 표에 넣는다.
-    경계 = list(spec.get("경계") or [])
-    역할 = spec.get("점유율_role") or "추정점유율"
-
-    def _est(base, evid, 이름):
-        if base is None:
-            return None
-        요인 = [_요인(f"{이름} 거래액", base, "관측", 단위="원", rows=evid),
-               _역할_요인(역할, 역할, share, by_role)]
-        return {"식": spec.get("식"), "입력": {f"{이름} 거래액": base, 역할: share},
-                "값": (base * share) if share else None,
-                "assumption_count": _가정수(요인),
-                "요인": 요인,
-                "가정": 경계 + _가정_문장(요인),
-                "해석_경계": 경계,
-                "근거": evid,
-                "대조_기반": {"거래액": _대조_기반(evid),
-                           역할: _대조_기반([], 가정=True)}}
-
-    out["TAM_추정"] = _est(gmv, ev, "시장")
-    if out["TAM_추정"] is None:
-        # **사유를 구조에 맞게 적는다.** 「사업체 수가 없다」가 아니다.
-        out["사유"] = (f"「{metric}」 확인됨 0건 — 계열 C 의 TAM 밑동이 없다"
-                      f" (구조: {spec.get('식')})")
-    out["SAM_추정"] = _est(sam_gmv, ev_s, "조사범위")
-    if out["SAM_추정"] is None:
-        out["SAM_사유"] = f"SAM 슬롯의 「{metric}」 확인됨 0건"
-    return out
+#: 시장 크기 절이 관측을 어떻게 읽어야 하는지. **계산식이 아니다.**
+_LAYER_NOTE = ("이 파이프라인은 시장 크기를 **식으로 계산하지 않는다.** "
+               "아래는 계산식의 항이 아니라 **관측한 층위 목록**이다 — "
+               "큰 층위는 상한이고, 우리 사업은 그 안의 일부다")
 
 
 def judge_market(led: dict, hyp: dict, concept: dict | None = None) -> dict:
-    # 계열별 TAM 구조. **`map` 에 없는 계열은 아래 기본(T2) 경로를 그대로 탄다** —
-    # 계열 A·미표기의 코드 경로는 문자 그대로 종전과 같다(회귀 증명: beauty-09c 델타 0).
-    _cfg = (_rules().get("series_unit") or {}).get("계열_TAM_구조") or {}
-    if _cfg.get("enabled"):
-        _spec = (_cfg.get("map") or {}).get(
-            ((concept or {}).get("_계열") or {}).get("계열"))
-        if _spec:
-            return _judge_market_t7(led, hyp, _spec)
+    """시장 크기 — **관측 층위를 낸다. 계산하지 않는다.**
 
+    ⚠ `concept` 은 더 이상 읽지 않는다(계열 분기 폐지). 인자는 부르는 쪽 호환으로 남긴다.
+    고객 단위 정합 검사(`계열_고객_단위`)는 **하네스·게이트에 그대로 살아 있다** —
+    그것은 계산 경로가 아니라 슬롯 설계 검사라 이 폐지와 무관하다.
+    """
     head = {x.get("target"): x for x in (led["report"].get("headline_numbers") or [])}
-    price = (hyp.get("6_수익_가격") or {}).get("제안값_krw_월")
-    by_role = (_rules().get("assumptions") or {}).get("by_role") or {}
-
-    # 버킷은 그대로 두되 **max() 를 버렸다** — 후보가 늘면 조용히 틀리던 자리다(판 ④).
-    base_n, nation, warn_n = _pick_base(led, {"TAM"})
-    base_s, seoul, warn_s = _pick_base(led, {"SAM"})
-
     out = {"엔진_§2": [{"target": t, **{k: head.get(t, {}).get(k)
                                       for k in ("value", "badge", "status")}}
                      for t in ("TAM", "SAM", "SOM") if t in head],
-           "_보존": "엔진 §2 의 insufficient 를 덮어쓰지 않는다 — 아래는 판정 층의 별도 추정이다."}
+           "_방식": "관측 층위 나열 (판 ㊳ — 계열별 계산식 폐지)"}
 
-    if warn_n or warn_s:
-        out["선택_주의"] = [w for w in (warn_n, warn_s) if w]
-    if not nation:
-        out.update({"TAM_추정": None, "사유": "전국 사업체 수 확인됨 0건 — 분해의 첫 항이 없다"})
+    층 = _market_observations(led)
+    if not 층:
+        out["TAM_추정"] = None
+        out["사유"] = ("시장 크기 관측 0건 — 낼 층위가 없다"
+                      + _엔진_결론(out["엔진_§2"], "TAM"))
+        out["SAM_추정"] = None
+        out["SAM_사유"] = "시장 크기 관측 0건"
         return out
 
-    base = base_n
-    seg_a = by_role.get("세그먼트비중") or {}
-    seg = seg_a.get("value")
-    pen_a = by_role.get("침투율") or {}
-    pen = pen_a.get("value")
-    months = (by_role.get("연환산") or {}).get("value") or 12
-    # 값 옆에 각각의 대조 기반을 두어 「무엇이 관측이고 무엇이 가정인지」가 **숫자로**
-    # 드러나게 한다 — 지금까지는 문장으로만 있었고, 문장은 옮기다 빠진다.
-    def _요인들(라벨, 밑동, 근거):
-        return [
-            _요인(라벨, 밑동, "관측", 단위="개", rows=근거),
-            _역할_요인("세그먼트비중", "세그먼트비중", seg, by_role),
-            _역할_요인("침투율", "침투율", pen, by_role),
-            # ⚠ 단가는 `by_role["단가"]` 에서 오지 않는다 — 그 레코드는 **다른 값**
-            #   (요금제 관측 근사 30,000원)의 근거·반증이다. 컨셉의 가격 가설에 그것을
-            #   달면 이 값의 근거가 아닌 문장이 이 값 옆에 선다.
-            _요인("단가", price, "가설", 단위="원", 설명=_PRICE_NOTE),
-            _역할_요인("연환산", "연환산", months, by_role),
-        ]
+    요인 = [_요인(x["이름"], x["값"], "관측", 단위=x["단위"],
+                설명=" · ".join(y for y in (
+                    f"{x['연도']}년" if x["연도"] else None,
+                    "⚠ 3년 넘은 관측 — 낡음" if x["낡음"] else None,
+                    f"등급 {x['등급']}" if x.get("등급") else None,
+                    (f"⚠ 같은 관측이 슬롯 {len(x['앉은_슬롯'])}칸"
+                     f"({', '.join(str(s) for s in x['앉은_슬롯'])})에 함께 앉아 있다 — "
+                     f"층이 늘어난 것이 아니다")
+                    if len(x.get("앉은_슬롯") or []) > 1 else None) if y),
+                rows=[x["행"]])
+           for x in 층]
 
-    tam_요인 = _요인들("전국 사업체 수", base, nation)
+    out["시장_관측"] = [{k: v for k, v in x.items() if k != "행"} for x in 층]
     out["TAM_추정"] = {
-        "식": "TAM(연) = 전국 사업체 수 × 세그먼트비중 × 침투율 × 단가 × 연환산",
-        "입력": {"전국 사업체 수": base, "세그먼트비중": seg, "침투율": pen,
-               "단가": price, "연환산": months},
-        "값": (base * seg * pen * price * months) if (seg and pen and price) else None,
-        "assumption_count": _가정수(tam_요인),
-        "요인": tam_요인,
-        "가정": _가정_문장(tam_요인),
-        # 요인 표가 말하지 못하는 해석 경계. 여기 계열엔 없다 — 모든 문장이 항에 붙는다.
-        "해석_경계": [],
-        "근거": nation,
-        "대조_기반": {"사업체_수": _대조_기반(nation),
-                   "세그먼트비중": _대조_기반([], 가정=True),
-                   "침투율": _대조_기반([], 가정=True)}}
-    if seoul:
-        sb = base_s
-        sam_요인 = _요인들("서울 사업체 수", sb, seoul)
-        out["SAM_추정"] = {
-            "식": "SAM(연) = 서울 사업체 수 × 세그먼트비중 × 침투율 × 단가 × 연환산",
-            "입력": {"서울 사업체 수": sb, "세그먼트비중": seg, "침투율": pen,
-                   "단가": price, "연환산": months},
-            "값": (sb * seg * pen * price * months) if (seg and pen and price) else None,
-            "assumption_count": _가정수(sam_요인),
-            "요인": sam_요인, "가정": _가정_문장(sam_요인), "해석_경계": [],
-            "근거": seoul}
-    else:
-        out["SAM_추정"] = None
-        out["SAM_사유"] = ("서울 사업체 수 확인됨 0건(S5 not_found) — 지역 비중 가정을 "
-                         "따로 두지 않았다. **세그먼트비중 0.19 를 지역 비중으로 재사용하지 "
-                         "않는다** — 같은 수를 두 뜻으로 쓰면 계산이 조용히 거짓이 된다")
+        "식": None,                       # **식이 없다.** 계산하지 않으므로.
+        "입력": {},
+        "값": None,
+        "assumption_count": 0,            # 가정을 하나도 안 쓴다
+        "요인": 요인,
+        "가정": [],
+        "해석_경계": [_LAYER_NOTE],
+        "값_불가_사유": (
+            f"시장 크기를 계산하지 않는다 — 관측 {len(층)}개 층위를 그대로 낸다. "
+            "예전에는 관측 하나에 가정(점유율·침투율·세그먼트비중)을 곱해 값을 만들었고, "
+            "그 값이 화면에 관측처럼 떴다"
+            + _엔진_결론(out["엔진_§2"], "TAM")),
+        "관측된_밑동": {"이름": 층[0]["이름"], "값": 층[0]["값"], "단위": 층[0]["단위"]},
+        "근거": [x["행"] for x in 층],
+        "대조_기반": _대조_기반([x["행"] for x in 층]),
+    }
+    # SAM 은 **조사 범위를 좁히는 축**이 정의돼야 낼 수 있다. 지금은 그 축이 없다.
+    out["SAM_추정"] = None
+    out["SAM_사유"] = ("조사 범위를 좁히는 축(지역·세그먼트)이 관측으로 정의되지 않았다 — "
+                      "TAM 층위를 그대로 SAM 이라 부르지 않는다"
+                      + _엔진_결론(out["엔진_§2"], "SAM"))
     return out
 
 
@@ -713,11 +699,16 @@ def judge_som(led: dict, hyp: dict) -> dict:
         _요인("개월", 12, "가정", 단위="개월", 설명="이탈 없는 12개월 만액 결제"),
     ]
     targets = base * seg * (rate or 0)
+    # ★ 판 ㊳ — TAM·SAM 과 **같은 잠금**. SOM 도 관측 하나에 가정 넷을 곱한다.
+    #   봉투에는 안 실리지만(`serialize.market` 이 som=None 고정) 캔버스·BM 층으로는 간다 —
+    #   한쪽에서만 정직하면 두 산출물이 갈린다.
+    som_가능, som_사유 = _점추정_가능(요인)
     calc = {"식": "SOM(연) = 사업체 수 × 세그먼트비중 × 침투율 × 월 구독가 × 12",
             "입력": {"사업체 수": base, "세그먼트비중": seg, "세그먼트비중_출처": seg_src,
                    "침투율": rate, "월 구독가": price, "개월": 12},
             "목표 고객 수": targets,
-            "값": (targets * price * 12) if price else None,
+            "값": (targets * price * 12) if (som_가능 and price) else None,
+            "값_불가_사유": (None if som_가능 else som_사유),
             "assumption_count": _가정수(요인),
             "요인": 요인,
             "가정": _가정_문장(요인),

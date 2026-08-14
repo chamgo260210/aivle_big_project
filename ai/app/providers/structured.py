@@ -1,11 +1,13 @@
 """Shared OpenAI-compatible structured-output transport for new pipeline tasks."""
 
+import hashlib
 import json
 import logging
 import os
 import re
 from email.utils import parsedate_to_datetime
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -99,6 +101,38 @@ def _retry_after_ms(response) -> int | None:
     return min(15_000, max(1_000, int(seconds * 1000)))
 
 
+def _replay_settings() -> tuple[Path | None, str]:
+    """녹화/재생 설정. `AI_REPLAY_DIR` 이 비어 있으면 통째로 꺼진다(기본값).
+
+    이 경로를 타는 모듈은 재무·시장 인터뷰(코딩·타깃)·법률 3종·여정이다.
+    `concept_portfolio_v2` 는 자기 `ProviderGateway` 에 이미 녹화가 있어 여기 오지 않는다 —
+    **두 곳이 따로**인 것은 의도이고, 합치려면 봉투 모양부터 맞춰야 한다.
+
+    - `auto`(기본): 있으면 재생, 없으면 실제로 호출하고 **성공한 것만** 녹화한다
+    - `replay`: 없으면 호출하지 않고 실패한다. 결정론이 필요한 자리(테스트·시연)용
+
+    ⚠ 재생이어도 `AI_PROVIDER`/`AI_API_KEY`/`AI_MODEL` 은 여전히 있어야 한다 —
+      모델 이름이 녹화 키의 일부라 설정 없이는 무엇을 재생할지 정할 수 없다.
+    """
+    raw = os.getenv("AI_REPLAY_DIR", "").strip()
+    if not raw:
+        return None, "off"
+    mode = os.getenv("AI_REPLAY_MODE", "auto").strip().lower() or "auto"
+    if mode not in {"auto", "replay"}:
+        raise ProviderFailure("DEPENDENCY_UNAVAILABLE", "AI_CONFIGURATION_INVALID", 503, False)
+    return Path(raw), mode
+
+
+def _replay_key(body: dict[str, Any]) -> str:
+    """요청 본문 전체가 키다 — 모델·온도·스키마·프롬프트가 하나라도 다르면 다른 녹화다.
+
+    ⚠ `body` 에는 API 키가 들어 있지 않다(헤더에만 있다). 녹화 파일에 그대로 적으므로
+      **여기에 비밀을 얹지 말 것.**
+    """
+    canonical = json.dumps(body, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
 async def execute_structured_prompt(system: str, user: str, model_override: str | None = None,
                                     response_schema: dict[str, Any] | None = None,
                                     schema_name: str | None = None,
@@ -118,6 +152,26 @@ async def execute_structured_prompt(system: str, user: str, model_override: str 
     body = {"model": model, "messages": [{"role": "system", "content": system},
             {"role": "user", "content": user}], "temperature": 0.1,
             "response_format": response_format}
+
+    replay_dir, replay_mode = _replay_settings()
+    replay_path = replay_dir / f"{_replay_key(body)}.json" if replay_dir is not None else None
+    if replay_path is not None and replay_path.is_file():
+        try:
+            cached = json.loads(replay_path.read_text(encoding="utf-8"))["result"]
+        except (OSError, KeyError, ValueError) as failure:
+            # 깨진 녹화는 **조용히 실제 호출로 넘어가지 않는다** — 그러면 재생 중인 줄 알고
+            # 돈을 쓰게 된다. 파일을 지우라고 시끄럽게 말한다.
+            raise ProviderFailure("DEPENDENCY_UNAVAILABLE", "AI_CONFIGURATION_INVALID", 503, False) from failure
+        logger.info("Structured prompt replayed taskType=%s model=%s key=%s",
+                    task_type or "STRUCTURED_TASK", model, replay_path.stem)
+        return cached
+    if replay_mode == "replay":
+        logger.error("Structured prompt replay miss taskType=%s model=%s key=%s dir=%s",
+                     task_type or "STRUCTURED_TASK", model,
+                     replay_path.stem if replay_path else "-", replay_dir)
+        raise ProviderFailure("DEPENDENCY_UNAVAILABLE", "AI_CONFIGURATION_INVALID", 503, False,
+                              schema_name=schema_name)
+
     try:
         async with httpx.AsyncClient(timeout=timeout_seconds) as client:
             response = await client.post(f"{base_url}/chat/completions",
@@ -158,7 +212,23 @@ async def execute_structured_prompt(system: str, user: str, model_override: str 
         content = payload["choices"][0]["message"]["content"]
         if isinstance(content, list):
             content = "".join(part.get("text", "") for part in content if isinstance(part, dict))
-        return _extract_json(content)
+        result = _extract_json(content)
     except (KeyError, IndexError, TypeError, AttributeError, ValueError, json.JSONDecodeError) as failure:
         raise ProviderFailure("RESULT_SCHEMA_INVALID", "PROVIDER_JSON_INVALID", 502, False,
                               upstream_status=response.status_code, schema_name=schema_name) from failure
+
+    # **성공한 것만 녹화한다.** 실패를 녹화하면 다음 판이 그 실패를 공짜로 재생하고,
+    # 고친 뒤에도 계속 실패한다.
+    if replay_path is not None:
+        try:
+            replay_dir.mkdir(parents=True, exist_ok=True)
+            replay_path.write_text(json.dumps(
+                {"taskType": task_type or "STRUCTURED_TASK", "schemaName": schema_name,
+                 "request": body, "result": result}, ensure_ascii=False, indent=2), encoding="utf-8")
+            logger.info("Structured prompt recorded taskType=%s model=%s key=%s",
+                        task_type or "STRUCTURED_TASK", model, replay_path.stem)
+        except OSError:
+            # 녹화 실패로 **실제 결과를 버리지 않는다.** 이건 편의 기능이다.
+            logger.warning("Structured prompt recording failed taskType=%s dir=%s",
+                           task_type or "STRUCTURED_TASK", replay_dir)
+    return result
