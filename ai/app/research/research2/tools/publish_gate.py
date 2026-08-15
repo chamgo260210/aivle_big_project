@@ -16,7 +16,8 @@
 | `OURS_UMBRELLA` | 상위 범주 값 | 해당 절 + **「상한으로만 읽을 것」** |
 | `SUBSTITUTE` | 소비자가 대체 수단에 내는 값 | 절 안의 비교 칸(상한 있음) |
 | `COMPETITOR_FIRM` | 특정 회사의 사업 수치 | `COMPETITOR` 절로 **재배정** |
-| `OFF_TOPIC` | 남의 업종 · 남의 산업 내부 사정 | 안 싣고 사유만 |
+| `밖` | 남의 업종 · 해외 · 상위 범주 밖 · 중복 | **싣는다.** 서랍에 접고 「어떻게 읽을지」를 붙인다 |
+| `OFF_TOPIC` | **사실이 아니다** — 값 없음 · 값 자리에 숫자 없음 · 인용에 값 없음 | 안 싣고 사유만 |
 
 ⚠ **대상 어휘를 코드에 박지 않는다.** 컨셉 파일에서 뽑고, 무엇을 뽑았는지 **출력에 찍는다**.
 역할 표지(지불·산업내부·상위범주)만 `rules/publish.v1.json` 에 있다 — 그건 업종과 무관하다.
@@ -149,6 +150,73 @@ def _hit(text: str, words) -> list:
     return sorted(out)
 
 
+# ══════════════════════════════════════════════════════════════
+# ★ 세 무리를 가르는 **한 곳** (판 ㊹ 3단계)
+#
+# 판 ㊸ 까지는 「`게재 != OFF_TOPIC`」이 여덟 군데에 베껴져 있었고, `밖` 이 생기는 순간
+# **그 여덟이 전부 조용히 뜻이 달라진다** — 서랍값이 판단 문장·성적표·채점 모집단으로 샌다.
+# 답은 여기 셋뿐이다. **새로 세는 곳을 만들지 말고 이것을 부른다.**
+# ══════════════════════════════════════════════════════════════
+BURIED = "OFF_TOPIC"    #: 사실이 아니다 — 값 없음·숫자 아님·인용에 값 없음. **버린다**
+DRAWER = "밖"           #: 우리 주제 밖·해외·중복. **싣고 접는다**
+
+
+def 버렸나(it: dict) -> bool:
+    """**사실이 아니라 버린 것.** 판정을 못 받은 것(`게재` 없음)도 여기다."""
+    return not it.get("게재") or it["게재"] == BURIED
+
+
+def 머리인가(it: dict) -> bool:
+    """**절 머리에 서는 것.** 판단 문장·성적표·채점 모집단은 이것만 본다."""
+    return bool(it.get("게재")) and it["게재"] not in (BURIED, DRAWER)
+
+
+def 실었나(it: dict) -> bool:
+    """**화면에 가는 것 전부** — 머리 + 서랍. 근거 카드·보고서 렌더가 이것을 본다."""
+    return bool(it.get("게재")) and it["게재"] != BURIED
+
+
+def 재배정(it: dict, R: dict) -> str | None:
+    """**추출이 절을 잘못 고른 것을 바로잡는다.** 옮겼으면 새 절, 아니면 `None`.
+
+    실측(판 ㊹ 4단계): 목표 보고서 6절 머릿값 「식료품제조업 영업이익률은 4% 미만」이
+    **`PRICE` 절에** 앉아 있었다 — 인용을 되찾아 살려 놓고도 원가 절 머리에는 못 섰다.
+
+    ⚠ **표지가 하나도 안 걸리면 손대지 않는다. 둘 이상 걸려도 손대지 않는다.**
+      추측으로 절을 옮기면 사업가가 값을 **엉뚱한 결정에서** 만난다 —
+      「없는 것보다 나쁜 것은 틀린 자리에 있는 것」이다.
+    """
+    표지 = R.get("절_표지") or {}
+    주제 = str(it.get("subject") or "")
+    지금 = str(it.get("section") or "")
+    걸린 = [sec for sec, ws in 표지.items() if any(w in 주제 for w in ws)]
+    if len(걸린) != 1 or 걸린[0] == 지금:
+        return None
+    # 지금 절의 표지도 걸려 있으면 두 주장이 부딪는 것이다 — 안 옮긴다
+    if any(w in 주제 for w in 표지.get(지금) or []):
+        return None
+    return 걸린[0]
+
+
+def 표지적중(it: dict, R: dict | None = None) -> bool:
+    """**이 사실이 그 절이 묻는 것에 «정면으로» 답하나.**
+
+    ★ 판 ㊺ — 갈래(`placement`)와 등급만으로는 못 가르는 자리가 있다. 실측: 1절에서
+    「지역자율형바우처 지원 규모 20억원」(정부 사이트 → **확정**)이 「가정간편식 국내
+    판매액 6조 8천억」(농경연 PDF → **추정**)을 이겼다 — 둘 다 `OURS_SEGMENT` 라
+    갈래로 안 갈리고, 등급으로 세우면 **출처가 훌륭한 곁가지가 내용이 훌륭한 본론을 이긴다.**
+
+    표지가 그 둘을 가른다. 「판매액」은 걸리고 「지원 규모」는 안 걸린다.
+
+    ⚠ **버리는 데 쓰지 않는다.** 표지에 안 걸려도 실린다 — 뒤로 설 뿐이다.
+      표지는 어휘라 언제나 빠뜨리는 것이 있고, 그걸로 버리면 조용히 사라진다.
+    """
+    R = R if R is not None else _rules()
+    말 = (R.get("절_표지") or {}).get(절(it)) or []
+    주제 = f"{it.get('subject') or ''} {it.get('table_context') or ''}"
+    return any(w in 주제 for w in 말)
+
+
 def 절(it: dict) -> str:
     """**이 사실이 실릴 절.** 게재 판정 뒤의 재배정을 반영한다.
 
@@ -159,6 +227,31 @@ def 절(it: dict) -> str:
     if it.get("게재_제자리"):
         return it["section"]
     return "COMPETITOR" if it.get("게재") == "COMPETITOR_FIRM" else it["section"]
+
+
+def _첫화면(url: str) -> bool:
+    """포털·기업 사이트의 **첫 화면 / 검색 화면**인가.
+
+    ⚠ 도메인으로 막지 않는다 — `kosis.kr` 은 통계표 페이지가 재료의 핵심이다.
+      막는 것은 **경로**다: 뿌리(`/`)이거나 마지막 조각이 `index`·`main`·`home`·`default`.
+    """
+    from urllib.parse import urlparse                               # noqa: PLC0415
+    path = (urlparse(url or "").path or "/").rstrip("/")
+    if not path:
+        return True
+    last = path.split("/")[-1].lower().rsplit(".", 1)[0]
+    return last in ("index", "main", "home", "default")
+
+
+def _단위갈래(unit: str, num: str, 허용: list, R: dict) -> bool:
+    """단위가 `허용` 갈래(금액·비율…) 중 하나인가.
+
+    ⚠ **단위 칸만 보지 않는다.** 발췌가 `unit_raw` 를 비우고 `number_raw` 에 「1조 1,666억원」
+      처럼 단위를 통째로 넣는 일이 잦다 — 단위 칸만 보면 그 값이 통째로 떨어진다.
+    """
+    표 = R.get("_단위_갈래") or {}
+    hay = f"{unit or ''} {num or ''}"
+    return any(any(w in hay for w in (표.get(g) or [])) for g in 허용)
 
 
 def 분류(it: dict, V: dict, R: dict, url: str = "", 발행사: bool = None) -> tuple:
@@ -178,12 +271,44 @@ def 분류(it: dict, V: dict, R: dict, url: str = "", 발행사: bool = None) ->
     unit = str(it.get("unit_raw") or "")
     num = str(it.get("number_raw") or "").strip()
     q = str(it.get("quote") or "")
+    주어0 = str(it.get("subject") or "")
 
+    # ══════════════════════════════════════════════════════════
+    # ★ 판 ㊹ 3단계 — **「사실이 아니다」와 「우리 주제가 아니다」를 가른다.**
+    #
+    # 여기 아래 세 문(값 없음 · 숫자 아님 · 인용에 값 없음)만 `OFF_TOPIC` 으로 **버린다.**
+    # 그 셋은 «사실이 아니다» — 실을 것이 애초에 없다.
+    #
+    # **주제로 버리던 것은 전부 `밖` 으로 «싣는다».** 사유는 그대로 남기고 화면이 접는다.
+    # 왜 — 실측(판 ㊸ 유료 스모크): 폐기 450건 중 **333건이 주제 판정**이었고, 그 안에
+    # 「식료품 제조업 영업이익률」·「세계 즉석조리식품 1,465억 달러」처럼 **목표 보고서가
+    # 머리에 세운 값**들이 들어 있었다. **갈래 이름은 버릴 이유가 아니라 읽는 법이다.**
+    # ══════════════════════════════════════════════════════════
+    # ★ **규제 절의 사실은 «수»가 아니라 «지켜야 할 것»이다** (판 ㊹ 3단계).
+    #   실측(p41-merged): REGULATION 44건이 **전부** 「값이 없다」로 버려졌고, 그 정체는
+    #   「HACCP 인증」·「영양표시 의무화」였다 — 목표 보고서 7절이 바로 그 자리다.
+    #   ⚠ 아무 문장이나 살리면 판 ㊷ R5 가 막던 병(「세균수」가 값 자리에 앉아 「규제 조사
+    #     완료」로 읽히던 것)이 돌아온다. **인용에 요건 표지가 있을 때만** 살린다 —
+    #     이름표(「세균수」)와 요건(「세균수 1g당 100 이하」)을 가르는 문이다.
+    #   ⚠⚠ **남의 «인증 취득 연혁»은 우리가 지켜야 할 것이 아니다** (판 ㊹ 6단계 정정).
+    #     「획득·취득·보유·수상」이 걸리면 요건이 아니라 **그 회사의 이력**이다.
+    if (not num and it.get("section") == "REGULATION"
+            and _hit(q, R.get("요건_표지") or [])
+            and not _hit(f"{주어0} {q}", R.get("요건_반증") or [])):
+        return "OURS_SEGMENT", "수가 아니라 지켜야 할 요건", True
     if not num:
         return "OFF_TOPIC", "값이 없다", False
     # **값 자리에 숫자가 없으면 값이 아니다** (판 ㊷ R5). 실측: 규제 절에 실린 9건의
     # `number_raw` 가 「세균수·대장균·살모넬라…」였고 지켜야 할 기준치는 하나도 없었다.
     # 사업가는 그것을 「규제 조사 완료」로 읽는다. `생산능력 산출 방법 = "- -"` 도 같은 문이다.
+    #   ⚠ **규제 절은 값이 «인용 안»에 있다.** 실측(판 ㊹ 6단계): 「세균수·대장균·살모넬라·
+    #     냉장온도·온장온도」 11건이 전부 여기서 죽었는데, 인용에는 「1g당 100 이하」·
+    #     「0~10℃」 같은 **진짜 기준치**가 들어 있었다. 목표 보고서 7절이 그 표다.
+    #     `number_raw` 가 이름표인 것은 추출의 흠이지 «사실이 없다»는 뜻이 아니다.
+    if (not NUM.search(num) and it.get("section") == "REGULATION"
+            and NUM.search(q) and _hit(q, R.get("요건_표지") or [])
+            and not _hit(f"{주어0} {q}", R.get("요건_반증") or [])):
+        return "OURS_SEGMENT", f"기준치가 인용 안에 있다({num})", True
     if not NUM.search(num):
         return "OFF_TOPIC", f"값 자리에 숫자가 없다({num})", False
     # **값이 인용 안에 있어야 한다** (판 ㊲ 다섯째 겹). 인용 대조를 통과해도 그 인용이
@@ -192,13 +317,25 @@ def 분류(it: dict, V: dict, R: dict, url: str = "", 발행사: bool = None) ->
     if RS._norm(num.split("~")[0]) not in RS._norm(q):
         return "OFF_TOPIC", "값이 인용 안에 없다", False
     if unit in R["외화_단위"]:
-        return "OFF_TOPIC", f"국내 값이 아니다(단위 {unit})", False
+        return "밖", f"국내 값이 아니다(단위 {unit})", False
+
+    # ★ 판 ㊺ — **사이트 첫 화면·검색 화면의 수는 절의 답이 아니다.**
+    #   왜인지는 `rules/publish.v1.json` 의 `_첫화면_왜` 에 실측과 함께 적었다.
+    #   ⚠ **버리지 않고 «밖»으로 싣는다** — 값이 거짓인 게 아니라 그 절의 답이 아닐 뿐이다.
+    if _첫화면(url):
+        return "밖", "사이트 첫 화면·검색 화면의 수다", False
+
+    # ★ 판 ㊺ — **절마다 답의 «단위»가 있다.** `_절_단위_왜` 에 실측과 함께 적었다.
+    #   ⚠ **금지가 아니라 허용**이라, 목록에 없는 절은 한 줄도 안 바뀐다.
+    허용 = (R.get("절_단위_허용") or {}).get(it.get("section") or "")
+    if 허용 and not _단위갈래(unit, num, 허용, R):
+        return "밖", f"이 절이 묻는 단위가 아니다({unit or num})", False
 
     # **문서가 무엇인지가 그 안의 수가 무엇인지를 정한다.** 문장만으로는 못 가른다.
     출처 = R["출처_유형"]
     u = (url or "").lower()
     if any(x in u for x in 출처["플랫폼_파트너"]):
-        return "OFF_TOPIC", "입점업체용 문서의 수(업주 부담)", False
+        return "밖", "입점업체용 문서의 수(업주 부담)", False
     if any(x in u for x in 출처["공시"]):
         상 = _hit(t, V["상호"])
         꼬리 = f"공시({'·'.join(상) or '기업'})"
@@ -228,7 +365,7 @@ def 분류(it: dict, V: dict, R: dict, url: str = "", 발행사: bool = None) ->
         # ⚠ 항목 층에서는 못 가른다. **이름은 문서에 있지 항목에 없다**(실측: 상호 히트 0이
         #    77건 중 72건). 그래서 발행사는 문서 본문에서 찾아 넘겨받는다.
         if 발행사 is False:
-            return "OFF_TOPIC", f"경쟁사 아닌 회사의 실적{'(' + '·'.join(상) + ')' if 상 else ''}", False
+            return "밖", f"경쟁사 아닌 회사의 실적{'(' + '·'.join(상) + ')' if 상 else ''}", False
         return "COMPETITOR_FIRM", f"공시 문서의 수({'·'.join(상) or '기업'})", False
         # ⚠ 공시 항목은 **여기서 반드시 끝난다** — 아래 `OURS_*` 로 못 내려간다(R4).
         #   내려가게 두면 실측대로 샌다: 「2025년 당기 매출액(상미식품) 1,250억」이
@@ -237,13 +374,13 @@ def 분류(it: dict, V: dict, R: dict, url: str = "", 발행사: bool = None) ->
     타지역 = _hit(t, R["타지역_표지"])
     if 타지역:
         # 참말이지만 우리 시장이 아니다. **사유를 남긴다** — 참고 칸이 생기면 되살릴 수 있게.
-        return "OFF_TOPIC", f"우리 지역이 아니다({'·'.join(타지역)})", False
+        return "밖", f"우리 지역이 아니다({'·'.join(타지역)})", False
 
     내부 = _hit(t, 역할["산업_내부_경제"])
     if 내부:
         # **SUBSTITUTE 의 소속 시험.** 대체재 산업이 자기들끼리 주고받는 돈은
         # 우리 사업의 어떤 결정도 바꾸지 않는다 — 컨셉 낱말이 겹쳐도 버린다.
-        return "OFF_TOPIC", f"대체재 산업의 내부 경제({'·'.join(내부)})", False
+        return "밖", f"대체재 산업의 내부 경제({'·'.join(내부)})", False
 
     상호 = _hit(t, V["상호"])
     실적 = _hit(t, 역할["기업_실적"])
@@ -258,14 +395,24 @@ def 분류(it: dict, V: dict, R: dict, url: str = "", 발행사: bool = None) ->
 
     if not (세그 or 대상 or 상위 or 대체):
         why = "회사·채널 이름만 겹친다" if 상호 else "컨셉이 말하지 않은 대상"
-        return "OFF_TOPIC", why, False
+        return "밖", why, False
     # **기업 실적 어휘가 주어에 있으면 「우리 시장」이 될 수 없다** (판 ㊷ 보완).
     # 「영업이익·매출·점유율」은 정의상 **어떤 회사의** 수이지 시장의 크기가 아니다.
     # 실측: 공시 보장이 `kind.krx`·`dart.fss` 두 URL 에만 걸려 있어 **경쟁사 자사 IR
     # 페이지가 통째로 우회**했다 — 「영업이익 620억원 | 우리 시장 | pulmuone.co.kr」·
     # 「당기 매출비중 6.1% | 우리 시장 | otoki.com」. 감시선(공시 출처의 OURS_* 0건)은
     # 통과했지만 보장하려던 명제가 이 길로 뚫렸다.
-    if _hit(str(it.get("subject") or ""), 역할["기업_실적"]):
+    # ⚠⚠ **산업 전체의 실적은 «한 회사의 실적»이 아니다** (판 ㊹ 4단계).
+    #   실측: 목표 보고서 6절 머릿값 **「식품 제조업 영업이익률 4% 미만」**이
+    #   「회사의 실적(발행사)」으로 판정돼 「어느 회사 한 곳」 딱지를 달았다 —
+    #   **주어에 상위 범주 표지(「식품 제조업」)가 박혀 있는데도** 「영업이익률」이
+    #   기업 실적 어휘라 그 문이 먼저 열렸다. 사업가는 그 수의 정체를 반대로 읽는다.
+    #   → **주어에 상위 범주 표지가 있으면 업계 전체다.** 그 표지가 있다는 것 자체가
+    #     「한 회사가 아니다」라는 신호이고, 이 순서 하나가 6절의 머릿값을 정한다.
+    #   ⚠ 공백을 접고 본다 — 원문 표기가 「식품 제조업」과 「식품제조업」으로 갈리고,
+    #     그 한 칸 때문에 상위 범주 표지가 안 걸려 이 문이 열렸다(실측).
+    주어 = str(it.get("subject") or "")
+    if _hit(주어, 역할["기업_실적"]) and not _hit(주어.replace(" ", ""), 역할["상위_범주"]):
         상 = _hit(t, V["상호"])
         return "COMPETITOR_FIRM", f"회사의 실적({'·'.join(상) or '발행사'})", False
     # **상위 범주 표지가 있으면 세그먼트 낱말이 겹쳐도 상한이다** (판 ㊷ 보완).
@@ -286,8 +433,8 @@ def 분류(it: dict, V: dict, R: dict, url: str = "", 발행사: bool = None) ->
         # 수요 절을 덮었다. 주제 어휘 없이 통과하는 것은 **모집단 규모**뿐이다.
         if unit in R["모집단_단위"]:
             return "OURS_SEGMENT", f"우리 고객의 모집단({'·'.join(대상)})", False
-        return "OFF_TOPIC", f"우리 고객이지만 우리 주제가 아니다({'·'.join(대상)})", False
-    return "OFF_TOPIC", f"대상은 맞으나 지불성이 없다({'·'.join(대체)})", False
+        return "밖", f"우리 고객이지만 우리 주제가 아니다({'·'.join(대상)})", False
+    return "밖", f"대상은 맞으나 지불성이 없다({'·'.join(대체)})", False
 
 
 _PCT = re.compile(r"([0-9]+(?:\.[0-9]+)?)\s*%")
@@ -415,6 +562,20 @@ def build(d: dict, concept: dict, *, refetch: bool = False, cache_dir: str = "")
         for it in r["items"]:
             url[id(it)] = r.get("url") or ""
             tid_of[id(it)] = r["trace_id"]
+    # ── 절 재배정 — **분류보다 «먼저»** 한다 ──────────────────
+    # 절이 바뀌면 갈래 판정도 달라진다(규제 절만 요건 예외를 받는다). 뒤에 하면
+    # 「PRICE 로 판정받고 UNIT_ECONOMICS 에 앉는」 어긋남이 생긴다.
+    옮김 = Counter()
+    for it in ok:
+        새 = 재배정(it, R)
+        if 새:
+            옮김[f"{it.get('section')} → {새}"] += 1
+            it["절_원래"], it["section"] = it.get("section"), 새
+    if 옮김:
+        print("\n절 재배정 — **추출이 잘못 고른 자리를 표지로 바로잡았다**")
+        for k, n in 옮김.most_common():
+            print(f"  {n:>4}  {k}")
+
     for it in ok:
         발 = 발행사.get(tid_of.get(id(it)))
         c, why, 제자리 = 분류(it, V, R, url.get(id(it), ""),
@@ -453,7 +614,7 @@ def build(d: dict, concept: dict, *, refetch: bool = False, cache_dir: str = "")
             continue                       # 아무 행도 제자리를 못 얻었거나, 절이 갈렸다
         절코드 = 자리.pop()
         for x in 행:
-            if x.get("게재_제자리") or x["게재"] == "OFF_TOPIC":
+            if x.get("게재_제자리") or x["게재"] in ("OFF_TOPIC", "밖"):
                 continue
             x["section"], x["게재_제자리"] = 절코드, True
             x["게재_사유"] += f" — 같은 구성비 표(「{tc}」 {yr})의 나머지 행"
@@ -469,13 +630,15 @@ def build(d: dict, concept: dict, *, refetch: bool = False, cache_dir: str = "")
     # ⚠ 절 안에서만 접는다 — 다른 절에 같은 값이 있는 것은 중복이 아니라 **다른 뜻**이다.
     접힘, 봄 = 0, set()
     for it in ok:
-        if it["게재"] == "OFF_TOPIC":
+        if it["게재"] in ("OFF_TOPIC", "밖"):
             continue
         sec = (it["section"] if it.get("게재_제자리")
                else "COMPETITOR" if it["게재"] == "COMPETITOR_FIRM" else it["section"])
         k = (sec, _수(it), str(it.get("unit_raw") or "").strip(), str(it.get("year") or ""))
         if k in 봄 and k[1] is not None:
-            it["게재"], it["게재_사유"] = "OFF_TOPIC", "같은 값이 이 절에 이미 실렸다"
+            # **버리지 않고 접는다** (판 ㊹ 3단계). 같은 값이 두 번 나온 것은
+            # 「사실이 아니다」가 아니라 **교차 근거**다 — 서랍에 넣고 사유를 남긴다.
+            it["게재"], it["게재_사유"] = "밖", "같은 값이 이 절에 이미 실렸다"
             접힘 += 1
             continue
         봄.add(k)
@@ -493,17 +656,24 @@ def build(d: dict, concept: dict, *, refetch: bool = False, cache_dir: str = "")
     print(f"\n게재 판정 ({len(ok)}건)")
     for c, n in 갈래.most_common():
         print(f"  {c:<16}{n:>5}  ({100 * n / len(ok):.1f}%)")
-    실림 = len(ok) - 갈래["OFF_TOPIC"]
-    print(f"  ── 실리는 것 {실림}건 ({100 * 실림 / len(ok):.1f}%)")
+    실림 = len(ok) - 갈래["OFF_TOPIC"] - 갈래["밖"]
+    print(f"  ── 절 머리에 서는 것 {실림}건 ({100 * 실림 / len(ok):.1f}%)")
+    print(f"  ── 서랍에 싣는 것(«밖») {갈래['밖']}건 — **버린 것이 아니다**")
+    print(f"  ── 버리는 것(사실이 아니다) {갈래['OFF_TOPIC']}건")
 
     print("\n절별 (재배정 반영)")
-    order = ["OURS_SEGMENT", "OURS_UMBRELLA", "SUBSTITUTE", "COMPETITOR_FIRM", "OFF_TOPIC"]
+    order = ["OURS_SEGMENT", "OURS_UMBRELLA", "SUBSTITUTE", "COMPETITOR_FIRM", "밖", "OFF_TOPIC"]
     print(f"  {'절':<16}" + "".join(f"{c[:9]:>11}" for c in order))
     for sec in sorted(절, key=lambda s: -sum(v for k, v in 절[s].items() if k != "OFF_TOPIC")):
         print(f"  {sec:<16}" + "".join(f"{절[sec][c]:>11}" for c in order))
 
+    바깥 = Counter(it["게재_사유"].split("(")[0] for it in ok if it["게재"] == "밖")
+    print("\n서랍에 넣는 사유 — **싣는다. 접을 뿐이다**")
+    for w, n in 바깥.most_common():
+        print(f"  {n:>4}  {w}")
+
     떨어진 = Counter(it["게재_사유"].split("(")[0] for it in ok if it["게재"] == "OFF_TOPIC")
-    print("\n안 싣는 사유")
+    print("\n버리는 사유 — **사실이 아니다**")
     for w, n in 떨어진.most_common():
         print(f"  {n:>4}  {w}")
 

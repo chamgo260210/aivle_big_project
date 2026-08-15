@@ -30,12 +30,41 @@ n=40 실행에서 **모든 주제가 `40명 중 40명`** 으로 나왔다. 대�
 
 언급 수는 코드가 이 배정표를 **뒤집어서** 만든다. LLM 은 여전히 숫자를 쓰지 않는다.
 
-배정은 40명씩 쪼개도 안전하다 — 코드북이 고정이라 조각마다 다른 이름표가 생기지 않는다.
-옛 1패스가 쪼개지 못했던 이유(주제 묶기는 전수를 한 번에 봐야 한다)는 1패스에만 남는다.
+배정을 쪼개도 이름표는 안 갈린다 — 코드북이 고정이기 때문이다. 옛 1패스가 쪼개지 못했던
+이유(주제 묶기는 전수를 한 번에 봐야 한다)는 1패스에만 남는다.
+
+---
+
+## 그런데 2패스로도 40/40 이 다시 났다 (2026-08-15, 유료 실측)
+
+위 개편 뒤 **유료로 재 본 적이 없었다.** 원장(`20260815T053154Z`, n=40)을 처음 남기고
+**응답을 그대로 둔 채 코딩만 세 번** 돌리자 결과가 이렇게 갈렸다.
+
+| 판 | 나온 것 |
+|---|---|
+| 1 | CONCERN·DIFFERENTIATION·USAGE_SCENE·BARRIER·SUGGESTION **다섯 축이 0명** |
+| 2 | BARRIER 31 · CONCERN 25 · USAGE_SCENE 5 |
+| 3 | LIKE **40/40** · USAGE_SCENE **40/40** · SUGGESTION 39/40 |
+
+응답 원문은 셋 다 같았고 **완전중복 0건 · 40명 전원이 공유하는 어절 0개**였다.
+즉 **갈리는 것은 응답이 아니라 코딩이다.** 「전원 일치」는 그 흔들림의 한쪽 끝이었고,
+반대쪽 끝은 「아무도 말하지 않았다」였다.
+
+원인 둘을 찾아 고쳤다.
+
+- **D. 코드북이 축을 통째로 빼먹었다.** 빈 축은 배정이 무엇을 골라도 `verify` 가 전부
+  버린다(코드북에 없는 이름표라서) — 한 판에서 **208개**가 그렇게 사라졌다.
+  → 규칙 3(여섯 축 전부) · 빠지면 **1회 재시도**(`_missing_axes`).
+- **E. 한 호출에 40명을 넣으면 배정이 무너진다.** 앞줄을 베끼거나(3판) 통째로 포기한다(1판).
+  → `ASSIGN_BATCH` 40 → **8**.
+
+같은 원장으로 넷을 다시 돌린 결과: **0명 축 0건 · 40/40 0건**, 축마다 이름표 2~6개.
+그리고 버려진 이름표를 이제 **센다** — 조용히 사라지던 것이 로그에 남는다.
 """
 
 import asyncio
 import json
+import logging
 from dataclasses import dataclass
 from typing import Literal
 
@@ -44,8 +73,28 @@ from pydantic import Field, ValidationError
 from app.interview.models import AXES, COMPREHENSION, DIFFERENTIATION_VERDICTS, StrictModel
 from app.providers import ProviderFailure, execute_structured_prompt
 
+logger = logging.getLogger(__name__)
+
 CODEBOOK_SCHEMA = "market_interview_codebook_v1"
 ASSIGNMENT_SCHEMA = "market_interview_assignment_v1"
+
+#: 이름표 대조에서 무시할 것 — 공백의 개수, 앞뒤 따옴표·마침표·가운뎃점.
+_TRIM = " \t\"'`“”‘’.·,、。"
+
+
+def _match_key(label: str) -> str:
+    """배정이 낸 이름표를 코드북과 맞춰 보기 위한 열쇠.
+
+    **왜 글자 그대로 대조하지 않나.** 예전에는 `label in known_labels` 였고, 배정이 마침표
+    하나만 더 붙여도 그 이름표가 **소리 없이** 버려졌다. 한 축의 이름표가 다 그렇게 밀리면
+    **그 축이 통째로 0명**이 되어 화면에는 「아무도 그 말을 하지 않았다」로 나왔다.
+    2026-08-15 실측에서 그 모양이 재현됐다 — 다섯 축이 한꺼번에 0이었다.
+
+    ⚠ **뜻이 비슷한 것까지 붙여 주지는 않는다.** 여기서 지우는 것은 공백과 문장부호뿐이다.
+    그 이상을 하면 서로 다른 주제가 한 이름표로 합쳐지고, 그것이야말로 이 조사가 막으려는
+    「뭉개기」다.
+    """
+    return " ".join(label.strip(_TRIM).split()).strip(_TRIM)
 
 #: 축마다 만들 이름표 수의 상한. 너무 잘게 쪼개면 「1명이 말한 주제」만 늘어선다.
 LABELS_PER_AXIS_MAX = 6
@@ -55,7 +104,18 @@ MISREAD_MAX = 8
 #: 코딩 프롬프트에 싣는 답 하나의 길이 상한. 인용문은 원문에서 다시 꺼내므로 여기서만 자른다.
 FIELD_MAX_CHARS = 300
 #: 배정 1회에 넣는 응답자 수. 출력도 n 에 비례하므로 한 호출이 길어지지 않게 자른다.
-ASSIGN_BATCH = 40
+#:
+#: ⚠ **40 이었다. 그 크기에서 배정이 재현되지 않았다.** 같은 응답 40명분을 그대로 두고
+#: 배정만 세 번 돌린 실측(2026-08-15, 원장 `20260815T053154Z`):
+#:
+#:   1판 — CONCERN·DIFFERENTIATION·USAGE_SCENE·BARRIER·SUGGESTION **다섯 축이 통째로 0명**
+#:   2판 — BARRIER 31 · CONCERN 25 · USAGE_SCENE 5
+#:   3판 — LIKE 40/40 · USAGE_SCENE 40/40 · SUGGESTION 39/40  ← 「전원 일치」가 재현됐다
+#:
+#: 응답 원문은 셋 다 같았고 **완전중복 0건 · 40명 전원이 공유하는 어절 0개**였다. 즉 갈리는
+#: 것은 응답이 아니라 배정이다. 한 호출에 40명을 넣으면 모델이 앞줄을 베끼거나(3판) 통째로
+#: 포기한다(1판). 「40명이 다 같은 말을 한다」는 그 흔들림의 한쪽 끝이었다.
+ASSIGN_BATCH = 8
 #: 한 사람이 한 축에서 고를 수 있는 이름표 수. 여기서도 덤프를 막는다.
 LABELS_PER_RESPONDENT_MAX = 3
 
@@ -83,10 +143,13 @@ CODEBOOK_PROMPT = """너는 정성 조사의 코더다. 응답자들이 상품 �
 2. 축(axis)을 지킨다 — like 에서 나온 이야기는 LIKE, concern 은 CONCERN,
    differentiation 은 DIFFERENTIATION, usageScene 은 USAGE_SCENE,
    barrier 는 BARRIER, suggestion 은 SUGGESTION 으로만 묶는다.
-3. **한 축에 이름표를 하나만 만들지 마라.** 답이 갈리는 결을 찾아 나눈다.
+3. **여섯 축 전부에 이름표를 만든다.** LIKE·CONCERN·DIFFERENTIATION·USAGE_SCENE·BARRIER·
+   SUGGESTION 중 하나라도 비우면 안 된다. 비운 축은 「아무도 그런 말을 하지 않았다」로
+   화면에 나가는데, 응답자들은 그 칸에도 답을 썼다. 어떤 축이든 답이 있으면 이름표가 있다.
+4. **한 축에 이름표를 하나만 만들지 마라.** 답이 갈리는 결을 찾아 나눈다.
    정말로 전원이 똑같은 말만 했다면 하나여도 되지만, 그것은 드문 일이다.
-4. 같은 축 안에서 이름표가 서로 겹치지 않게 한다.
-5. 축마다 최대 6개까지다. 많이 나온 이야기부터 놓는다.
+5. 같은 축 안에서 이름표가 서로 겹치지 않게 한다.
+6. 축마다 최대 6개까지다. 많이 나온 이야기부터 놓는다.
 
 alternatives — relevance 답에서 «지금은 이렇게 해결한다»고 말한 것의 이름표다.
 아무것도 안 하고 있다는 답(«그냥 참는다», «해본 적 없다»)도 하나의 이름표로 만든다.
@@ -117,6 +180,18 @@ differentiationVerdict — differentiation 답을 읽고 셋 중 하나다.
 
 barrierResolved — barrier 답에서 «그 걸림돌이 없어지면 사겠다»는 뜻을 **직접 말한** 경우만
 true 다. **추측하지 마라.** 말하지 않았으면 false 다.
+
+  조건을 달아 사겠다고 한 것은 **전부 true** 다. 이런 모양이면 true 다:
+  · «가격만 좀 더 싸면 살 것 같아요»
+  · «~하다면 고려해 볼 만해요» / «~면 사겠어요»
+  · «지금은 필요 없지만, 나중에 ~하면 살 것 같아요»
+  · «~만 해결되면 괜찮을 것 같은데»
+  반대로 이런 모양이면 false 다:
+  · «비싸서 안 살 거예요» (조건 없이 거절)
+  · «저한테는 필요 없는 물건이에요» (조건 없이 무관)
+  · «잘 모르겠어요»
+  ⚠ 앞의 문장이 부정적이어도 **뒤에 조건이 붙어 있으면 true** 다. 「안 살 것 같지만
+  ~라면 사겠다」는 true 다 — 이 조사가 가장 알고 싶어 하는 것이 그 «~라면»이다.
 
 alternativeLabel — 그 사람의 **주된 대안 하나**다. 코드북의 alternatives 중 하나를 그대로
 쓰고, 해당하는 것이 없으면 빈 문자열로 둔다. **여러 개를 쓸 수 없다.**"""
@@ -218,9 +293,19 @@ async def _codebook(board_text: str, answers: dict[str, dict], timeout: float) -
         response_schema=Codebook.model_json_schema(), schema_name=CODEBOOK_SCHEMA,
         task_type="MARKET_INTERVIEW", timeout_seconds_override=timeout)
     try:
-        return Codebook.model_validate(raw)
+        book = Codebook.model_validate(raw)
     except ValidationError as failure:
         raise ProviderFailure("RESULT_SCHEMA_INVALID", "AI_RESULT_INVALID", 502, False) from failure
+    return book
+
+
+def _missing_axes(book: Codebook) -> list[str]:
+    """이름표가 **하나도 없는** 축. 비어 있으면 그 축은 화면에서 통째로 사라진다.
+
+    배정은 코드북에 없는 이름표를 쓸 수 없고(`verify` 가 버린다), 그래서 빈 축의 배정은
+    한 건도 살아남지 못한다. 원인이 배정이 아니라 **여기**라는 것을 이름으로 남긴다.
+    """
+    return [axis for axis in AXES if not any(t.axis == axis for t in book.themes)]
 
 
 async def _assign(board_text: str, codebook: Codebook, batch: list[str],
@@ -243,13 +328,21 @@ def verify(codebook: Codebook, rows: list[Assignment],
     한 축에서 3개를 넘는 이름표 · 코드북에 없는 대안.
     """
     known_labels = {axis: [] for axis in AXES}
+    # 이름표 → 코드북 정본. **글자 그대로 일치를 요구하지 않는다** — 이유는 `_match_key` 참조.
+    label_index: dict[str, dict[str, str]] = {axis: {} for axis in AXES}
     for theme in codebook.themes:
-        if theme.label.strip() and theme.label.strip() not in known_labels[theme.axis]:
-            known_labels[theme.axis].append(theme.label.strip())
+        clean = theme.label.strip()
+        if clean and clean not in known_labels[theme.axis]:
+            known_labels[theme.axis].append(clean)
+            label_index[theme.axis].setdefault(_match_key(clean), clean)
     known_alternatives = []
+    alternative_index: dict[str, str] = {}
     for alternative in codebook.alternatives:
-        if alternative.label.strip() and alternative.label.strip() not in known_alternatives:
-            known_alternatives.append(alternative.label.strip())
+        clean = alternative.label.strip()
+        if clean and clean not in known_alternatives:
+            known_alternatives.append(clean)
+            alternative_index.setdefault(_match_key(clean), clean)
+    dropped = 0                       # 코드북에 못 붙은 이름표. **세서 드러낸다.**
 
     members: dict[tuple[str, str], list[str]] = {}
     alt_members: dict[str, list[str]] = {label: [] for label in known_alternatives}
@@ -271,18 +364,22 @@ def verify(codebook: Codebook, rows: list[Assignment],
         for axis, slot in AXIS_SLOT.items():
             picked: list[str] = []
             for label in getattr(row, slot):
-                clean = label.strip()
-                if clean in known_labels[axis] and clean not in picked:
-                    picked.append(clean)
+                canonical = label_index[axis].get(_match_key(label))
+                if canonical is None:
+                    if label.strip():
+                        dropped += 1
+                    continue
+                if canonical not in picked:
+                    picked.append(canonical)
                 if len(picked) >= LABELS_PER_RESPONDENT_MAX:
                     break
             chosen[axis] = picked
             for label in picked:
                 members.setdefault((axis, label), []).append(rid)
 
-        alternative = row.alternativeLabel.strip()
-        if alternative not in known_alternatives:
-            alternative = ""                           # 지어낸 대안은 「해당 없음」으로 접는다
+        alternative = alternative_index.get(_match_key(row.alternativeLabel), "")
+        if not alternative and row.alternativeLabel.strip():
+            dropped += 1                               # 지어낸 대안은 「해당 없음」으로 접는다
         if alternative:
             alt_members[alternative].append(rid)
 
@@ -298,6 +395,12 @@ def verify(codebook: Codebook, rows: list[Assignment],
               if members.get((axis, label))]
     alternatives = [{"label": label, "respondentIds": sorted(alt_members[label], key=_order)}
                     for label in known_alternatives if alt_members[label]]
+
+    # 버린 것은 반드시 드러낸다. 이 수가 크면 배정이 코드북 밖으로 새고 있다는 뜻이고,
+    # 그때 화면의 「n명 중 x명」은 실제보다 **작다**. 조용히 지나가면 그 사실을 알 길이 없다.
+    if dropped:
+        logger.warning("market interview coding dropped %d label pick(s) not in the codebook",
+                       dropped)
 
     return CodedResponses(
         themes=themes, alternatives=alternatives,
@@ -316,10 +419,22 @@ async def code_responses(board_text: str, answers: dict[str, dict],
                for start in range(0, len(ordered), ASSIGN_BATCH)]
 
     # 코드북에 예산의 절반, 배정에 나머지. 배정은 동시에 돌리므로 각자 그 나머지를 다 쓴다.
-    codebook = await _codebook(board_text, answers, timeout_seconds / 2)
+    #
+    # ⚠ **축을 빼먹은 코드북이면 한 번 다시 묻는다.** 빈 축은 배정이 무엇을 골라도 전부
+    #   버려지게 만들고(코드북에 없는 이름표라서), 화면에는 「아무도 그런 말을 하지 않았다」가
+    #   뜬다. 2026-08-15 실측에서 다섯 축이 한꺼번에 빈 코드북이 **두 번 중 한 번** 나왔다 —
+    #   그 판의 배정 208개가 통째로 버려졌다. 재시도 1회는 그 절반을 걷어낸다.
+    #   두 번째도 비면 그대로 간다. 여기서 죽이면 「답이 정말 없는 축」까지 조사를 잃는다.
+    codebook = await _codebook(board_text, answers, timeout_seconds / 4)
+    calls = 1
+    if _missing_axes(codebook):
+        logger.warning("market interview codebook retried — empty axes: %s",
+                       ",".join(_missing_axes(codebook)))
+        codebook = await _codebook(board_text, answers, timeout_seconds / 4)
+        calls += 1
     results = await asyncio.gather(*(
         _assign(board_text, codebook, batch, answers, timeout_seconds / 2) for batch in batches))
 
     rows = [row for batch in results for row in batch]
     coded = verify(codebook, rows, answers)
-    return CodedResponses(**{**coded.__dict__, "llmCalls": 1 + len(batches)})
+    return CodedResponses(**{**coded.__dict__, "llmCalls": calls + len(batches)})

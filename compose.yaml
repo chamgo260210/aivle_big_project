@@ -111,6 +111,10 @@ services:
       DART_API_KEY: ${DART_API_KEY:-}
       TAVILY_API_KEY: ${TAVILY_API_KEY:-}
       BM_MODEL: ${BM_MODEL:-${AI_MODEL}}
+      # BM 판정의 «생각의 양». 추론 모델(gpt-5.x 계열)에서만 뜻이 있고, 주는 순간
+      # **온도를 안 보낸다**(둘을 같이 보내면 400 이다 — `bm/analyze.py::_knobs`).
+      # ⚠ 기본을 비워 둔다: `gpt-4o-mini` 는 이 인자를 아예 안 받아 켜면 죽는다.
+      BM_REASONING_EFFORT: ${BM_REASONING_EFFORT:-}
       # 트윈 카드 뱅크도 이미지 밖이다 — 이유는 크기가 아니라 **재배포 금지**다
       # (KISDI 한국미디어패널조사 파생 마이크로데이터). 가림(pid 해시)만으로 부족하다:
       # 카드 본문에 만나이·성별·지역·가구형태·소득대가 문장으로 들어 있다.

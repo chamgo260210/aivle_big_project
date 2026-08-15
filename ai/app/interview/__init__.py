@@ -34,7 +34,8 @@ from app.interview.models import (AXES, AXIS_SOURCE, COMPREHENSION,
                                   DIFFERENTIATION_VERDICTS, MarketInterviewInput)
 from app.interview.runner import run_interviews
 from app.interview.saturation import homogeneity
-from app.interview.targeting import draw_split, resolve_criteria
+from app.interview.targeting import (condition_matches, draw_split, has_conditions,
+                                     resolve_criteria)
 from app.providers import ProviderFailure
 from app.twin.bank import load
 from app.twin.profile import is_empty, parse_profile
@@ -209,6 +210,29 @@ async def execute_market_interview(payload: dict, budget_seconds: float = 900.0)
                                       CRITERIA_BUDGET_SECONDS)
     drawn, target_pids, sampling, targeting = draw_split(
         cards_all, frame, request.sampleSize, criteria)
+
+    # ── 조건을 걸었는데 맞는 사람이 0명이면 **여기서 멈춘다. 아직 한 푼도 안 썼다.**
+    #
+    # 표집은 응답 수집보다 앞에 있으므로 「타겟 0명」은 돈을 쓰기 전에 이미 안다.
+    # 2026-08-15 실측 판은 그것을 알고도 40회를 태웠고, 화면 경고는 0건이었다
+    # (`shortfall` 이 비타겟으로 채운 뒤엔 언제나 0이라서). 사용자는 40회를 다 쓴 뒤에야
+    # 헛돈 것을 알았다.
+    #
+    # `MIN_USABLE` 이 세운 원리 그대로다 — 「8명 남은 80명 조사는 80명 조사가 아니다」면
+    # 「타겟 0명인 타겟 조사도 타겟 조사가 아니다」.
+    #
+    # ⚠ **조건이 하나도 없는 조사(「누구나」)는 막지 않는다.** 그때는 전원이 타겟이고,
+    #   0명이라고 말하는 것은 경고가 아니라 소음이다.
+    if has_conditions(criteria) and targeting["targetDrawn"] == 0:
+        raise ProviderFailure(
+            "EXECUTION_FAILED", "MARKET_INTERVIEW_NO_TARGET_SAMPLE", 422, False,
+            safe_diagnostics={
+                "criteriaText": targeting["criteriaText"],
+                # 어느 조건이 0명이었는지를 사용자가 **직접 짚을 수 있게** 싣는다.
+                # 이 진단이 없으면 화면에는 「AI 서비스 이상」만 남는다.
+                "conditionMatches": condition_matches(cards_all, criteria),
+                "panelSize": len(cards_all)})
+
     cards = {row["pid_hash"]: cards_all[row["pid_hash"]] for row in drawn}
     # 대표 카드를 고를 때 층이 겹치지 않게 쓰는 성×연령 셀. 표집에 쓴 것과 같은 축이다.
     cells_by_pid = {row["pid_hash"]: f"{row['gender']}{row['band']}" for row in drawn}

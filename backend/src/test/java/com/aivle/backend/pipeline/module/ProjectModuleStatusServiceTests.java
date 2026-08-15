@@ -211,11 +211,12 @@ class ProjectModuleStatusServiceTests {
     }
 
     @Test
-    void panelSurveyGateAsksOnlyForFinanceOnceTheConceptIsFinalized() {
+    void panelSurveyGateAsksOnlyForFinanceOnceTheRefinedConceptIsConfirmed() {
         when(projects.findByIdAndOwnerIdAndDeletedAtIsNull(41L, 7L)).thenReturn(Optional.of(mock(Project.class)));
         ConceptSelection selection = mock(ConceptSelection.class);
         MarketAnalysisSeedSnapshot seed = mock(MarketAnalysisSeedSnapshot.class);
         when(selection.getId()).thenReturn(13L); when(seed.getId()).thenReturn("market-seed-1");
+        when(seed.isRefinementApplied()).thenReturn(true);
         when(selections.findByProjectIdAndCurrentSelectionTrueAndDeletedAtIsNull(41L)).thenReturn(Optional.of(selection));
         when(snapshots.findBySelectionIdAndProjectIdAndDeletedAtIsNull(13L, 41L)).thenReturn(Optional.of(seed));
 
@@ -223,6 +224,33 @@ class ProjectModuleStatusServiceTests {
 
         assertThat(twin.status()).isEqualTo(PipelineModuleStatus.NOT_READY);
         assertThat(twin.requiredInputs()).containsExactly("financialSnapshotId");
+    }
+
+    /**
+     * <b>다듬기 확정을 안 지난 시드로는 인터뷰가 열리지 않는다.</b> (2026-08-15)
+     *
+     * <p>시드는 두 번 발급된다 — 사업안을 고른 직후 한 번, 다듬기 끝에 「이 컨셉으로 확정하기」로
+     * 한 번. 앞의 것으로 열어 주면 사용자는 <b>다듬기 전 사업안</b>을 소비자에게 물어보게 되고,
+     * 인터뷰는 출시 전 마지막 확인이라 그 답은 출시 판단에 쓸 수 없다.
+     *
+     * <p>빠진 것의 이름이 「시드가 없다」와 갈라져야 한다 — 갈 곳이 사업안 화면과 사업 검증
+     * 화면으로 서로 다르다.
+     */
+    @Test
+    void panelSurveyGateBlocksASeedThatNeverPassedRefinement() {
+        when(projects.findByIdAndOwnerIdAndDeletedAtIsNull(41L, 7L)).thenReturn(Optional.of(mock(Project.class)));
+        ConceptSelection selection = mock(ConceptSelection.class);
+        MarketAnalysisSeedSnapshot seed = mock(MarketAnalysisSeedSnapshot.class);
+        when(selection.getId()).thenReturn(13L); when(seed.getId()).thenReturn("market-seed-1");
+        when(seed.isRefinementApplied()).thenReturn(false);
+        when(selections.findByProjectIdAndCurrentSelectionTrueAndDeletedAtIsNull(41L)).thenReturn(Optional.of(selection));
+        when(snapshots.findBySelectionIdAndProjectIdAndDeletedAtIsNull(13L, 41L)).thenReturn(Optional.of(seed));
+
+        var twin = panelSurvey();
+
+        assertThat(twin.status()).isEqualTo(PipelineModuleStatus.NOT_READY);
+        assertThat(twin.requiredInputs())
+            .containsExactly("refinedConceptConfirmation", "financialSnapshotId");
     }
 
     /**

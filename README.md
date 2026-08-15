@@ -45,9 +45,9 @@ AI 서버가 직접 DB 상태를 변경하지 않습니다.
 
 ## Documentation
 
-- 구현 계약: `docs/rebuild/`
+- 구현 계약: `docs/legacy/rebuild/`
 - API 요약: `docs/api/openapi.yaml`
-- 최종 구조: `docs/rebuild/FINAL_REPOSITORY_STRUCTURE.md`
-- Entity/Table 목록: `docs/rebuild/FINAL_ENTITY_TABLE_INVENTORY.md`
-- DB baseline: `docs/rebuild/FINAL_DATABASE_BASELINE.md`
-- 현재 실행 단위 검증: `docs/rebuild/verification/PRODUCT-CUTOVER-CLEANUP_USER_VERIFICATION.md`
+- 최종 구조: `docs/legacy/rebuild/FINAL_REPOSITORY_STRUCTURE.md`
+- Entity/Table 목록: `docs/legacy/rebuild/FINAL_ENTITY_TABLE_INVENTORY.md`
+- DB baseline: `docs/legacy/rebuild/FINAL_DATABASE_BASELINE.md`
+- 현재 실행 단위 검증: `docs/legacy/rebuild/verification/PRODUCT-CUTOVER-CLEANUP_USER_VERIFICATION.md`

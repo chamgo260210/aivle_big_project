@@ -33,6 +33,17 @@ public class TaskRunService {
         this.runs = runs; this.attempts = attempts; this.results = results; this.projects = projects; this.clock = clock.orElse(Clock.systemUTC()); this.mapper = mapper; this.canonicalInputHasher = canonicalInputHasher; this.servicePolicy = servicePolicy;
     }
 
+    /**
+     * 멱등 scope 문자열. <b>여기가 유일한 조립처다.</b>
+     *
+     * <p>이 문자열을 다른 곳에서 손으로 이어 붙이면 조회하는 쪽과 저장하는 쪽이 조용히
+     * 갈린다 — 그러면 멱등이 안 걸려 같은 일이 두 번 돌거나, 걸려야 할 재생이 안 걸린다.
+     * 실패한 실행을 되짚는 쪽({@code ConceptRefinementService}) 도 이것을 부른다.
+     */
+    public static String idempotencyScope(TaskType type, String subjectType, String subjectId) {
+        return type.name() + ":" + subjectType + ":" + subjectId;
+    }
+
     @Transactional
     public TaskRun create(Long ownerId, Long projectId, TaskType type, String subjectType, String subjectId,
                           String input, String hash, String idempotencyKey, String correlationId, int maxAttempts) {
@@ -52,7 +63,7 @@ public class TaskRunService {
         validateCreation(input, hash, idempotencyKey, correlationId, maxAttempts);
         if (!canonicalInputHasher.hash(type, "1.0", "ko-KR", input).equals(hash))
             throw new TaskRunFailure("VALIDATION_ERROR", "CANONICAL_INPUT_HASH_MISMATCH", HttpStatus.BAD_REQUEST, false);
-        String scope = type.name() + ":" + subjectType + ":" + subjectId;
+        String scope = idempotencyScope(type, subjectType, subjectId);
         Optional<TaskRun> replay = runs.findByProjectIdAndIdempotencyScopeAndIdempotencyKey(projectId, scope, idempotencyKey);
         if (replay.isPresent()) {
             if (replay.get().getInputHash().equals(hash)) return new CreateResult(replay.get(), false, true);
@@ -270,7 +281,10 @@ public class TaskRunService {
             "TWIN_TASK_TYPE_NOT_SERVICEABLE", "TWIN_BANK_UNAVAILABLE",
             // 인터뷰가 표본의 절반도 못 걷었다. 접으면 화면이 「다시 눌러 보라」와
             // 「AI 가 죽었다」를 구분해 말할 수 없다.
-            "MARKET_INTERVIEW_NO_USABLE_RESPONSE").contains(reason)) return reason;
+            "MARKET_INTERVIEW_NO_USABLE_RESPONSE",
+            // 조건에 맞는 응답자가 0명이었다. 접으면 화면이 「조건을 고쳐라」와
+            // 「AI 가 죽었다」를 구분해 말할 수 없다 — 사용자가 할 일이 정반대다.
+            "MARKET_INTERVIEW_NO_TARGET_SAMPLE").contains(reason)) return reason;
         return switch (internal) {
         case "PAYLOAD_TOO_LARGE" -> "PAYLOAD_TOO_LARGE";
         case "DEADLINE_EXCEEDED" -> "TASK_TIMEOUT";

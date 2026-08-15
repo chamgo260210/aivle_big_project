@@ -231,7 +231,17 @@ public class ConceptPortfolioSelectionService {
         if (replay != null) return replay;
         ConceptLegalRegulatoryReport report = reports.findBySelectionIdAndStatusAndDeletedAtIsNull(selectionId, "CURRENT")
             .orElseThrow(() -> new BusinessException(ErrorCode.HYPOTHESIS_DECISIONS_INCOMPLETE));
-        if (selection.getStatus()!=ConceptPortfolioSelectionStatus.LEGAL_REPORT_READY)
+        // 두 갈래가 이 문을 지난다.
+        //   ① 처음 확정 — 가설을 확정하고 법률 보고서를 받은 직후(LEGAL_REPORT_READY).
+        //   ② **다시 확정** — 다듬기가 끝난 뒤 「이 컨셉으로 확정하기」. 이때 상태는 이미
+        //      READY_FOR_MARKET 이다.
+        // ②를 막고 있던 것이 실제 결함이었다. 다듬기가 `targetUsers`·`featureSet` 만 고치면
+        // `ConceptRefinementApplyService.apply()` 가 `confirm()` 을 안 부르고(가설이 아니라
+        // 오버레이라서), 그러면 상태가 READY_FOR_MARKET 에 머문다. 그 상태에서 확정을 거절하니
+        // **다듬어진 두 칸이 시드에 영영 못 실렸다.** 가설을 안 건드린 다듬기는 법률 델타가
+        // 필요 없으므로(오버레이 2칸은 법률과 무관하다) 살아 있는 CURRENT 보고서로 충분하다.
+        if (selection.getStatus()!=ConceptPortfolioSelectionStatus.LEGAL_REPORT_READY
+                && selection.getStatus()!=ConceptPortfolioSelectionStatus.READY_FOR_MARKET)
             throw new BusinessException(ErrorCode.HYPOTHESIS_DECISIONS_INCOMPLETE);
         ConceptPortfolioRun run = runs.findLocked(selection.getRunId()).orElseThrow();
         ConceptPortfolioConcept concept = concept(selection);

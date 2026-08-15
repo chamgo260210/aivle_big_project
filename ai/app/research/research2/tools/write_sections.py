@@ -56,7 +56,9 @@ from base import load_env_key
 from runlog import Meter, Run, load_rules
 import read_sections as RS
 
-MODEL = "gpt-4o-mini"
+#: 발췌와 같은 모델을 쓴다. 판 ㊾ 부터 값을 **베끼지 않고 가리킨다** — 베껴 두면
+#: 저쪽만 바뀌었을 때 이 규칙이 조용히 깨진다.
+MODEL = RS.MODEL
 WORKERS = 4
 JSON_OBJ = re.compile(r"\{.*\}", re.S)
 

@@ -26,15 +26,15 @@ const EMPTY_BOARD = Object.freeze({
 const COMPREHENSION_ORDER = Object.freeze(['accurate', 'partial', 'misunderstood', 'unclassified']);
 const DIFFERENTIATION_ORDER = Object.freeze(['different', 'similar', 'unclear', 'unclassified']);
 
-/** Fact 층에 나란히 놓는 축들. 아래 셋은 각자 자기 절을 갖는다. */
-const FACT_AXES = Object.freeze(['LIKE', 'CONCERN']);
-
 /**
  * 세 층 — 이 화면의 정직성 장치다.
  *
  * 어디까지가 집계 그대로이고, 어디부터가 계산이고, 어디까지가 응답자가 실제로 한 말인지를
  * 화면이 <b>스스로 밝힌다</b>. 밝히지 않으면 「AI 가 이렇게 판단했다」로 읽히는데,
  * 이 조사에는 그런 판단이 없다.
+ *
+ * ⚠ 2026-08-15 부터 <b>띠가 아니라 절마다 붙는 딱지</b>로 쓴다(`LayerTag`). 띠는 절을
+ *   층 순서대로 묶어 놓아서 <b>순서를 못 바꾸게</b> 했고, 이 화면의 병이 바로 그 순서였다.
  */
 const LAYERS = Object.freeze([
   { key: 'fact', title: 'Fact', detail: '집계 그대로' },
@@ -103,42 +103,73 @@ export default function MarketInterviewPage() {
     <section className="mi-page">
       <InterviewSteps ready={ready} active={active} done={Boolean(result)} elapsed={elapsed} />
 
-      <Card title="무엇을 보여줄까">
-        {boardError ? (
-          <Alert tone="danger">{boardError}</Alert>
-        ) : (
-          <>
-            <p className="mi-page__lead">
-              확정한 사업안에서 그대로 가져왔다. 응답자에게 <strong>이 설명 하나</strong>를 보이고
-              정해진 9문항을 묻는다 — 첫인상, 본인 말로 설명, 끌리는 점, 걸리는 점,
-              무엇이 다른가, 필요성, 언제 쓸 것 같은가, 안 사는 이유, 바꾸고 싶은 것.
-              끌림·걸림·안 사는 이유는 <strong>왜 그런지까지</strong> 되묻는다.
-            </p>
-            <ConceptBoardEditor board={board} onChange={setBoard}
-                                disabled={busy || active} preview={preview} />
-          </>
-        )}
-      </Card>
-
-      {ready ? (
+      {/*
+        ⚠ **결과가 있으면 입력 화면을 접는다.** 조사가 끝난 뒤에도 컨셉보드 전문과 표본
+           슬라이더가 화면 절반을 차지하고 있었고, 사용자가 「개큰창 이거 왜 띄우는 거야,
+           조사 결과 보고 싶은 사람한테」라고 했다. 지우지는 않는다 — 접는다.
+      */}
+      {result ? (
+        <details className="mi-fold">
+          <summary>
+            다시 조사하기
+            <span className="mi-fold__hint">보여준 설명을 고치거나 표본을 바꿔서 다시 돌려요</span>
+          </summary>
+          <div className="mi-fold__body">
+            {boardError ? <Alert tone="danger">{boardError}</Alert> : (
+              <ConceptBoardEditor board={board} onChange={setBoard}
+                                  disabled={busy || active} preview={preview} />
+            )}
+            {ready ? (
+              <>
+                <SampleSizePicker value={sampleSize} onChange={setSampleSize}
+                                  disabled={busy || active} />
+                <div className="mi-page__actions">
+                  {active ? <span className="mi-page__elapsed">{elapsed}초 경과</span> : null}
+                  <Button onClick={trigger} disabled={!canRun}>
+                    {active ? '인터뷰 중…' : '다시 인터뷰'}
+                  </Button>
+                </div>
+              </>
+            ) : null}
+          </div>
+        </details>
+      ) : (
         <>
-          <Card title="표본">
-            <SampleSizePicker value={sampleSize} onChange={setSampleSize}
-                              disabled={busy || active} />
+          <Card title="무엇을 보여줄까">
+            {boardError ? <Alert tone="danger">{boardError}</Alert> : (
+              <>
+                <p className="mi-page__lead">
+                  사업 검증에서 다듬어진 최종 컨셉이에요. 응답자에게 이 설명 하나를 보이고
+                  정해진 9문항을 물어요.
+                </p>
+                <ConceptBoardEditor board={board} onChange={setBoard}
+                                    disabled={busy || active} preview={preview} />
+              </>
+            )}
           </Card>
 
-          <div className="mi-page__actions">
-            {active ? <span className="mi-page__elapsed">{elapsed}초 경과</span> : null}
-            <Button onClick={trigger} disabled={!canRun}>
-              {active ? '인터뷰 중…' : result ? '다시 인터뷰' : '인터뷰 실행'}
-            </Button>
-          </div>
+          {ready ? (
+            <>
+              <Card title="표본">
+                <SampleSizePicker value={sampleSize} onChange={setSampleSize}
+                                  disabled={busy || active} />
+              </Card>
+              <div className="mi-page__actions">
+                {active ? <span className="mi-page__elapsed">{elapsed}초 경과</span> : null}
+                <Button onClick={trigger} disabled={!canRun}>
+                  {active ? '인터뷰 중…' : '인터뷰 실행'}
+                </Button>
+              </div>
+            </>
+          ) : null}
         </>
-      ) : null}
+      )}
 
       {error ? <Alert tone="danger">{error}</Alert> : null}
-      {run?.state === 'FAILED' && run?.errorCode ? (
-        <Alert tone="danger">실행이 실패했다 — {failureText(run.errorCode)}</Alert>
+      {run?.state === 'FAILED' && run?.errorCode === 'MARKET_INTERVIEW_NO_TARGET_SAMPLE' ? (
+        <NoTargetSampleHelp />
+      ) : run?.state === 'FAILED' && run?.errorCode ? (
+        <Alert tone="danger">실행이 실패했어요 — {failureText(run.errorCode)}</Alert>
       ) : null}
 
       {result ? <InterviewResult result={result} /> : null}
@@ -149,12 +180,47 @@ export default function MarketInterviewPage() {
 }
 
 function failureText(code) {
-  if (code === 'TWIN_BANK_UNAVAILABLE') return '카드 뱅크가 서버에 붙어 있지 않다(운영 설정 문제다).';
+  if (code === 'TWIN_BANK_UNAVAILABLE') return '카드 뱅크가 서버에 붙어 있지 않아요(운영 설정 문제예요).';
   if (code === 'MARKET_INTERVIEW_NO_USABLE_RESPONSE') {
-    return '답이 표본의 절반도 걷히지 않았다. 줄여서 내보내지 않고 실패시킨 것이다 — 다시 실행해 보라.';
+    return '답이 표본의 절반도 걷히지 않았어요. 줄여서 내보내지 않고 실패시켰어요 — 다시 실행해 보세요.';
   }
-  if (code === 'TASK_TIMEOUT') return '예산 안에 끝나지 않았다. 표본을 줄여 다시 해 보라.';
+  if (code === 'TASK_TIMEOUT') return '예산 안에 끝나지 않았어요. 표본을 줄여 다시 해 보세요.';
   return code;
+}
+
+/**
+ * 조건에 맞는 응답자가 0명이라 <b>응답을 걷기 전에</b> 멈춘 경우.
+ *
+ * <p>다시 눌러도 같은 결과다 — 할 일은 재시도가 아니라 <b>조건을 고치는 것</b>이라서
+ * 다른 실패와 문구를 따로 쓴다. 그리고 <b>사용자를 탓하지 않는다</b>: 사용자는 사람 말로
+ * 썼고, 그것을 패널 조건으로 옮긴 것은 기계이며 그 번역이 어긴 것이다.
+ */
+function NoTargetSampleHelp() {
+  return (
+    <Alert tone="danger">
+      <strong>조사를 시작하지 않았어요 — 조건에 맞는 사람이 0명이에요.</strong>
+      <p>
+        헛돈이 나가지 않게 <strong>응답을 걷기 전에</strong> 멈췄어요. 다시 눌러도 같은
+        결과라서 <strong>「누구를 위한 것인가」를 고치셔야 해요.</strong>
+      </p>
+      <p>
+        패널에 <strong>기록돼 있지 않아 거를 수 없는 것</strong>들이 있고, 그런 말이 조건에
+        들어가면 무엇을 해도 0명이 된다:
+      </p>
+      <ul>
+        <li><strong>맞벌이 여부</strong> — 응답자 카드는 한 사람 것이라 배우자가 버는지 알 수 없어요.</li>
+        <li><strong>자녀의 나이·학년</strong> — 「초등 저학년 자녀」는 거를 수 없어요.
+          <em> 자녀가 있다는 것까지는 거를 수 있다.</em></li>
+        <li><strong>취향·습관·관심사</strong> — 「요리를 자주 하는」·「환경에 관심 있는」 같은 칸이 없어요.</li>
+      </ul>
+      <p>
+        거를 수 있는 것은 <strong>나이 · 성별 · 가구원 수 · 지역 · 개인 소득 · 직업 ·
+        자녀 유무 · 가구 안 지위</strong> 여덟 가지다. 사업 검증에서 「누구를 위한 것인가」를
+        이 말들로 다시 쓰시거나, <strong>조건을 비워 「누구나」로</strong> 두시면 실행돼요
+        (그 경우 타겟의 반응이 아니라는 표시가 붙는다).
+      </p>
+    </Alert>
+  );
 }
 
 /**
@@ -191,76 +257,103 @@ function InterviewResult({ result }) {
     <div className="mi-result">
       {result.caveatsMissing ? (
         <Alert tone="danger">
-          경계 문구가 결과에 실려오지 않았다 — 이 결과를 그대로 인용하지 마라.
+          경계 문구가 결과에 실려오지 않았어요 — 이 결과를 그대로 인용하지 마세요.
         </Alert>
       ) : null}
 
-      <SaturationAlert themes={result.saturatedThemes} />
-      <SampleHeader targeting={result.targeting} sampling={result.sampling}
-                    answered={answered} />
-      <ComprehensionPanel comprehension={result.comprehension} answered={answered} />
+      <Headline headline={result.headline} openQuestions={result.openQuestions}
+                answered={answered} />
 
-      <LayerLegend />
+      <SampleHeader targeting={result.targeting} answered={answered} />
 
-      <Layer layer="fact">
-        {result.sections
-          .filter((section) => FACT_AXES.includes(section.axis))
-          .map((section) => (
-            <ThemeSection key={section.axis} section={section} answered={answered} />
-          ))}
 
-        <DifferentiationPanel counts={result.differentiation} answered={answered}
-                              section={result.sections.find((s) => s.axis === 'DIFFERENTIATION')} />
-
-        <UsageScenePanel section={result.sections.find((s) => s.axis === 'USAGE_SCENE')}
-                         answered={answered} />
-
-        <section className="mi-panel">
-          <h3 className="mi-panel__title">지금은 이렇게 해결한다</h3>
-          <p className="mi-panel__lead">
-            「본인 상황에 필요한가」를 물으며 함께 나온 <strong>현재의 대안</strong>이다.
-            이 조사가 이겨야 할 상대는 경쟁 제품이 아니라 대개 여기 적힌 것들이다.
-            <strong>1인당 하나</strong>만 세므로 합계가 사람 수를 넘지 않는다.
-          </p>
-          {result.alternatives.length > 0 ? (
-            <ul className="mi-alts">
-              {result.alternatives.map((item) => (
-                <li key={item.label}>
-                  <span className="mi-alts__label">{item.label}</span>
-                  <span className="mi-alts__count">{mentionText(item.mentionCount, answered)}</span>
-                </li>
-              ))}
-            </ul>
-          ) : <p className="mi-panel__empty">현재의 대안을 말한 사람이 없다.</p>}
-        </section>
-
-        <ThemeSection section={result.sections.find((s) => s.axis === 'BARRIER')}
-                      answered={answered} showResolved />
-      </Layer>
-
-      <Layer layer="insight">
-        <SegmentPanel segments={result.segments} />
-        <ContrastPanel rows={result.contrast} targeting={result.targeting} />
-      </Layer>
-
-      <Layer layer="sowhat">
-        <SuggestionLinkPanel rows={result.suggestionLinks} answered={answered} />
-      </Layer>
+      {/*
+        ⚠ 절 순서는 **9문항 순서가 아니라 「무엇을 할 수 있나」 순서**다.
+           밖의 정성조사 실무가 보고서 실패의 첫 이유로 든 것이 「findings 를 데이터가
+           드러낸 것이 아니라 질문지 순서로 조직하는 것」이었고, 이 화면이 그 모양이었다.
+           그리고 JTBD 는 「anxiety(안 사는 이유)와 habit(지금 쓰는 것)부터 없애는 것이
+           가장 빠른 승부」라고 순서까지 지정한다 — 그 둘이 여기 맨 위에 온다.
+      */}
+      <ThemeSection section={result.sections.find((s) => s.axis === 'BARRIER')}
+                    answered={answered} showResolved layer="fact"
+                    title="왜 안 산다고 하나요" />
 
       <section className="mi-panel">
-        <h3 className="mi-panel__title">대표 응답자</h3>
+        <h3 className="mi-panel__title">
+          지금은 이렇게 해결해요 <LayerTag layer="fact" />
+        </h3>
         <p className="mi-panel__lead">
-          이해도가 갈리는 사람들로 골랐다. 뽑는 규칙은 결정론이라 같은 표본이면 같은 사람이 나온다.
+          이겨야 할 상대는 경쟁 제품이 아니라 대개 여기 적힌 것들이에요.
         </p>
-        {result.interviews.length > 0 ? (
-          result.interviews.map((card) => <InterviewCard key={card.key} card={card} />)
-        ) : <p className="mi-panel__empty">보여 줄 응답을 고르지 못했다.</p>}
+        {result.alternatives.length > 0 ? (
+          <ul className="mi-alts">
+            {result.alternatives.map((item) => (
+              <li key={item.label}>
+                <span className="mi-alts__label">{item.label}</span>
+                <span className="mi-alts__count">{mentionText(item.mentionCount, answered)}</span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mi-panel__empty">
+            분류된 답이 없어요
+            {result.relevanceAnswered > 0
+              ? ` — ${result.relevanceAnswered}명이 답은 썼지만 이름표에 안 붙었어요.`
+              : '.'}
+          </p>
+        )}
       </section>
+
+      {/*
+        ★ `SUGGESTION` 축 절은 2026-08-15 까지 **화면에 아예 없었다.**
+          `FACT_AXES` 가 LIKE·CONCERN 뿐이고 나머지는 축마다 따로 불렀는데 이 축만 빠져
+          있었다. 그래서 「무엇을 해결하면 되나」의 주제도 인용문도 화면에 0개였다 —
+          사업가가 가장 쓸 수 있는 절인데.
+      */}
+      <ThemeSection section={result.sections.find((s) => s.axis === 'SUGGESTION')}
+                    answered={answered} layer="fact" title="바꿔 달라는 말" />
+
+      <ThemeSection section={result.sections.find((s) => s.axis === 'LIKE')}
+                    answered={answered} layer="fact" />
+      <UsageScenePanel section={result.sections.find((s) => s.axis === 'USAGE_SCENE')}
+                       answered={answered} />
+
+      {/* ── 여기부터 접는다. **지우는 것이 아니라 접는 것이다** — 펴면 전부 그대로 있다. */}
+      <details className="mi-fold">
+        <summary>
+          이 설명이 읽혔나 · 무엇이 다른가 · 걸리는 점
+          <span className="mi-fold__hint">{comprehensionSummary(result.comprehension, answered)}</span>
+        </summary>
+        <div className="mi-fold__body">
+          <ComprehensionPanel comprehension={result.comprehension} answered={answered} />
+          <DifferentiationPanel counts={result.differentiation} answered={answered}
+                                section={result.sections.find((s) => s.axis === 'DIFFERENTIATION')} />
+          <ThemeSection section={result.sections.find((s) => s.axis === 'CONCERN')}
+                        answered={answered} layer="fact" />
+        </div>
+      </details>
+
+      <details className="mi-fold">
+        <summary>
+          대표 응답자
+          <span className="mi-fold__hint">{result.interviews.length}장</span>
+        </summary>
+        <div className="mi-fold__body">
+          <section className="mi-panel">
+            <p className="mi-panel__lead">
+              이해도가 갈리게 고르되, 못 채우면 남은 사람으로 메워요.
+            </p>
+            {result.interviews.length > 0 ? (
+              result.interviews.map((card) => <InterviewCard key={card.key} card={card} />)
+            ) : <p className="mi-panel__empty">보여 줄 응답을 고르지 못했어요.</p>}
+          </section>
+        </div>
+      </details>
 
       <details className="mi-figures">
         <summary>전원 응답 열람 ({result.transcripts.length}명)</summary>
         <p className="mi-panel__lead">
-          위의 모든 수는 여기 있는 답에서만 나왔다. <strong>세어 본 것이 맞는지 여기서 되짚을 수 있다.</strong>
+          위의 모든 수는 여기 있는 답에서만 나왔어요.
         </p>
         {result.transcripts.map((card) => (
           <InterviewCard key={card.id} card={card}
@@ -296,6 +389,73 @@ function InterviewResult({ result }) {
  * 응답자가 상상한 다른 물건에 대한 반응이다. 그 사실을 먼저 보지 않으면 결과를 통째로
  * 잘못 읽는다.
  */
+/**
+ * <b>이 조사가 센 것</b> — 화면 맨 위. 스크롤 전에 읽히는 유일한 절이다.
+ *
+ * <p>왜 생겼나: 이 화면은 <b>9문항 순서대로</b> 주제를 늘어놓고 있었고, 사용자가
+ * 「정보가 안 들어온다, 뭐 어쩌라는 건지 1도 모르겠다」고 했다. 밖의 정성조사 실무도
+ * 같은 것을 보고서가 망하는 첫 이유로 든다 — 「findings 를 데이터가 드러낸 것이 아니라
+ * 질문지 순서로 조직하는 것」.
+ *
+ * <p>⚠ <b>여기서 판단을 쓰지 않는다.</b> 「가격을 내려라」도 「정보를 보여줘라」도 안 쓴다.
+ * 대신 <b>나란히 놓는다</b> — 「안 사는 이유 1위는 가격인데 제안 1위는 가격 인하가 아니다」는
+ * 세기만 한 것이고, 그 병치가 권고 없이 방향을 준다.
+ */
+function Headline({ headline, openQuestions, answered }) {
+  if (!headline) return null;
+  const { barrier, suggestion, alternative } = headline;
+  return (
+    <section className="mi-headline">
+      <h3 className="mi-headline__title">이 조사가 센 것</h3>
+
+      <p className="mi-headline__line">
+        <strong>안 사는 이유</strong> 「{barrier.label}」{' '}
+        <strong className="mi-headline__big">{mentionText(barrier.count, answered)}</strong>
+        {/* ⚠ 타겟 분모를 «반드시» 병기한다. 타겟이 모자라면 비타겟으로 채우는 표집이라
+            (SampleHeader 참조) 「20명 중 19명」이 타겟 수 행세를 한다. */}
+        {barrier.targetCount === null ? null : (
+          <span className="mi-headline__scope"> · 타겟 {barrier.targetCount}명</span>
+        )}
+        {barrier.resolved > 0 ? (
+          <span className="mi-headline__resolved">
+            {' '}→ <strong>{barrier.resolved}명</strong>은 해결되면 사겠대요
+          </span>
+        ) : null}
+      </p>
+
+      {suggestion === null ? null : (
+        <p className="mi-headline__line">
+          <strong>가장 많은 요청</strong> 「{suggestion.label}」{' '}
+          {suggestion.linked ? (
+            <>
+              <strong>{suggestion.overlap}명</strong>이 위 이유와 함께 말했어요
+            </>
+          ) : (
+            /* 겹침이 제안 인원의 절반에 못 미치면 연결을 «주장하지 않는다». */
+            <>{mentionText(suggestion.count, answered)}</>
+          )}
+        </p>
+      )}
+
+      {alternative === null ? null : (
+        <p className="mi-headline__line">
+          {/* ⚠ 이름표 뒤에 조사를 붙이지 않는다 — AI 가 쓴 자유 문장이라 끝 글자를 알 수
+              없고 「…한다«으로»」 같은 틀린 조사가 그대로 나간다. */}
+          <strong>지금 쓰는 것</strong> 「{alternative.label}」{' '}
+          {mentionText(alternative.count, answered)}
+        </p>
+      )}
+
+      {openQuestions.length > 0 ? (
+        <details className="mi-headline__open">
+          <summary>아직 못 물어본 것 {openQuestions.length}가지</summary>
+          <ul>{openQuestions.map((row) => <li key={row}>{row}</li>)}</ul>
+        </details>
+      ) : null}
+    </section>
+  );
+}
+
 function ComprehensionPanel({ comprehension, answered }) {
   const rows = COMPREHENSION_ORDER
     .map((key) => ({ key, count: comprehension[key], ...COMPREHENSION_VIEW[key] }))
@@ -306,9 +466,9 @@ function ComprehensionPanel({ comprehension, answered }) {
     <section className="mi-panel">
       <h3 className="mi-panel__title">이 설명이 읽혔나</h3>
       <p className="mi-panel__lead">
-        응답자에게 제품을 <strong>본인 말로 다시 설명하게</strong> 하고 자극과 대조한 것이다.
+        제품을 본인 말로 다시 설명하게 하고 보여준 설명과 대조했어요.
         오해가 많으면 컨셉이 나쁜 게 아니라 <strong>설명이 나쁜 것</strong>이고, 아래의
-        반응은 이 제품이 아니라 응답자가 상상한 물건에 대한 반응이다.
+        반응은 이 제품이 아니라 응답자가 상상한 물건에 대한 반응이에요.
       </p>
 
       <div className="mi-bar" role="img"
@@ -344,7 +504,27 @@ function ComprehensionPanel({ comprehension, answered }) {
  * <p>축이 6개로 늘어난 뒤로 <b>상위 몇 개만</b> 펼친다(정규화기의 `THEMES_VISIBLE`).
  * 나머지는 접되 개수를 밝힌다 — 접었다는 사실을 숨기면 「다 보여줬다」로 읽힌다.
  */
-function ThemeSection({ section, answered, showResolved = false, title = null }) {
+/**
+ * 세 층 딱지. <b>띠(`LayerLegend`)를 절 순서에 묶어 두면 순서를 못 바꾼다</b> —
+ * 그래서 띠 대신 절마다 붙는 작은 딱지로 바꿨다. 정직성 장치(「어디까지가 집계이고
+ * 어디부터가 계산인가」)는 그대로 남고, 절 순서만 자유로워진다.
+ */
+function LayerTag({ layer }) {
+  const meta = LAYERS.find((item) => item.key === layer);
+  if (!meta) return null;
+  return (
+    <span className="mi-layertag" data-layer={layer} title={meta.detail}>{meta.title}</span>
+  );
+}
+
+/** 접힌 서랍 머리에 남기는 한 줄. <b>접어도 결정적인 수는 밖에 남긴다.</b> */
+function comprehensionSummary(comprehension, answered) {
+  const off = comprehension.partial + comprehension.misunderstood;
+  if (off === 0) return `설명은 읽혔다 — ${answered}명 전원이 제대로 이해`;
+  return `제대로 ${comprehension.accurate} · 반만 ${comprehension.partial} · 오해 ${comprehension.misunderstood}`;
+}
+
+function ThemeSection({ section, answered, showResolved = false, title = null, layer = null }) {
   if (!section) return null;
   const hidden = section.hiddenThemes ?? [];
   const row = (theme) => (
@@ -360,8 +540,8 @@ function ThemeSection({ section, answered, showResolved = false, title = null })
       {theme.quote ? <p className="mi-theme__quote">&ldquo;{theme.quote}&rdquo;</p> : null}
       {showResolved && theme.resolvedCount > 0 ? (
         <p className="mi-theme__resolved">
-          이 중 <strong>{theme.resolvedCount}명</strong>이 「이게 해결되면 사겠다」고 말했다
-          <span className="mi-theme__aside"> — 물어본 것이 아니라 스스로 말한 것만 셌다</span>
+          이 중 <strong>{theme.resolvedCount}명</strong>은 이게 해결되면 사겠대요
+          <span className="mi-theme__aside"> — 물어본 게 아니라 스스로 말한 것만 셌어요</span>
         </p>
       ) : null}
     </li>
@@ -369,9 +549,19 @@ function ThemeSection({ section, answered, showResolved = false, title = null })
 
   return (
     <section className="mi-panel">
-      <h3 className="mi-panel__title">{title ?? section.title}</h3>
+      <h3 className="mi-panel__title">
+        {title ?? section.title} {layer === null ? null : <LayerTag layer={layer} />}
+      </h3>
       {section.themes.length > 0 ? (
         <>
+          {section.thinCoverage ? (
+            <p className="mi-panel__aside mi-panel__aside--warn">
+              ⚠ 이 축은 <strong>{answered}명 중 {section.classified}명</strong>만 분류됐다.
+              아래 수는 표본 전체가 아니라 <strong>분류에 성공한 사람들</strong>의 것이고,
+              나머지 {answered - section.classified}명의 답은 어느 이름표에도 안 붙었다 —
+              <strong>말을 안 한 게 아니에요.</strong> 전원 응답에서 확인하세요.
+            </p>
+          ) : null}
           <ul className="mi-themes">{section.themes.map(row)}</ul>
           {hidden.length > 0 ? (
             <details className="mi-more">
@@ -380,75 +570,48 @@ function ThemeSection({ section, answered, showResolved = false, title = null })
             </details>
           ) : null}
         </>
-      ) : <p className="mi-panel__empty">{section.empty}</p>}
+      ) : (
+        <p className="mi-panel__empty">
+          {section.empty}
+          {answered > 0 ? ` (${answered}명이 이 문항에 답은 썼다.)` : ''}
+        </p>
+      )}
     </section>
   );
 }
 
-/**
- * 포화 경고 — <b>전원이 같은 말을 한 축은 읽으면 안 된다.</b>
- *
- * 2026-08-12 에 n=40 실행의 모든 주제가 40/40 으로 나왔고 화면은 그것을 그대로 그렸다.
- * 코딩 구조를 뒤집어 그 고장은 막았지만, 진짜로 전원이 같은 말을 하는 경우는 남는다.
- * 그때 할 일은 감추는 것이 아니라 <b>읽지 말라고 말하는 것</b>이다.
- */
-function SaturationAlert({ themes }) {
-  if (!themes || themes.length === 0) return null;
-  return (
-    <Alert tone="warning">
-      <strong>답이 갈리지 않은 축이 있다</strong> — {themes.join(' · ')}.
-      자극이 한 속성(예: 가격)에 쏠렸거나, 합성 응답자의 분산이 소실됐거나, 표본이 좁은 것이다.
-      셋 중 무엇인지는 아래 <strong>전원 응답</strong>을 눈으로 훑어야 알 수 있다.
-      그 전까지 이 축은 결론으로 쓰지 마라.
-    </Alert>
-  );
-}
 
 /** 표본 머리 — <b>분모를 갈라 적는다.</b> 타겟과 비타겟을 한 수로 합치면 대비가 사라진다. */
-function SampleHeader({ targeting, sampling, answered }) {
+function SampleHeader({ targeting, answered }) {
   return (
     <section className="mi-panel mi-panel--flat">
-      <h3 className="mi-panel__title">누구에게 물었나</h3>
       <p className="mi-panel__lead">
-        타겟 <strong>{targeting.targetDrawn}명</strong> + 참고용 비타겟{' '}
-        <strong>{targeting.nonTargetDrawn}명</strong>을 뽑아 <strong>{answered}명</strong>이 답했다
-        (요청 {sampling.requested}명).
+        <strong>{answered}명</strong>이 답했어요 — 타겟 {targeting.targetDrawn}명 ·
+        비교용 {targeting.nonTargetDrawn}명
       </p>
-      <p className="mi-panel__aside">
-        타겟 조건: <code>{targeting.criteriaText}</code>{' '}
-        — 사업안의 「누구를 위한 것인가」를 기계가 옮긴 것이다. <strong>틀렸는지 아는 사람은
-        당신뿐이니 여기부터 보라.</strong>
-      </p>
-      {targeting.shortfall > 0 ? (
+      <details className="mi-inline">
+        <summary>누구에게 물었는지 보기</summary>
         <p className="mi-panel__aside">
-          조건에 맞는 사람이 모자라 {targeting.shortfall}명을 채우지 못했다 — 조건이 좁다는 뜻이다.
+          <code>{targeting.criteriaText}</code>
         </p>
+      </details>
+      {targeting.targeted && targeting.targetDrawn === 0 ? (
+        <Alert tone="danger">
+          <strong>이 결과는 타겟의 반응이 아니에요</strong> — 조건에 맞는 사람이 <strong>0명</strong>
+          이라 {targeting.nonTargetDrawn}명 전원을 조건 <em>밖</em>에서 뽑았다.
+          아래의 모든 수는 <strong>대상이 아닌 사람들의 답</strong>이에요. 결론으로 쓰지 마세요.
+          위의 조건 문구에서 <strong>0명짜리 조건</strong>을 찾아 사업 검증의
+          「누구를 위한 것인가」를 고친 뒤 다시 돌려라.
+        </Alert>
+      ) : targeting.targetShort ? (
+        <Alert tone="warning">
+          <strong>타겟이 모자랐어요</strong> — 조건에 맞는 사람이 {targeting.targetDrawn}명뿐이라
+          나머지 {targeting.nonTargetDrawn}명은 조건 밖에서 채웠어요
+          (요청한 타겟 {targeting.targetRequested}명). 아래 수의 분모에 대상이 아닌 사람이
+          섞여 있어요.
+        </Alert>
       ) : null}
     </section>
-  );
-}
-
-/** 세 층의 범례. 어디까지가 집계이고 어디부터가 계산인지 화면이 스스로 밝힌다. */
-function LayerLegend() {
-  return (
-    <ul className="mi-layers" aria-label="결과를 읽는 세 층">
-      {LAYERS.map((layer) => (
-        <li key={layer.key} className="mi-layers__item" data-layer={layer.key}>
-          <span className="mi-layers__dot" aria-hidden="true" />
-          <strong>{layer.title}</strong> — {layer.detail}
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-function Layer({ layer, children }) {
-  const meta = LAYERS.find((item) => item.key === layer);
-  return (
-    <div className="mi-layer" data-layer={layer}>
-      <p className="mi-layer__tag">{meta.title} <span>{meta.detail}</span></p>
-      {children}
-    </div>
   );
 }
 
@@ -461,7 +624,7 @@ function DifferentiationPanel({ counts, answered, section }) {
     <section className="mi-panel">
       <h3 className="mi-panel__title">지금 있는 것들과 다른가</h3>
       <p className="mi-panel__lead">
-        「다른 게 없으면 없다고 하셔도 된다」고 묻고 받은 답이다.
+        「다른 게 없으면 없다고 하셔도 된다」고 묻고 받은 답이에요.
         <strong> 「비슷하다」가 많은 것은 조사의 실패가 아니라 결과다.</strong>
       </p>
       <ul className="mi-legend">
@@ -495,119 +658,16 @@ function DifferentiationPanel({ counts, answered, section }) {
 function UsageScenePanel({ section, answered }) {
   return (
     <>
-      <ThemeSection section={section} answered={answered} title="언제 쓸 것 같은가" />
-      <p className="mi-panel__aside mi-panel__aside--tight">
-        ⚠ <strong>상상해서 답한 것</strong>이다 — 실제로 그때 그렇게 쓴다는 뜻이 아니다.
-        기획한 장면과 다른 것이 우세하면 포지셔닝을 다시 볼 신호이지, 그 자체가 수요는 아니다.
-      </p>
+      <ThemeSection section={section} answered={answered} title="언제 쓸 것 같은가요" />
+      {/* ⚠ 이 반 줄은 경계 표시라 지우지 않는다 — 이게 없으면 「퇴근 후 16명」이
+          실제 사용 빈도로 읽힌다. 길이만 줄인다. */}
+      <p className="mi-panel__aside mi-panel__aside--tight">상상해서 답한 거예요.</p>
     </>
   );
 }
 
-/** 세그먼트 교차 — <b>계산일 뿐이다.</b> 해석 문장을 붙이지 않는 것이 이 절의 규율이다. */
-function SegmentPanel({ segments }) {
-  if (!segments || segments.length === 0) {
-    return (
-      <section className="mi-panel">
-        <h3 className="mi-panel__title">누가 그 말을 했나</h3>
-        <p className="mi-panel__empty">교차할 주제가 없다.</p>
-      </section>
-    );
-  }
-  return (
-    <section className="mi-panel">
-      <h3 className="mi-panel__title">누가 그 말을 했나</h3>
-      <p className="mi-panel__lead">
-        주제를 말한 사람들을 프로필 네 축으로 갈라 센 것이다. <strong>세기만 했고 해석은
-        붙이지 않았다</strong> — 각 줄의 합은 그 주제의 언급 수와 정확히 같다.
-      </p>
-      {segments.map((segment) => (
-        <div key={`${segment.axis}-${segment.label}`} className="mi-segment">
-          <p className="mi-segment__head">
-            <span className="mi-segment__label">{segment.label}</span>
-            <span className="mi-segment__count">{segment.mentionCount}명</span>
-          </p>
-          {segment.breakdown.map((dimension) => (
-            <p key={dimension.dimension} className="mi-segment__row">
-              <span className="mi-segment__dim">{dimension.dimension}</span>
-              {dimension.buckets.map((bucket) => (
-                <span key={bucket.label} className="mi-segment__bucket">
-                  {bucket.label} <strong>{bucket.count}</strong>
-                </span>
-              ))}
-            </p>
-          ))}
-        </div>
-      ))}
-    </section>
-  );
-}
 
-/**
- * 타겟 vs 비타겟 — <b>두 수를 나누지 않는다.</b> 분모가 다르기 때문이다.
- * 분모를 제목에 적어 두 수를 나란히만 놓는다.
- */
-function ContrastPanel({ rows, targeting }) {
-  const meaningful = (rows ?? []).filter((row) => row.nonTargetCount > 0);
-  return (
-    <section className="mi-panel">
-      <h3 className="mi-panel__title">타겟 밖에서도 같은 말이 나왔나</h3>
-      <p className="mi-panel__lead">
-        왼쪽은 타겟 {targeting.targetDrawn}명 중, 오른쪽은 비타겟 {targeting.nonTargetDrawn}명 중
-        몇 명인지다. <strong>분모가 달라 두 수를 나누지 않는다.</strong>
-        비타겟에서 뜻밖에 강한 반응이 보이면 타겟을 다시 그릴 근거가 된다.
-      </p>
-      {meaningful.length > 0 ? (
-        <ul className="mi-contrast">
-          {meaningful.map((row) => (
-            <li key={`${row.axis}-${row.label}`}>
-              <span className="mi-contrast__label">{row.label}</span>
-              <span className="mi-contrast__pair">
-                타겟 <strong>{row.targetCount}</strong> / 비타겟 <strong>{row.nonTargetCount}</strong>
-              </span>
-            </li>
-          ))}
-        </ul>
-      ) : <p className="mi-panel__empty">비타겟에서 같은 말을 한 사람이 없다.</p>}
-    </section>
-  );
-}
 
-/**
- * 개선 제안 ↔ 우려·장벽 — 연결의 근거는 <b>같은 사람이 둘 다 말했다</b>는 것뿐이다.
- * 「그러니 값을 내려라」 같은 문장은 이 화면이 만들지 않는다.
- */
-function SuggestionLinkPanel({ rows, answered }) {
-  const withLinks = (rows ?? []).filter((row) => row.links.length > 0);
-  return (
-    <section className="mi-panel">
-      <h3 className="mi-panel__title">바꿔 달라는 말은 무엇에 걸려 있나</h3>
-      <p className="mi-panel__lead">
-        제안을 한 사람이 <strong>같은 답지 안에서</strong> 어떤 우려·장벽을 말했는지 이어 본 것이다.
-        연결의 근거는 그것뿐이고, <strong>무엇을 먼저 고치라는 판단은 여기 없다.</strong>
-      </p>
-      {withLinks.length > 0 ? (
-        <ul className="mi-links">
-          {withLinks.map((row) => (
-            <li key={row.label}>
-              <p className="mi-links__head">
-                <span className="mi-links__label">{row.label}</span>
-                <span className="mi-links__count">{mentionText(row.mentionCount, answered)}</span>
-              </p>
-              <ul className="mi-links__inner">
-                {row.links.map((link) => (
-                  <li key={`${link.axis}-${link.label}`}>
-                    ↳ {link.label} <strong>{link.overlapCount}명</strong>이 함께 말함
-                  </li>
-                ))}
-              </ul>
-            </li>
-          ))}
-        </ul>
-      ) : <p className="mi-panel__empty">제안과 우려를 함께 말한 사람이 없다.</p>}
-    </section>
-  );
-}
 
 /**
  * 맨 아래 각주 — 일반 면책 + **서버가 값과 함께 실어 보낸 경계 문구**.
@@ -621,9 +681,9 @@ export function InterviewFootnote({ result }) {
     <footer className="mi-footnote">
       <p>
         이 결과는 실존 인물의 응답이 아니라 한국미디어패널조사(KISDI) 실측 프로파일로 만든
-        디지털 트윈의 시뮬레이션이다. 숫자는 <strong>이 표본에서 그 말을 한 사람 수</strong>일
-        뿐이며 시장 규모도 구매율도 아니다 — 백분율로 환산하지 마라. 이 조사 형식은 외적
-        타당성 시험을 거치지 않았고, 가격 수용도·지불의사는 답하지 않는다.
+        디지털 트윈의 시뮬레이션이에요. 숫자는 <strong>이 표본에서 그 말을 한 사람 수</strong>일
+        뿐이고 시장 규모도 구매율도 아니에요 — 백분율로 환산하지 마세요. 이 조사 형식은 외적
+        타당성 시험을 거치지 않았고, 가격 수용도·지불의사는 답하지 않아요.
       </p>
       {notes.length > 0 ? (
         <details>

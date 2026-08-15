@@ -206,8 +206,12 @@ CODEBOOK = Codebook(
 #: 형식을 어겨 분모에서 빠지는 사람(뽑힌 순서 기준). 조사는 늘 몇 명을 잃는다.
 LOST = frozenset({7, 14})
 
+# ⚠ `householdRoles` 는 비워 둔다 — 위 `CARD` 템플릿에 「가구 안에서는 …입니다」 문장이
+#   없어서 골든 카드는 그 칸이 언제나 «못 읽음»이고, 못 읽은 칸은 조건을 통과하지 못한다.
+#   조건으로 걸면 골든의 타겟이 통째로 0명이 된다.
 CRITERIA = TargetCriteria(ageMin=30, ageMax=49, genders=[], householdSizeMin=3,
-                          householdSizeMax=0, regions=[], incomeKeywords=[], jobKeywords=[])
+                          householdSizeMax=0, regions=[], incomeKeywords=[], jobKeywords=[],
+                          hasChildren=0, householdRoles=[])
 
 _HOUSEHOLD_KIND = {1: "1인가구", 2: "1세대가구(부부)", 3: "2세대가구(부부+자녀)",
                    4: "2세대가구(부부+자녀)", 5: "3세대가구"}

@@ -130,6 +130,12 @@ def _pick_base(led: dict, claim_types: set) -> tuple:
 #:   가설 — **우리가 정한 값**이다(가격 등). 시장에서 관측한 것이 아니다
 FACTOR_BASES = ("관측", "가정", "가설")
 
+#: 세그먼트 비중을 못 구했을 때의 **한 문장**. 사유·출처·요인 설명 세 자리가 이것을 함께
+#: 쓴다 — 세 곳에 각자 쓰면 화면마다 다른 말이 뜬다(판 ⑩ 「자를 둘 두지 않는다」).
+SEG_MISSING = ("세그먼트 비중 미확보 — `rules/assumptions.v1.json::by_role.세그먼트비중` 에 "
+               "값이 없다(판 ㊴ 에서 남의 업종 값 0.19 를 지웠다). **1.0 으로 때우지 않는다** "
+               "— 모르는 것을 «시장 전체» 로 읽으면 목표 고객 수가 조용히 부푼다")
+
 #: 단가는 `rules` 가 아니라 **컨셉의 가격 가설**에서 온다. 그래서 rules 의 `basis`
 #: (요금제 관측 참조)를 붙이면 다른 값의 근거를 이 값에 다는 셈이 된다.
 _PRICE_NOTE = "우리 가격 가설이지 관측된 시장 단가가 아니다"
@@ -181,7 +187,10 @@ def _가정_문장(요인들: list) -> list:
         # 조사를 붙이지 않는다 — 「0.1 는/은」은 숫자를 읽어야 정해지고, 그 규칙을
         # 여기 넣으면 판정 층이 한국어 형태론을 갖게 된다. 값 뒤는 줄표로 끊는다.
         꼬리 = " · ".join(x for x in (f.get("설명"), f.get("울타리")) if x)
-        머리 = f"{f['이름']} {f['값']}{(' ' + f['단위']) if f.get('단위') else ''} — {f['판정']}이다"
+        # 값이 없는 요인은 「None」이라고 적지 않는다 — 파이썬 표현이 문장으로 새 나가면
+        # 읽는 쪽이 «값이 0이다»/«버그다» 로 읽는다. 없는 것은 **미확보**라고 적는다.
+        값 = "미확보" if f["값"] is None else f["값"]
+        머리 = f"{f['이름']} {값}{(' ' + f['단위']) if f.get('단위') else ''} — {f['판정']}이다"
         out.append(f"{머리}. {꼬리}" if 꼬리 else 머리)
     return out
 
@@ -682,32 +691,47 @@ def judge_som(led: dict, hyp: dict) -> dict:
     # 판 ④ 에서 성장률(%)·비율(%) 관측이 들어오면 그중 하나가 조용히 세그먼트비중이 된다.
     # 「1인 비율」은 어느 국가통계에도 없음이 실측으로 확정됐으므로(kosis-probe-04)
     # 이 자리는 **가정으로 고정**하고, 관측으로 승격하는 문은 닫는다.
+    # ⚠ 판 ㊴ — 그 가정값(0.19, 두발 미용업 구성비)마저 지웠다. 문은 여전히 닫혀 있고,
+    #   이제 **가정도 없다** — 그래서 이 자리는 「모른다」가 정답이다.
     by_role = (_rules().get("assumptions") or {}).get("by_role") or {}
     a = by_role.get("세그먼트비중") or {}
-    seg, seg_src = a.get("value"), "가정(rules/assumptions.v1.json) — 관측 아님"
-    seg = 1.0 if seg is None else seg
+    seg = a.get("value")
+    # ★ 판 ㊴ — **`seg = 1.0 if seg is None else seg` 를 없앴다.**
+    #   그 한 줄은 「세그먼트 비중을 모른다」를 「세그먼트 = 시장 전체」로 읽었다. 값이
+    #   0.19 이던 시절 기준으로 목표 고객 수가 **5배** 부풀고, 그 수가 판정 층을 지나
+    #   `judge_channel` 의 필요 마케팅비까지 그대로 곱해진다. 가정값이 없다는 것은
+    #   «전부» 가 아니라 «못 잰다» 다(절대규칙 5 — 실패는 값이다).
+    seg_src = ("가정(rules/assumptions.v1.json) — 관측 아님" if seg is not None
+               else SEG_MISSING)
 
     # 침투율은 **원장이 아니라 컨셉의 SOM 가설**에서 온다 — rules 의 침투율과 다른 값이다.
     # 그래서 rules 의 basis 를 붙이지 않고 출신을 그대로 적는다.
     요인 = [
         _요인("사업체 수", base, "관측", 단위="개", rows=counts,
             설명=f"슬롯 {counts[0]['slot_id']} 의 확인됨"),
-        _역할_요인("세그먼트비중", "세그먼트비중", seg, by_role),
+        _역할_요인("세그먼트비중", "세그먼트비중", seg, by_role,
+                 설명=(None if seg is not None else SEG_MISSING)),
         _요인("침투율", rate, "가정", 단위="비율",
             설명="관측 근거가 없는 순수 가정 — 컨셉의 9_SOM_초기점유 가설에서 왔다"),
         _요인("월 구독가", price, "가설", 단위="원", 설명=_PRICE_NOTE),
         _요인("개월", 12, "가정", 단위="개월", 설명="이탈 없는 12개월 만액 결제"),
     ]
-    targets = base * seg * (rate or 0)
+    # ★ 세그먼트 비중이 없으면 **목표 고객 수부터 내지 않는다.** 이 수는 여기서 끝나지
+    #   않고 `build` 가 `som_hyp["_목표_고객수"]` 로 `judge_channel` 에 넘긴다 — 여기서
+    #   때우면 마케팅비 추정까지 같은 배수로 부푼다. 없으면 None 을 그대로 흘린다.
+    targets = (base * seg * (rate or 0)) if seg is not None else None
     # ★ 판 ㊳ — TAM·SAM 과 **같은 잠금**. SOM 도 관측 하나에 가정 넷을 곱한다.
     #   봉투에는 안 실리지만(`serialize.market` 이 som=None 고정) 캔버스·BM 층으로는 간다 —
     #   한쪽에서만 정직하면 두 산출물이 갈린다.
     som_가능, som_사유 = _점추정_가능(요인)
+    if seg is None:
+        som_가능 = False
+        som_사유 = f"{SEG_MISSING} — SOM 을 계산하지 않는다. " + som_사유
     calc = {"식": "SOM(연) = 사업체 수 × 세그먼트비중 × 침투율 × 월 구독가 × 12",
             "입력": {"사업체 수": base, "세그먼트비중": seg, "세그먼트비중_출처": seg_src,
                    "침투율": rate, "월 구독가": price, "개월": 12},
             "목표 고객 수": targets,
-            "값": (targets * price * 12) if (som_가능 and price) else None,
+            "값": (targets * price * 12) if (som_가능 and price and targets) else None,
             "값_불가_사유": (None if som_가능 else som_사유),
             "assumption_count": _가정수(요인),
             "요인": 요인,
@@ -715,8 +739,13 @@ def judge_som(led: dict, hyp: dict) -> dict:
             "해석_경계": [],
             "근거": counts,
             **({"선택_주의": warn} if warn else {})}
-    return {"가설": "9_SOM_초기점유", "도장": "미검증",
-            "why": "가정으로 계산한 값이다 — 관측이 뒷받침한 것이 아니다",
+    return {"가설": "9_SOM_초기점유",
+            # 세그먼트 비중이 없으면 **아무것도 계산하지 못했다.** 「가정으로 계산한 값」
+            # 이라고 적으면 없는 계산을 있다고 말하는 셈이다 — 도장도 같이 내린다.
+            "도장": ("미검증" if seg is not None else "판정_불가"),
+            "why": ("가정으로 계산한 값이다 — 관측이 뒷받침한 것이 아니다" if seg is not None
+                    else f"{SEG_MISSING} — 분해의 둘째 항이 없어 목표 고객 수부터 못 낸다. "
+                         f"요인 표는 그대로 낸다(사업체 수까지는 관측했다)"),
             "추정": calc, "엔진_SOM": som.get("value"), "badge": som.get("badge")}
 
 

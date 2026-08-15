@@ -11,21 +11,37 @@
  *   ② `caveats` 가 비면 조용히 지나가지 않고 **큰 소리 나는 자리표시자**를 만든다
  */
 
-/** 여섯 축 — 화면의 절 순서와 같다. 서버(`app/interview/models.py` 의 `AXES`)의 거울이다. */
+/**
+ * 여섯 축 — 화면의 절 순서와 같다. 서버(`app/interview/models.py` 의 `AXES`)의 거울이다.
+ *
+ * ⚠ **`empty` 는 「말한 사람이 없다」라고 쓰지 않는다.** 아홉 문항은 전원이 답을 쓰고
+ * 오는데, 이 절이 비는 이유는 거의 언제나 **코딩이 그 답을 어느 이름표에도 못 붙인 것**
+ * 이다. 2026-08-15 실측(n=40)에서 USAGE_SCENE 은 2명만 분류됐고 화면은 38명분의 답을
+ * 두고 「쓸 장면을 말한 사람이 없다」고 단언했다. 없는 사실을 만드는 문장이었다.
+ */
 export const AXIS_VIEW = Object.freeze([
   { axis: 'LIKE', title: '끌리는 점', tone: 'lead',
-    empty: '끌린다고 말한 사람이 없다.' },
+    empty: '분류된 답이 없어요 — 답을 안 쓴 게 아니라 이름표에 안 붙었어요.' },
   { axis: 'CONCERN', title: '걸리는 점', tone: 'warn',
-    empty: '걸린다고 말한 사람이 없다.' },
-  { axis: 'DIFFERENTIATION', title: '무엇이 다른가', tone: 'neutral',
-    empty: '다른 점을 말한 사람이 없다.' },
-  { axis: 'USAGE_SCENE', title: '언제 쓸 것 같은가', tone: 'lead',
-    empty: '쓸 장면을 말한 사람이 없다.' },
+    empty: '분류된 답이 없어요 — 답을 안 쓴 게 아니라 이름표에 안 붙었어요.' },
+  { axis: 'DIFFERENTIATION', title: '무엇이 다른가요', tone: 'neutral',
+    empty: '분류된 답이 없어요 — 답을 안 쓴 게 아니라 이름표에 안 붙었어요.' },
+  { axis: 'USAGE_SCENE', title: '언제 쓸 것 같은가요', tone: 'lead',
+    empty: '분류된 답이 없어요 — 답을 안 쓴 게 아니라 이름표에 안 붙었어요.' },
   { axis: 'BARRIER', title: '안 사는 이유', tone: 'trail',
-    empty: '안 사겠다는 이유를 말한 사람이 없다.' },
+    empty: '분류된 답이 없어요 — 답을 안 쓴 게 아니라 이름표에 안 붙었어요.' },
   { axis: 'SUGGESTION', title: '바꿨으면 하는 것', tone: 'neutral',
-    empty: '바꿨으면 하는 것을 말한 사람이 없다.' },
+    empty: '분류된 답이 없어요 — 답을 안 쓴 게 아니라 이름표에 안 붙었어요.' },
 ]);
+
+/**
+ * 한 축에서 **분류된 사람이 답한 사람의 이 비율에 못 미치면** 그 절에 경고를 단다.
+ *
+ * 실측(n=40)에서 LIKE 7 · USAGE_SCENE 2 · SUGGESTION 2 였다. 그 상태의 「1위 주제」는
+ * 표본의 목소리가 아니라 **분류에 성공한 소수의 목소리**인데, 화면은 둘을 구분하지 않고
+ * 「40명 중 x명」이라고만 적었다.
+ */
+export const COVERAGE_WARN_RATIO = 0.5;
 
 /** 차별성 인식 3분류. **«비슷하다»가 다수인 것 자체가 핵심 경고다.** */
 export const DIFFERENTIATION_VIEW = Object.freeze({
@@ -40,8 +56,10 @@ export const DIFFERENTIATION_VIEW = Object.freeze({
  *
  * ⚠ **잘라내는 것은 화면뿐이다** — 봉투와 계약은 36개를 그대로 담는다. 축이 6개로 늘어난
  * 뒤로 상한 없이 그리면 「나열식이라 정보가 없다」는 원래 문제로 되돌아간다.
+ *
+ * 2026-08-15 에 5 → 3. 다섯 개도 「나열」로 읽힌다는 사용자 판정이 있었다.
  */
-export const THEMES_VISIBLE = 5;
+export const THEMES_VISIBLE = 3;
 
 /** 이해도 3분류. **«오해»가 나쁜 결과가 아니라 «설명을 고치라»는 신호다.** */
 export const COMPREHENSION_VIEW = Object.freeze({
@@ -65,8 +83,8 @@ export const ANSWER_VIEW = Object.freeze([
 ]);
 
 const CAVEATS_MISSING = Object.freeze([
-  '⚠ 경계 문구가 결과에 실려오지 않았다. 이 결과를 인용하지 마라 — '
-  + '값만 떼어 나가는 것을 막는 장치가 빠진 상태다.',
+  '⚠ 경계 문구가 결과에 실려오지 않았어요. 이 결과를 인용하지 마세요 — '
+  + '값만 떼어 나가는 것을 막는 장치가 빠진 상태예요.',
 ]);
 
 function asArray(value) {
@@ -141,8 +159,20 @@ function normalizeTheme(raw) {
     mentionCount: asNumber(raw?.mentionCount) ?? 0,
     // 「그 걸림돌이 없어지면 사겠다」고 **말한** 사람 수. 추측이 아니라 발언이다.
     resolvedCount: asNumber(raw?.resolvedCount) ?? 0,
+    // ⚠ **버리지 않는다.** 봉투에 이미 실려 있고(계약 `THEME`), 계약이
+    //    `mentionCount === respondentIds.length` 까지 강제한다. 이 명단이 있어야
+    //    「이 축에서 몇 명이 분류됐나」를 화면이 덧셈으로 셀 수 있다 — 주제마다 세면
+    //    한 사람이 여러 주제에 들어 중복되므로 **합집합**이어야 한다.
+    respondentIds: asArray(raw?.respondentIds).map(text).filter(Boolean),
     quote: text(raw?.quote),
   };
+}
+
+/** 한 축에서 이름표가 하나라도 붙은 사람 수. 주제 간 중복을 없앤 **합집합**이다. */
+function classifiedCount(rows) {
+  const seen = new Set();
+  rows.forEach((theme) => theme.respondentIds.forEach((id) => seen.add(id)));
+  return seen.size;
 }
 
 function normalizeBucketed(raw) {
@@ -179,6 +209,95 @@ function normalizeInterview(raw, index) {
   };
 }
 
+/**
+ * 「이 조사가 센 것」 — 화면 맨 위 세 줄.
+ *
+ * ⚠ **해석도 권고도 아니다. 전부 집계다.** 「가격을 내려라」 같은 문장은 만들지 않는다 —
+ * 합성 응답자 표본에 판정을 붙이는 순간 없는 근거가 생긴다(이 모듈 전체의 규율).
+ *
+ * 그런데 **병치는 집계다.** 「안 사는 이유 1위는 가격인데 제안 1위는 가격 인하가 아니다」는
+ * 세기만 한 것이고, 그 나란히 놓기가 권고 없이 방향을 준다. 이 함수가 하는 일이 그것이다.
+ *
+ * 밖의 실무 근거: 정성 보고서가 작동하지 않는 첫 번째 이유가 「findings 를 데이터가 드러낸
+ * 것이 아니라 **질문지 순서로** 조직하는 것」이다(flowres.io). 우리 화면이 그 모양이었다.
+ */
+function buildHeadline(themes, alternatives, contrast, answered) {
+  const byCount = (a, b) => b.mentionCount - a.mentionCount;
+  const barrier = themes.filter((t) => t.axis === 'BARRIER').sort(byCount)[0];
+  if (!barrier) return null;
+
+  // 타겟 분모를 함께 적는다. **이것이 없으면 「20명 중 19명」이 타겟 수 행세를 한다** —
+  // 타겟이 모자라면 비타겟으로 채우는 표집이라(`targeting` 참조) 분모가 섞여 있다.
+  const scope = contrast.find((row) => row.axis === barrier.axis && row.label === barrier.label);
+
+  // 그 장벽을 말한 사람들과 **가장 많이 겹치는** 제안. 명단 교집합이라 LLM 0회다.
+  const members = new Set(barrier.respondentIds);
+  let best = null;
+  themes.filter((t) => t.axis === 'SUGGESTION').forEach((suggestion) => {
+    let overlap = 0;
+    suggestion.respondentIds.forEach((id) => { if (members.has(id)) overlap += 1; });
+    if (best === null || overlap > best.overlap) best = { suggestion, overlap };
+  });
+
+  // ⚠ **바닥 규칙.** 이번 표본은 13/14 라 강하지만 이 규칙은 다른 사업안에도 돈다.
+  //    겹침이 3명인데도 「가장 많이 요청한 것은 X」라고 똑같이 확신 있게 찍히면,
+  //    그것이 이 저장소가 반복해서 겪은 「조용히 틀린 결론」이다.
+  const linked = best !== null && best.overlap * 2 >= best.suggestion.mentionCount;
+
+  const alternative = alternatives[0] ?? null;
+
+  return {
+    barrier: {
+      label: barrier.label,
+      count: barrier.mentionCount,
+      resolved: barrier.resolvedCount,
+      // 「해결돼도 사겠다고 하지 않은」 사람. 아래 「아직 못 물어본 것」이 이 수 위에 선다.
+      unresolved: barrier.mentionCount - barrier.resolvedCount,
+      targetCount: scope ? scope.targetCount : null,
+    },
+    suggestion: best === null ? null : {
+      label: best.suggestion.label,
+      count: best.suggestion.mentionCount,
+      overlap: best.overlap,
+      // false 면 화면이 **연결 문장을 쓰지 않고** 「제안 1위는 X(n명)다」로만 적는다.
+      linked,
+    },
+    alternative: alternative === null ? null
+      : { label: alternative.label, count: alternative.mentionCount },
+    answered,
+  };
+}
+
+/**
+ * 「아직 못 물어본 것」 — 표준 정성 보고서의 «다음 검증» 칸.
+ *
+ * ⚠ **엔진 사정(포화·분류 커버리지·이름표 미대조)을 여기 넣지 않는다.** 그것은 신뢰도
+ * 서랍에 이미 있고, 여기 또 적으면 이 판이 고치려는 「같은 이야기 반복」을 새로 만든다.
+ *
+ * 여기 들어가는 것은 **집계가 자동으로 드러내는 «사업 질문»** 이다.
+ * 「어쩌라고」의 반대말은 「이걸 해라」(권고 — 우리가 못 쓴다)가 아니라
+ * **「다음에 이걸 확인해라」**이고, 후자는 집계라 규율을 안 어긴다.
+ */
+function buildOpenQuestions(headline) {
+  if (!headline) return [];
+  const rows = [];
+  const { barrier, suggestion, alternative } = headline;
+
+  // ⚠ **이름표 뒤에 조사를 붙이지 않는다.** 이름표는 AI 가 쓴 자유 문장이라 끝 글자를
+  //   알 수 없고, 「…한다**으로**」 같은 틀린 조사가 그대로 화면에 나간다.
+  //   그래서 전부 「…」 뒤에 «—» 를 두고 다음 절을 시작한다.
+  if (barrier.unresolved > 0) {
+    rows.push(`${barrier.unresolved}명은 해결돼도 사겠다고 하지 않았어요 — 왜인지는 안 물었어요.`);
+  }
+  if (suggestion !== null && suggestion.linked) {
+    rows.push(`「${suggestion.label}」 — 이것만 해결해도 사겠는지는 안 물었어요.`);
+  }
+  if (alternative !== null) {
+    rows.push(`「${alternative.label}」 — 이걸 왜 그만두게 될지는 안 물었어요.`);
+  }
+  return rows;
+}
+
 /** 카드 머리 두 줄. 못 읽은 칸은 그냥 빠진다 — 「알 수 없음」으로 채우지 않는다. */
 export function profileLines(profile) {
   const head = [
@@ -199,9 +318,25 @@ export function normalizeMarketInterview(raw) {
   const shortCells = Object.entries(raw.sampling?.shortCells ?? {})
     .map(([cell, detail]) => ({ cell, ...detail }));
 
+  // ── 「이 조사가 센 것」. 아래 뷰모델보다 **먼저** 만든다 — 세 재료가 다 필요하다.
+  const alternatives = asArray(raw.alternatives).map((item) => ({
+    label: text(item?.label) ?? '이름표 없음',
+    mentionCount: asNumber(item?.mentionCount) ?? 0,
+  }));
+  const contrast = asArray(raw.contrast).map((row) => ({
+    axis: row?.axis ?? null,
+    label: text(row?.label) ?? '이름표 없음',
+    targetCount: asNumber(row?.targetCount) ?? 0,
+    nonTargetCount: asNumber(row?.nonTargetCount) ?? 0,
+  }));
+  const headline = buildHeadline(themes, alternatives, contrast, answered);
+
   return {
     board: normalizeBoard(raw.conceptBoard),
     sampleSize: asNumber(raw.sampleSize) ?? 0,
+    // 화면 맨 위 세 줄과 「아직 못 물어본 것」. 둘 다 집계이고 LLM 호출은 0회다.
+    headline,
+    openQuestions: buildOpenQuestions(headline),
     // ⚠ **분모는 sampleSize 가 아니라 answered 다.** 뽑은 사람과 답한 사람은 다르고,
     //    형식 위반·타임아웃으로 빠진 사람을 분모에 넣으면 언급 수가 조용히 작아 보인다.
     answered,
@@ -226,27 +361,42 @@ export function normalizeMarketInterview(raw) {
     },
     targeting: {
       criteriaText: text(raw.targeting?.criteriaText) ?? '조건을 읽지 못했다',
+      // ⚠ **`targetRequested` 를 버리면 안 된다.** 아래 `targetShort` 가 이것 위에 선다.
+      //    2026-08-15 실측 판에서 이 칸이 버려져 있어 「타겟이 모자라다」를 화면이 물어볼
+      //    방법조차 없었다.
+      targetRequested: asNumber(raw.targeting?.targetRequested) ?? 0,
       targetDrawn: asNumber(raw.targeting?.targetDrawn) ?? 0,
       nonTargetDrawn: asNumber(raw.targeting?.nonTargetDrawn) ?? 0,
+      // ⚠ **`shortfall` 은 경고에 쓸 수 없는 죽은 칸이다.** 서버가 `표본크기 - 뽑은수` 로
+      //    계산하는데(`targeting.py`), 타겟이 모자라면 **비타겟으로 채워 넣으므로** 값이
+      //    언제나 0 이 된다. 실측 판도 타겟 0명 / 비타겟 40명인데 shortfall 은 0이었다.
+      //    아래 `targetShort` 가 진짜 판정이고, 이 칸은 계약이라 옮기기만 한다.
       shortfall: asNumber(raw.targeting?.shortfall) ?? 0,
+      targetShort: (asNumber(raw.targeting?.targetDrawn) ?? 0)
+        < (asNumber(raw.targeting?.targetRequested) ?? 0),
+      // 조건이 하나도 안 걸린 조사인가. 「타겟 0명」 경고를 낼지 가르는 자리다 —
+      // 「누구나」로 돌린 조사에 「타겟이 없다」고 말하면 그건 경고가 아니라 소음이다.
+      targeted: (asNumber(raw.targeting?.targetRequested) ?? 0) > 0,
     },
     sections: AXIS_VIEW.map((view) => {
       const rows = themes.filter((theme) => theme.axis === view.axis);
+      const classified = classifiedCount(rows);
       // 상한은 화면에만 건다. 접힌 것도 개수를 밝혀 「다 보여줬다」로 읽히지 않게 한다.
       return { ...view, themes: rows.slice(0, THEMES_VISIBLE),
-        hiddenThemes: rows.slice(THEMES_VISIBLE) };
+        hiddenThemes: rows.slice(THEMES_VISIBLE),
+        // 이 축에서 이름표가 붙은 사람 수. 아래 두 칸이 「말 안 함」과 「분류 못 함」을 가른다.
+        classified,
+        thinCoverage: answered > 0 && classified < answered * COVERAGE_WARN_RATIO };
     }),
-    alternatives: asArray(raw.alternatives).map((item) => ({
-      label: text(item?.label) ?? '이름표 없음',
-      mentionCount: asNumber(item?.mentionCount) ?? 0,
-    })),
+    alternatives,
+    // 「지금은 이렇게 해결한다」의 분류 인원은 **셀 수 없다** — `alternatives` 계약이
+    // `{label, mentionCount}` 뿐이라 명단이 없다(주제 축과 달리 `respondentIds` 가 없다).
+    // 그래서 여기서는 「몇 명이 그 칸에 답을 썼나」까지만 센다. 그것만으로도 「말한 사람이
+    // 없다」는 거짓 단언은 막힌다 — 실측 판에서 40명 전원이 답을 썼는데 0건으로 떴다.
+    relevanceAnswered: asArray(raw.transcripts)
+      .filter((row) => text(row?.relevance)).length,
     segments: asArray(raw.segments).map(normalizeBucketed),
-    contrast: asArray(raw.contrast).map((row) => ({
-      axis: row?.axis ?? null,
-      label: text(row?.label) ?? '이름표 없음',
-      targetCount: asNumber(row?.targetCount) ?? 0,
-      nonTargetCount: asNumber(row?.nonTargetCount) ?? 0,
-    })),
+    contrast,
     suggestionLinks: asArray(raw.suggestionLinks).map((row) => ({
       label: text(row?.label) ?? '이름표 없음',
       mentionCount: asNumber(row?.mentionCount) ?? 0,

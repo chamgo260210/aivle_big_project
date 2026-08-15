@@ -71,7 +71,10 @@ public class InternalAiExecutionClient {
             "SAFETY_POLICY_BLOCKED",
             // 인터뷰가 표본의 절반도 못 걷었다. 「AI 가 불안정하다」와 다르다 — 다시 눌러
             // 볼 만한 실패이고, 화면이 그렇게 말할 수 있어야 한다.
-            "MARKET_INTERVIEW_NO_USABLE_RESPONSE")),
+            "MARKET_INTERVIEW_NO_USABLE_RESPONSE",
+            // 조건에 맞는 응답자가 0명이라 응답을 걷기 «전에» 멈췄다. 다시 눌러도 같은
+            // 결과이므로 재시도가 아니라 조건을 고쳐야 한다 — 화면이 그렇게 말해야 한다.
+            "MARKET_INTERVIEW_NO_TARGET_SAMPLE")),
         Map.entry("RESULT_SCHEMA_INVALID", Set.of("RESULT_UNKNOWN_FIELD", "RESULT_FIELD_CONSTRAINT_VIOLATION",
             "RESULT_REFERENCE_INVALID", "RESULT_DOMAIN_INVARIANT_VIOLATION", "AI_RESULT_INVALID",
             "PROVIDER_RESPONSE_SCHEMA_REJECTED", "PROVIDER_JSON_INVALID",

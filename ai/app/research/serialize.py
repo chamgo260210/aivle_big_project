@@ -35,8 +35,11 @@ _SUBJECT = {
 
 #: 판 ㊸ — 절 체인이 새로 채우는 과목 셋. **엔진 `doc["과목"]` 에는 없다.**
 #: 성적은 「그 절에 실린 사실이 몇 건인가」에서 온다 — 새 판정을 만들지 않는다.
-#: ⚠ 목록 **순서가 곧 화면 절 번호**다(`marketResult.subjectNumber`). `NOT_FOUND` 앞에
-#:   끼우기로 사람이 정했다(2026-08-15) — 그래야 번호가 밀리는 줄이 `NOT_FOUND` 하나뿐이다.
+#: ⚠ **판 ㊺ 로 이 줄이 거짓이 됐다 — 고쳐 적는다.**
+#:   옛 문장: 「목록 순서가 곧 화면 절 번호다」. **이제 아니다.** 화면 절 번호의 정본은
+#:   `frontEnd/.../marketResult.js` 의 **`SECTION_ORDER`**(9칸)이고, 성적표는 여전히
+#:   10과목을 보내되 화면이 그중 일곱만 목차에 세운다(성장률·계산은 1절 «안»으로 접혔다).
+#:   → **여기 순서를 바꿔도 화면 번호는 안 움직인다.** 화면을 바꾸려면 `SECTION_ORDER` 를 본다.
 _SECTION_SUBJECT = {
     "CHANNEL": "어디서 팔리나 — 채널별 비중",
     "UNIT_ECONOMICS": "한 개 팔면 얼마가 남나",
@@ -780,7 +783,50 @@ ENVELOPE = ("runId", "conceptId", "asOf", "generatedAt", "mode",
             "stages", "degradations",
             "scorecard", "market", "canvas", "bm", "evidence", "summary", "notes",
             # ── 판 ㊸ — 사람 보고서의 2·8·9절 ─────────────────────
-            "judgment", "prescriptions", "synthesis")
+            "judgment", "prescriptions", "synthesis",
+            # ── 판 ㊻ — **사람이 읽는 보고서 글** ─────────────────
+            # 사실(evidence[])만 실으면 화면은 표밖에 못 그린다. 목표 보고서는 절마다
+            # 여는 문장·소제목·표·설명 문단이 있고, 그 «글»이 여기로 실린다.
+            # **`null` 이어도 나머지 화면은 그대로 돈다** — 프론트가 물러설 수 있게.
+            "report")
+
+
+#: 보고서 글이 설 수 있는 절. 앞 일곱은 **evidence 의 `_절` 과 같은 어휘다** — 새 이름을
+#: 만들면 화면이 글과 근거를 같은 절에 못 세운다.
+#: 뒤 둘은 보고서의 꼬리다 — `GAPS` 8절(못 구한 것) · `SYNTHESIS` 9절(이 조사가 말하는 것).
+#: ⚠ 봉투의 `prescriptions`·`synthesis` 와 **다른 물건이다.** 저쪽은 기계가 원장에서 뽑은
+#:   값이고 이쪽은 모델이 쓴 «글»이다. 한쪽으로 합치면 「기계가 판정했다」가 흐려진다.
+REPORT_SECTIONS = ("MARKET_SIZE", "PRICE", "COMPETITOR", "CHANNEL", "DEMAND",
+                   "UNIT_ECONOMICS", "REGULATION", "GAPS", "SYNTHESIS")
+
+
+def report(doc: dict | None) -> dict | None:
+    """`write_report.build()` 산출 → 계약. **번역만 한다 — 세지도 자르지도 않는다.**
+
+    `unverifiedNumbers`(유령 수)·`conceptLeaks`(컨셉 누출)는 도구가 이미 센 값이다.
+    ⚠ **이 둘을 떨어뜨리지 마라.** 화면이 이걸로 「이 글의 수 몇 개는 조사 결과가 아니다」를
+      경고한다 — 경계 표시다.
+    ⚠ `lead` 도 경계 표시다 — 재료가 무엇이고 누가 썼는지가 거기 적혀 있다.
+      **글만 떼어 그리면 모델이 쓴 문장이 조사 결과로 읽힌다.**
+    """
+    if not doc:
+        return None
+    sections = []
+    for row in doc.get("절") or []:
+        code, markdown = row.get("section"), (row.get("본문") or "").strip()
+        if not markdown:
+            continue
+        if code not in REPORT_SECTIONS:
+            raise ContractDrift(f"보고서 절이 계약 밖이다: {code!r}")
+        sections.append({"subject": code, "markdown": markdown})
+    if not sections:
+        return None
+    return {"writtenBy": _text(doc.get("쓴_모델"), "모델 미상"),
+            "unverifiedNumbers": int(doc.get("유령_수") or 0),
+            "conceptLeaks": int(doc.get("컨셉_누출_수") or 0),
+            "lead": (doc.get("머리말") or "").strip() or None,
+            "tail": (doc.get("꼬리말") or "").strip() or None,
+            "sections": sections}
 
 
 def judgment(doc: dict | None) -> dict | None:

@@ -35,9 +35,11 @@
       "householdSizeMax": 0,
       "regions": [],
       "incomeKeywords": [],
-      "jobKeywords": []
+      "jobKeywords": [],
+      "hasChildren": 0,
+      "householdRoles": []
     },
-    "criteriaText": "만 30~49세 / 3인 이상 가구",
+    "criteriaText": "만 30~49세(16명) / 3인 이상 가구(16명) → 전부 동시에 만족: 16명",
     "targetRequested": 16,
     "nonTargetRequested": 4,
     "targetDrawn": 16,

@@ -36,8 +36,11 @@ _OBSERVED_STATUSES = frozenset({"VERIFIED", "PARTIAL"})
 #:
 #: 실측(2026-08-13, 프로젝트 3 HMR): 관측 4칸 중 3칸이 `labels=['concept_snapshot']`,
 #: `marketEvidenceIds=[]` 인데 상태가 **VERIFIED** 였고 최종 판정이 **PASS** 였다.
+#: ⚠ `channel_analysis` 는 판 ㊺ 에 **더한 여덟째 라벨**이다. 그 전에는 채널에 맞는 라벨이
+#: 없어 `mapping.CLAIM_TYPE_LABEL` 의 채널 자리가 비었고, 그래서 채널 칸의 파생 라벨이
+#: 언제나 0건이라 폴백이 `concept_snapshot` 을 되살렸다.
 _MARKET_LABELS = frozenset({"market_size", "growth_rate", "competitor_analysis",
-                            "price_analysis", "demand_evidence"})
+                            "price_analysis", "demand_evidence", "channel_analysis"})
 
 #: 판정의 무게. 게이트는 이 사다리를 **내려가기만** 한다.
 _RANK = {"PASS": 0, "CONDITIONAL": 1, "REVISION_REQUIRED": 2, "BLOCKED": 3}
@@ -45,27 +48,48 @@ _RANK = {"PASS": 0, "CONDITIONAL": 1, "REVISION_REQUIRED": 2, "BLOCKED": 3}
 
 #: 관측 칸 → 그 칸을 뒷받침해야 하는 **성적표 과목**.
 #:
-#: ⚠ `CHANNELS` 가 없는 것은 빠뜨린 게 아니다. 성적표 7과목에 채널 과목이 **없다** —
-#: 그래서 채널은 「안 찾아졌는지」조차 성적표로 판별할 수 없고, `cause` 가 `UNMAPPED` 이 된다.
-#: 그것이 사실이므로 그렇게 적는다(모르는 것을 「수집 실패」로 단정하지 않는다).
+#: ⚠ 2026-08-15 정정: 이 자리는 *"성적표 7과목에 채널 과목이 **없다** — 그래서 채널은
+#: 「안 찾아졌는지」조차 판별할 수 없고 `cause` 가 `UNMAPPED` 이 된다"* 고 적고 있었다.
+#: **판 ㊸ 에서 틀린 말이 됐다** — `serialize._SECTION_SUBJECT` 가 `CHANNEL`·
+#: `UNIT_ECONOMICS`·`REGULATION` 세 과목을 넣었는데 이 표만 안 따라왔다. 그동안 화면은
+#: 채널에 대해 **「조사 항목에 없어서 갈래를 알 수 없어요」**라고 말했다 — 알 수 있는데.
+#:
+#: ⚠ 이 줄은 **승격 카드가 캔버스에 닿는 것과 한 묶음**이다. 새 세 과목의 성적은 「그 절에
+#: 실린 사실 건수」일 뿐이라(`serialize._section_rows`), 근거가 칸에 안 붙은 채 `FILLED` 를
+#: 보면 여기가 「찾았는데 인용을 안 했다(UNCITED)」고 말한다. 승격 카드가 칸에 붙으면
+#: 그 말이 **참이 되고**, 안 붙으면 거짓말이 된다.
 _CELL_SUBJECT = {
     "CUSTOMER_SEGMENTS": "MARKET_SIZE",
     "VALUE_PROPOSITIONS": "DEMAND",
     "REVENUE_STREAMS": "PRICE",
+    "CHANNELS": "CHANNEL",
 }
 
 #: 성적표가 「못 찾았다」고 적은 상태.
 _MISSING_STATES = frozenset({"MISSING"})
 
 
-def _cause(subject: str | None, states: dict[str, str]) -> str:
+def _cause(subject: str | None, states: dict[str, str], found: bool = False) -> str:
     """사유의 **갈래**. 「컨셉을 고쳐서 될 일인가」가 갈린다 (계획서 §5).
 
     - `UNCOLLECTED` — 원장에 **애초에 없다**. 재수집이 답이고, 그래도 없으면 「미확보」로
       확정하고 멈춘다. **컨셉을 고쳐 통과시키면 그게 우리가 만든 방식의 「다 패스」다**
     - `UNCITED` — 찾아는 놨는데 **칸이 인용을 안 했다**. 배선 문제이고 사용자가 할 일이 없다
     - `UNMAPPED` — 성적표가 그 칸을 **재지 않는다**. 갈래를 모른다는 사실을 그대로 적는다
+
+    ⚠ `found` — **이 칸에 실제로 붙은 시장 근거가 있는가.** 있으면 성적표가 뭐라 하든
+      `UNCOLLECTED`(=「못 찾음 · 다시 조사해야 해요」)라고 쓸 수 없다. **눈앞에 있는데
+      없다고 말하는 것이기 때문이다.**
+
+      이 갈래가 필요한 이유(2026-08-15 실측): BM 걸음은 성적표에 절 건수를 안 넘겨
+      (`pipeline.py` 의 `serialize.scorecard(score)` — FULL 쪽은 `절["counts"]` 를 준다)
+      채널 과목이 늘 `MISSING` 이 된다. 그러면 근거 4건이 붙은 칸에 「못 찾음」이 찍히고,
+      같은 줄의 문장은 「참고할 만한 조사 결과 4건은 있다」라고 말한다 — **한 줄이 스스로를
+      부정한다.** 성적표를 고치는 것이 더 깊은 수선이지만 그건 걸음 구조를 건드리는 일이라
+      여기서는 **거짓말만 막는다.**
     """
+    if found:
+        return "UNCITED"
     if subject is None or subject not in states:
         return "UNMAPPED"
     return "UNCOLLECTED" if states[subject] in _MISSING_STATES else "UNCITED"
@@ -95,17 +119,36 @@ def evaluate(cells: list[dict], scorecard: list[dict] | None = None) -> list[dic
     # 상태(`status`)를 안 본다. 모델이 「확인됨」이라고 써도 인용한 시장 자료가 없으면
     # 확인된 것이 아니다. 「부분 확인」이 아니라 「아무것도 못 찾았다」이므로 이 규칙만
     # REVISION_REQUIRED 를 낸다.
+    #
+    # ⚠ **`marketEvidenceIds` 가 비었는지만 보면 안 된다**(2026-08-15 실측으로 잡음).
+    #   승격 절 사실이 근거로 붙기 시작하면서, 채널 칸이 `UNVERIFIED` 인데도 id 가 4건
+    #   있어 이 규칙이 **조용해졌다** — 판정이 `REVISION_REQUIRED` 에서 `CONDITIONAL` 로
+    #   저절로 완화됐다. 붙은 4건은 「그 절에 실을 만한 사실」이지 이 칸을 확인해 준 것이
+    #   아니고(`mapping.derive` 가 그래서 상태를 안 올린다), 그러면 **화면에 아무 사유도
+    #   안 뜬 채 빈 칸만 남는다.** 그래서 **상태**를 함께 본다.
     for name in OBSERVED_CELLS:
         cell = by_cell.get(name)
         if cell is None:
             continue
-        if cell.get("marketEvidenceIds"):
+        # ⚠ **법률이 막은 칸은 이 규칙이 안 본다**(2026-08-15 감사로 잡음). 위에서 상태를
+        #   같이 보게 만든 순간, 근거가 붙어 있는데 `BLOCKED` 인 칸이 이 그물에 걸려
+        #   **「이 칸을 확인해 준 근거가 없다」는 거짓말**을 하게 됐다. `BLOCKED` 는 시장
+        #   근거의 문제가 아니라 법률의 문제이고, `mapping.apply` 도 그 상태만은 안 덮는다.
+        if cell.get("status") == "BLOCKED":
             continue
-        if _MARKET_LABELS & set(cell.get("sourceLabels") or []):
+        참고 = list(cell.get("marketEvidenceIds") or [])
+        확인됨 = cell.get("status") in _OBSERVED_STATUSES
+        if 참고 and 확인됨:
             continue
+        if 확인됨 and _MARKET_LABELS & set(cell.get("sourceLabels") or []):
+            continue
+        # 「하나도 못 찾았다」와 「찾긴 했는데 이 칸을 확인해 주진 못한다」를 가른다 —
+        # 사용자가 할 다음 행동이 다르다(재조사 ↔ 그 근거를 직접 읽어 보기).
+        message = ("출처가 컨셉 서술과 입력값뿐 — 시장 근거 0건." if not 참고 else
+                   f"이 칸을 확인해 준 근거가 없다 — 참고할 만한 조사 결과 {len(참고)}건은 있다.")
         reasons.append(_reason(
-            "G1", name, "출처가 컨셉 서술과 입력값뿐 — 시장 근거 0건.",
-            cause=_cause(_CELL_SUBJECT.get(name), states)))
+            "G1", name, message, 참고,
+            cause=_cause(_CELL_SUBJECT.get(name), states, found=bool(참고))))
 
     # ── G4. 캔버스가 통째로 사용자 계획이다 ───────────────────────────────
     # 계획 칸이 전부 관측 미달이면 「시장이 확인해 준 것」이 하나도 없이 캔버스가 선다.

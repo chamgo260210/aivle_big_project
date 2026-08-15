@@ -95,12 +95,19 @@ class ConceptPortfolioSelectionActionFacade:
             # 계약 판정은 **평평한 dict** 위에서 돈다 — 모델 객체에는 `.get` 이 없다.
             concept = value.selectedCandidate.candidate.model_dump(mode="json")
             raw = await propose_refinements(material, concept)
+            # ⚠ **근거 계약이 먼저다.** 프롬프트가 「근거 없는 제안은 버려진다」고 약속하는데
+            #   그 검사가 아무 데도 없어, 근거 0건 제안이 그대로 적용됐다(실측: 가격
+            #   8,900 → 9,500). 값 계약(`filter_proposals`)과 **일부러 갈라 둔다** —
+            #   섞으면 다음 사람이 어느 쪽 때문에 기각됐는지 못 가린다.
+            근거통과, 근거기각 = drift.filter_ungrounded(raw, material.get("marketEvidence"))
             # 계약으로 거른 뒤에 돌려준다 — 기각분은 Java 가 다음 라운드로 되먹인다.
-            passed, rejected = drift.filter_proposals(raw, concept)
+            passed, rejected = drift.filter_proposals(근거통과, concept)
             return ConceptPortfolioSelectionActionResult(
                 action=value.action,
                 refinementProposals=[_display_safe(item) for item in passed],
-                driftRejections=rejected,
+                # 두 갈래를 **한 목록으로** 돌려준다. 모델에게는 「왜 막혔나」가 필요하고,
+                # 그 사유가 다음 라운드 입력(`previouslyRejectedByContract`)이 된다.
+                driftRejections=근거기각 + rejected,
             )
 
         if value.action == "NARRATE_REFINED":

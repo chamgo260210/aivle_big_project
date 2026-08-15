@@ -42,12 +42,22 @@ function Invoke-Json {
     # 본문을 바이트로 만들어 보낸다. PowerShell 5.1 의 Invoke-RestMethod 는 문자열 본문을
     # ANSI 로 보내서 한글이 «????» 가 된다 — 컨셉보드가 뭉개지면 응답자는 물음표를 읽는다.
     $arguments = @{ Method = $Method; Uri = $Uri; Headers = $Headers
-                    ContentType = "application/json; charset=utf-8" }
+                    ContentType = "application/json; charset=utf-8"
+                    UseBasicParsing = $true }
     if ($null -ne $Body) {
         $json = $Body | ConvertTo-Json -Depth 12 -Compress
         $arguments.Body = [System.Text.Encoding]::UTF8.GetBytes($json)
     }
-    return Invoke-RestMethod @arguments
+    # ⚠ **응답도 UTF-8 로 «직접» 읽는다.** `Invoke-RestMethod` 는 응답 헤더에 charset 이
+    #   없으면 PowerShell 5.1 에서 본문을 ISO-8859-1 로 디코딩한다. 그러면 한글이 전부
+    #   깨지고, **한글을 대조하는 검사만 골라서** 거짓 실패를 낸다.
+    #   2026-08-15 실측: 자극이 멀쩡히 실려 왔는데 `conceptBoard.rendered` 검사만 FAIL 이
+    #   났다(원장으로 대조해 제품은 정상임을 확인). 스모크가 거짓 경보를 내면 다음 사람이
+    #   스모크를 믿지 않게 되고, 그때부터 진짜 결함이 지나간다.
+    $response = Invoke-WebRequest @arguments
+    $bytes = $response.RawContentStream.ToArray()
+    if ($bytes.Length -eq 0) { return $null }
+    return [System.Text.Encoding]::UTF8.GetString($bytes) | ConvertFrom-Json
 }
 
 # 유료 구간과 프로브가 함께 쓰는 자극. 확정 사업안이 없는 일회용 프로젝트에서도

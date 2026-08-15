@@ -54,7 +54,9 @@ for _dir in (RESEARCH_HOME,
 STAGES_FULL = ("harness", "dryrun", "collect", "verdict", "canvas", "cards", "summary",
                # 판 ㊸ — 문서를 **절 단위로** 다시 읽어 2·8·9절을 만든다. SOFT.
                "sections")
-STAGES_BM = ("restore", "cards", "bm_adapter", "bm_model")
+#: ⚠ `promote` 는 2026-08-15 신설 — 원장의 `sections.json` 을 다시 세어 절 사실을 근거
+#: 카드로 올린다. **LLM 0회**라 예산에 청구하지 않는다.
+STAGES_BM = ("restore", "cards", "promote", "bm_adapter", "bm_model")
 
 #: 이름표 하나로 **(컨셉 파일, 원장)** 이 정해진다.
 #:
@@ -552,7 +554,7 @@ def _full(source_run: str, concept_path: str, concept_id: str,
         evidence=evidence, summary=summary,
         notes=list(serialize.NOTES_FULL),
         judgment=절["judgment"], prescriptions=절["prescriptions"],
-        synthesis=절["synthesis"])
+        synthesis=절["synthesis"], report=절["report"])
 
 
 #: 절 체인이 문서 하나를 읽는 데 LLM 1회. 문서 수를 미리 모르니 **최소 소요**로 잰다.
@@ -592,10 +594,11 @@ def _sections(ledger: Run, budget: Budget, source_run: str, concept_path: str,
     import promote_cards as PROMOTE                                # noqa: PLC0415
     import publish_gate as GATE                                    # noqa: PLC0415
     import read_sections as READ                                   # noqa: PLC0415
+    import reask_sections as REASK                                 # noqa: PLC0415
     import synthesize as SYNTH                                     # noqa: PLC0415
 
     빈 = {"cards": [], "counts": None, "judgment": None,
-          "prescriptions": None, "synthesis": None}
+          "prescriptions": None, "synthesis": None, "report": None}
     stage = ledger.stage("sections")
     began = time.monotonic()
     # ⚠ `concept_path` 는 **research2 뿌리 기준 상대 경로**다(`_concept_path_of`). 그대로
@@ -620,7 +623,19 @@ def _sections(ledger: Run, budget: Budget, source_run: str, concept_path: str,
         #    **그 뒤에** 청구한다 — 상한 90짜리 예산이 182를 쓰고 나서 알게 된다.
         여유 = budget.remaining() - _SUMMARY_RESERVE - _SYNTH_CALLS
         try:
-            sections, run = READ.build(source_run, f"{run_id}-sec", limit=여유)
+            # ★ **`pdf_refetch=True` 를 «반드시» 넘긴다** (판 ㊺).
+            #
+            # 실측: 이 인자는 CLI 에만 있었고 **제품은 한 번도 안 넘겼다.** 그래서 제품은
+            # 옛 추출기가 만든 본문을 그대로 쓰는데, 그 본문은 **2단 조판 PDF 가 줄 단위로
+            # 뒤섞여** 있어 온전한 문장이 존재하지 않는다 — 인용 대조가 **구조적으로**
+            # 통과할 수 없다. 실례: 「…2026년부터 단계적으로 **영양표시 비중은 즉석조리식품
+            # 45.4%…** 를 의무화할 것을」 — 왼쪽 단과 오른쪽 단이 한 줄씩 번갈아 섞였다.
+            #
+            # `_refetch_pdfs` 는 PDF 를 다시 받아 **지금의** `pdf_text` 로 다시 뽑고
+            # **LLM 을 0회 부른다.** 원장 112건 중 PDF 는 14건(12%)이다.
+            # ⚠ 못 받은 문서는 옛 본문 그대로 두고 사유를 남긴다 — **조용히 실패하지 않는다.**
+            sections, run = READ.build(source_run, f"{run_id}-sec", limit=여유,
+                                       pdf_refetch=True)
             부른_횟수 = int(run.counters.get("llm.calls", 0))
             budget.charge(부른_횟수)
             # ⚠ **예산에만 청구하고 단계에는 안 적으면 원장이 거짓말한다.** 실측(유료 스모크
@@ -635,6 +650,48 @@ def _sections(ledger: Run, budget: Budget, source_run: str, concept_path: str,
                 # 「없다」로 읽는데, 실제로는 「예산이 끊겼다」다.
                 ledger.degrade("sections", "SECTIONS_TRUNCATED",
                                f"예산 상한 {여유}건까지만 읽었다 — 원장의 문서 {안본}건을 안 봤다")
+
+            # ── ★ 얇은 절을 **다시 묻는다** (판 ㊹ 1단계) ──────────────
+            #
+            # **왜 한 번 더 부르나** — `read_sections` 는 문서 하나에 「7절 중 무엇을
+            # 채우나」를 **한 번** 묻는다. 판 ㊵·㊶ 실측: 그렇게 물으면 모델이 **한 주제만
+            # 긁는다.** 같은 문서·같은 글자·같은 모델에서 질문만 절 단위로 쪼갰더니
+            # 채널 4→31 · 원가 20→82 · 규제 9→29 · 가격 136→321 이 됐다.
+            # **이것이 판 ㊹ 의 ② 병이고, 도구는 판 ㊶ 에 이미 만들어 놓고 여기서 안 불렀다.**
+            #
+            # ⚠ **호출 수가 «문서 × 절» 이다.** 남은 예산을 그대로 문서 상한으로 넘기면
+            #   절 수배로 초과한다(실측 112문서 × 4절 = 448회). 그래서 절 수로 **나눠서** 준다.
+            # ⚠ 실패해도 `read` 산출은 그대로 쓴다 — **더 얻으려다 있는 것을 잃지 않는다.**
+            절수 = len(REASK.DEFAULT_SECTIONS)
+            남은 = budget.remaining() - _SUMMARY_RESERVE - _SYNTH_CALLS
+            문서상한 = max(0, 남은 // 절수)
+            if 문서상한 <= 0:
+                ledger.degrade("sections", "REASK_SKIPPED",
+                               f"남은 예산 {남은} 으로는 절 {절수}개를 한 문서도 못 묻는다")
+            else:
+                try:
+                    # ★ **읽기가 고친 본문을 그대로 물려준다** (판 ㊺).
+                    #   `_refetch_pdfs` 는 메모리 안에서만 고치므로, 안 넘기면 재질문이
+                    #   `_corpus` 를 새로 불러 **옛 2단 조판 본문을 다시 읽는다.**
+                    #   실측 규모: 읽기 94회는 새 본문인데 **재질문 376회가 옛 본문** — 지출의 80%다.
+                    #   게다가 재질문이 겨냥하는 넷이 **정부 PDF 비중이 가장 높은 절**이다.
+                    더, run2 = REASK.build(source_run, f"{run_id}-reask",
+                                          limit=문서상한,
+                                          docs=sections.get("_문서목록"))
+                    부른2 = int(run2.counters.get("llm.calls", 0))
+                    budget.charge(부른2)
+                    stage.llm_calls += 부른2
+                    sections = REASK.merge(sections, 더)
+                    # ⚠ **성공을 `degrade` 로 적지 않는다** — 그것은 봉투를 타고 화면에
+                    #   경고로 나간다. 이 단계가 얼마나 얻었는지는 `merge` 가 `sections.json`
+                    #   의 `합침` 칸에 남기고, 호출 수는 위 `stage.llm_calls` 가 남긴다.
+                except Exception as error:          # noqa: BLE001 — 더 얻는 시도다
+                    # **실패는 값이다.** 조용히 넘기면 「원래 이만큼이었다」로 읽힌다.
+                    ledger.degrade("sections", "REASK_FAILED", str(error)[:200])
+
+            # ⚠ **본문 전량을 원장에 쓰지 않는다.** `_문서목록` 은 재질문에 물려주려고
+            #   메모리로만 나르는 것이라, 그대로 쓰면 `sections.json` 이 수 MB 로 불어난다.
+            sections.pop("_문서목록", None)
             io.open(os.path.join(runpath.write_dir(source_run), "sections.json"),
                     "w", encoding="utf-8").write(
                 json.dumps(sections, ensure_ascii=False, indent=1))
@@ -648,19 +705,58 @@ def _sections(ledger: Run, budget: Budget, source_run: str, concept_path: str,
     counts: dict = {}
     for r in publish.get("문서별") or []:
         for it in r.get("items") or []:
-            if it.get("게재") and it["게재"] != "OFF_TOPIC":
+            # ⚠ **성적표가 세는 것은 «절 머리»뿐이다** (판 ㊹ 3단계). 서랍(`밖`)까지 세면
+            #   「해외 시장 값」·「상위 범주 값」이 그 절의 성적을 올린다 —
+            #   판 ㊸ 의 「원가 확인됨인데 원가 사실 0건」과 같은 병을 새 이름으로 되살리는 것이다.
+            if GATE.머리인가(it):
                 counts[GATE.절(it)] = counts.get(GATE.절(it), 0) + 1
     judgments = JUDGE.build(publish, concept)
-    out = {"cards": PROMOTE.build(publish), "counts": counts,
+    # ★ **서랍은 표본만 싣는다** (판 ㊺). 절 머리는 한 건도 안 접는다.
+    #   왜 접는지는 `promote_cards.서랍_상한` 에 실측과 함께 적었다 — 요약하면
+    #   봉투 상한 2MiB 를 넘기면 **실행 전체가 죽어** 이미 지불한 수집을 통째로 잃는다.
+    생략: dict = {}
+    카드 = PROMOTE.build(publish, 서랍상한=PROMOTE.서랍_상한, 생략=생략)
+
+    # ★ 판 ㊺ — **절마다 「먼저 볼 것」을 고른다** (절당 LLM 1회).
+    #   왜 필요한지는 `tools/pick_lead.py` 머리말에 실측과 함께 적었다 — 요약하면
+    #   이 엔진에 **고르는 자리가 없어서** 줄 세우기를 「출처의 권위」가 대신했고,
+    #   그래서 「출생아수 254,457명」이 「가정간편식 6조 8천억」을 이겼다.
+    #   ⚠ **버리지 않는다. 순서만 바꾼다.** 실패하면 낱말표 순서를 그대로 쓴다.
+    if not rescore and budget.can_afford(2):
+        import pick_lead as PICK                                    # noqa: PLC0415
+        try:
+            카드, 부름, 고른 = PICK.apply(카드, concept, run_id=f"{run_id}-pick")
+            budget.charge(부름)
+            stage.llm_calls += 부름
+            if 고른:
+                print("먼저 볼 것 고름 — " + " · ".join(f"{k} {len(v)}건"
+                                                 for k, v in sorted(고른.items())))
+        except Exception as error:                  # noqa: BLE001 — SOFT 다
+            ledger.degrade("sections", "PICK_FAILED", str(error)[:200])
+    if 생략:
+        # **몇 건 중 몇 건인지 말하지 않으면 표본이 전량인 척한다.** 경계 표시다 — 지우지 않는다.
+        ledger.degrade("sections", "DRAWER_SAMPLED",
+                       "참고 근거(서랍)는 절마다 "
+                       f"{PROMOTE.서랍_상한}건까지만 실었어요 — "
+                       + " · ".join(f"{절} {v['전체']}건 중 {v['실음']}건"
+                                    for 절, v in sorted(생략.items()))
+                       + ". 접힌 것도 원장에는 그대로 있어요")
+    out = {"cards": 카드, "counts": counts,
            "judgment": serialize.judgment(judgments),
            "prescriptions": serialize.prescriptions(
                PRESCRIBE.build(publish, concept, judgments)),
-           "synthesis": None}
+           "synthesis": None, "report": None}
 
     # ⚠ **여기까지 왔으면 이 단계는 돌았다.** 이 두 줄이 없으면 초기값 `SKIPPED` 가 그대로
     #   남아, 문서 132건을 읽고 절을 다 채운 실행이 **「안 돌았다」로 보고된다**(실측).
     #   실패 경로만 `FAILED` 를 적고 성공 경로가 아무것도 안 적던 것이 원인이다.
     stage.status = "OK"
+    stage.seconds = int(time.monotonic() - began)
+
+    # ── ★ 판 ㊻ — **사람이 읽는 보고서 글**을 쓴다 (SOFT) ──────
+    #   고르기 다음이 자리다. 절마다 「먼저 볼 것」이 정해진 뒤라야 글도 그 순서로 쓴다.
+    out["report"] = _report(ledger, budget, stage, source_run, concept, run_id, rescore,
+                            카드=카드)
     stage.seconds = int(time.monotonic() - began)
 
     # ── 9절만 유료다(LLM 1회). 여기가 막혀도 앞의 것은 다 살아 있다 ──
@@ -677,6 +773,47 @@ def _sections(ledger: Run, budget: Budget, source_run: str, concept_path: str,
         ledger.degrade("sections", "SYNTHESIS_FAILED", str(error)[:200])
     stage.seconds = int(time.monotonic() - began)
     return out
+
+
+#: 보고서 글은 **재료가 있는 절마다 LLM 1회**(최대 7 — `write_report.SECTIONS`)에
+#: **꼬리(8·9절) 1회**를 더한다. 이만큼 못 대면 시작하지 않는다 — 반쯤 쓰고 멈추면
+#: 돈만 나가고 글은 안 남는다.
+_REPORT_MIN_CALLS = 8
+
+
+def _report(ledger: Run, budget: Budget, stage: Stage, source_run: str,
+            concept: dict, run_id: str, rescore: bool,
+            카드: list[dict] | None = None) -> dict | None:
+    """**사람이 읽는 보고서 글.** 절 체인이 모은 사실 위에 절마다 문단·표를 쓴다.
+
+    ## 왜 SOFT 인가
+    글이 없어도 값·등급·경계·근거는 그대로 나간다. 화면은 `report` 가 `null` 이면
+    지금까지처럼 표만 그린다 — **판을 죽일 이유가 없다.**
+
+    ## ⚠ 호출 수를 반드시 청구한다
+    `write_report.build` 는 실패해도 **쓴 호출 수를 돌려준다.** 그것을 예산과 단계에 같이
+    더하지 않으면 원장이 거짓말한다 — 실측(2026-08-15): 137회를 쓰고 4회라고 보고했다.
+    """
+    if rescore:
+        # 판정층·재채점은 LLM 0회가 규율이다.
+        ledger.degrade("sections", "REPORT_SKIPPED", "재채점 모드는 LLM 을 부르지 않는다")
+        return None
+    if not budget.can_afford(_REPORT_MIN_CALLS + _SYNTH_CALLS):
+        ledger.degrade("sections", "REPORT_SKIPPED",
+                       f"남은 예산 {budget.remaining()} < 최소 소요 {_REPORT_MIN_CALLS}"
+                       f" + 9절 {_SYNTH_CALLS} — 보고서 글은 건너뛰고 사실만 낸다")
+        return None
+
+    import write_report as WRITE                                    # noqa: PLC0415
+    # ★ **게재를 지난 카드를 넘긴다**(판 ㊻). 안 넘기면 `write_report` 가 게재를 안 보는
+    #   A1 재료로 물러서고, 그러면 §1 이 서랍·주제 밖까지 실은 132행 표가 된다(실측).
+    doc, 부름, 사유 = WRITE.build(source_run, concept, run_id=f"{run_id}-report", 카드=카드)
+    budget.charge(부름)
+    stage.llm_calls += 부름
+    if 사유:
+        ledger.degrade("sections", "REPORT_FAILED", 사유[:200])
+        return None
+    return serialize.report(doc)
 
 
 def _summary(ledger: Run, budget: Budget, source_run: str, concept_path: str,
@@ -845,9 +982,13 @@ async def _bm(source_run: str, concept_path: str, concept_id: str,
     material = await asyncio.to_thread(_bm_material, ledger, source_run,
                                        concept_path, concept_id,
                                        plan_material or {}, plan_constraints or {})
-    cards, market_join, constraints, verdict = material
+    cards, market_join, constraints, verdict, promoted = material
 
-    evidence = serialize.evidence(cards)
+    # ⚠ **근거는 합집합, 판정은 슬롯 카드만.** 아래 `mapping.apply` 와 이 줄에만 승격 카드를
+    #   넣는다 — `scorecard`(`SCORECARD.build`)와 `verdict` 는 원장을 직접 다시 읽으므로
+    #   여기서 넘기는 목록과 무관하고, 그래야 슬롯 판정이 안 흔들린다(판 ㊸ 규율).
+    근거_카드 = list(cards) + list(promoted or [])
+    evidence = serialize.evidence(근거_카드)
 
     stage = ledger.stage("bm_model")
     if not budget.can_afford(1):
@@ -878,7 +1019,7 @@ async def _bm(source_run: str, concept_path: str, concept_id: str,
     #   `assert_caveats_reached`(그리고 자바 `requireCaveats`)가 결과를 통째로 거부한다.
     #   순서: mapping → citation.enforce(강등만) → _stamp_user_plan(계획칸) → gate.
     analysis, corrections = citation.enforce(
-        mapping.apply(out["bm_analysis"], cards, verdict))
+        mapping.apply(out["bm_analysis"], 근거_카드, verdict))
     if corrections:
         ledger.degrade("bm", "UNCITED_CLAIM",
                        f"근거 없이 확인을 주장한 {len(corrections)}칸을 미확인으로 내렸다: "
@@ -934,6 +1075,8 @@ def _bm_material(ledger: Run, source_run: str, concept_path: str, concept_id: st
     ledger.stage("restore").status = "OK"
     verdict = _timed(ledger, "verdict", lambda: VERDICT.build(source_run, concept_path))
     cards_doc = _timed(ledger, "cards", lambda: CARDS.build(source_run, concept_path))
+    promoted = _timed(ledger, "promote", lambda: _promoted_cards(ledger, source_run,
+                                                                 concept_path))
     held: dict = {}
 
     def adapt():
@@ -948,10 +1091,54 @@ def _bm_material(ledger: Run, source_run: str, concept_path: str, concept_id: st
                                                  **plan_constraints}}
         held["constraints"] = ADAPTER.execution_constraints_of(concept)
         return ADAPTER.build_from(CANVAS.build(source_run, concept_path), verdict,
-                                  cards_doc, concept, source_run, concept_id)
+                                  cards_doc, concept, source_run, concept_id,
+                                  promoted=promoted)
 
     market_join = _timed(ledger, "bm_adapter", adapt)
     # ⚠ `verdict` 를 같이 돌려준다 — `validation.mapping` 이 칸 상태를 도장에서 파생한다.
     #   반환 폭이 바뀌면 호출부(`_bm`)의 언패킹도 **같이** 고쳐야 한다.
     return (cards_doc.get("카드") or [], market_join,
-            held.get("constraints") or {}, verdict)
+            held.get("constraints") or {}, verdict, promoted)
+
+
+def _promoted_cards(ledger: Run, source_run: str, concept_path: str) -> list:
+    """원장에 이미 있는 `sections.json` → **승격 카드**. LLM 0회 · 네트워크 0회.
+
+    <b>왜 여기서 다시 만드나.</b> 절 사실 승격(`promote_cards`)은 `_sections()` 안에 있고
+    그것은 FULL 전용이다. 그래서 BM 걸음이 만드는 `market_join_data.evidence_list` 에는
+    **슬롯 카드 15장**만 들어갔고, 모델은 그 밖의 id 를 인용할 수 없다
+    (`bm/analyze.py::validate_market_evidence_ids` 가 전부 지운다). 봉투의 `evidence` 는
+    `validation.runner._merge` 가 합집합으로 채워 **화면에는 143장이 보이는데**, 정작
+    캔버스가 인용한 것은 0건이던 까닭이 이것이다.
+
+    비싼 것은 문서를 읽는 일(`read_sections`)이고 그것은 이미 사서 `sections.json` 에
+    저장돼 있다. 여기서 하는 것은 **저장된 것을 다시 세는 일**뿐이다.
+
+    ⚠ **실패는 값이다.** 못 만들면 빈 목록을 돌려주고 사유를 격하로 남긴다 — 그러면 판
+    ㊸ 이전과 똑같이 동작한다(되돌아갈 자리).
+    """
+    import runpath                                                 # noqa: PLC0415
+    import promote_cards as PROMOTE                                # noqa: PLC0415
+    import publish_gate as GATE                                    # noqa: PLC0415
+
+    path = os.path.join(runpath.read_dir(source_run), "sections.json")
+    if not os.path.isfile(path):
+        # 옛 원장이거나 절 체인이 안 돈 실행이다. **결함이 아니다** — 그렇게 적는다.
+        ledger.degrade("promote", "NO_SECTIONS",
+                       "이 원장에는 절 조사 산출(sections.json)이 없다 — 슬롯 카드만 쓴다")
+        return []
+    try:
+        sections = json.load(io.open(path, encoding="utf-8"))
+        # ⚠ `concept_path` 는 research2 뿌리 기준 **상대 경로**일 수도 절대 경로일 수도
+        #   있다(`_concept_path_of`). `_sections()` 가 같은 갈래를 이미 두고 있다.
+        concept_full = (concept_path if os.path.isabs(concept_path)
+                        else os.path.join(RESEARCH_HOME, concept_path))
+        concept = json.load(io.open(concept_full, encoding="utf-8"))
+        # ⚠ **봉투 경로와 «같은» 상한을 쓴다.** 한쪽만 접으면 BM 이 보는 근거와 화면이
+        #   보는 근거가 갈리고, 접지 않은 쪽은 `context_length_exceeded` 로 죽는다
+        #   (2026-08-15 실측: BM 이 정확히 그렇게 죽었다).
+        return PROMOTE.build(GATE.build(sections, concept), concept,
+                             서랍상한=PROMOTE.서랍_상한) or []
+    except Exception as error:                      # noqa: BLE001 — 더 얻는 시도다
+        ledger.degrade("promote", "PROMOTE_FAILED", str(error)[:200])
+        return []

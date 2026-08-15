@@ -128,13 +128,16 @@ public class MarketInterviewWorker {
     }
 
     /**
-     * 실패 코드를 화면 문구로 옮긴다. 셋을 따로 센다 — 운영이 할 일이 각각 다르다:
-     * 뱅크가 안 붙은 것, 응답이 너무 적게 걷힌 것, AI 가 불안정한 것.
+     * 실패 코드를 화면 문구로 옮긴다. 넷을 따로 센다 — 사용자가 할 일이 각각 다르다:
+     * 뱅크가 안 붙은 것(운영), 응답이 너무 적게 걷힌 것(다시 누른다),
+     * <b>조건에 맞는 사람이 0명인 것(조건을 고친다)</b>, AI 가 불안정한 것(기다린다).
      */
     private String safeCode(ExecutionFailure failure) {
         if ("TWIN_BANK_UNAVAILABLE".equals(failure.reason())) return "TWIN_BANK_UNAVAILABLE";
         if ("MARKET_INTERVIEW_NO_USABLE_RESPONSE".equals(failure.reason()))
             return "MARKET_INTERVIEW_NO_USABLE_RESPONSE";
+        if ("MARKET_INTERVIEW_NO_TARGET_SAMPLE".equals(failure.reason()))
+            return "MARKET_INTERVIEW_NO_TARGET_SAMPLE";
         if ("DEADLINE_EXCEEDED".equals(failure.code())) return "TASK_TIMEOUT";
         if ("RATE_LIMITED".equals(failure.code())) return "RATE_LIMITED";
         return "AI_SERVICE_UNAVAILABLE";

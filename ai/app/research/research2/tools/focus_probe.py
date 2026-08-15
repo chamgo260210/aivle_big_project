@@ -28,7 +28,8 @@ from base import load_env_key
 from runlog import Meter, Run, load_rules
 import read_sections as RS
 
-MODEL = "gpt-4o-mini"
+#: 판 ㊾ 에서 `gpt-4o-mini` → `gpt-5.6-luna`. 온도를 안 넘기므로 상수 한 줄이면 끝이다.
+MODEL = "gpt-5.6-luna"
 JSON_OBJ = re.compile(r"\{.*\}", re.S)
 FIELDS = ("quote", "number_raw", "unit_raw", "year", "subject", "table_context")
 

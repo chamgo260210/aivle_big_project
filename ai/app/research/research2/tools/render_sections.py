@@ -179,7 +179,7 @@ def main() -> int:
             if not it.get("게재"):
                 continue
             전체 += 1
-            if it["게재"] == "OFF_TOPIC":
+            if PG.버렸나(it):
                 sec = it["section"]
                 사유[sec][it["게재_사유"].split("(")[0]] += 1
                 continue

@@ -107,6 +107,47 @@ def test_G1_은_입력_제약도_관측으로_안_센다():
     assert "G1" in {r["code"] for r in evaluate(cells)}
 
 
+def test_G1_은_참고_근거만_붙은_미확인_칸도_잡는다():
+    """★ **2026-08-15 실측으로 잡은 구멍.**
+
+    승격 절 사실이 근거로 붙기 시작하면서 채널 칸이 `UNVERIFIED` 인데도 id 가 4건 있어
+    G1 이 **조용해졌고**, BM 판정이 `REVISION_REQUIRED` → `CONDITIONAL` 로 저절로
+    완화됐다(유료 실행 `p46-bm-01` 실측). 붙은 4건은 「그 절에 실을 만한 사실」이지 이 칸을
+    확인해 준 것이 아니다 — 그러면 **화면에 아무 사유도 없이 빈 칸만 남는다.**
+    """
+    cells = _healthy()
+    for cell in cells:
+        if cell["canvasCell"] == "CHANNELS":
+            cell.update(status="UNVERIFIED", content=[],
+                        sourceLabels=["channel_analysis"],
+                        marketEvidenceIds=["sec-0294", "sec-0097", "sec-0356", "sec-0357"])
+    hit = [r for r in evaluate(cells) if r["code"] == "G1" and r["cell"] == "CHANNELS"]
+    assert hit, "참고 근거만 붙은 미확인 칸을 G1 이 놓쳤다"
+    # 「하나도 못 찾았다」와 갈라 적는다 — 사용자가 할 다음 행동이 다르다.
+    assert "4건" in hit[0]["message"], hit[0]["message"]
+    assert hit[0]["evidenceIds"] == ["sec-0294", "sec-0097", "sec-0356", "sec-0357"]
+
+
+def test_G1_은_법률이_막은_칸을_건드리지_않는다():
+    """★ **위 강화가 만든 회귀**(2026-08-15 감사로 잡음).
+
+    상태를 같이 보게 만든 순간, 근거가 붙어 있는데 `BLOCKED` 인 칸이 그물에 걸려
+    **「이 칸을 확인해 준 근거가 없다」는 거짓말**을 하게 됐다. `BLOCKED` 는 시장 근거의
+    문제가 아니라 법률의 문제다 — 판정 등급은 안 바뀌지만(BLOCKED 가 더 무겁다)
+    **화면 문구가 거짓이 된다.**
+    """
+    cells = _healthy()
+    for cell in cells:
+        if cell["canvasCell"] == "REVENUE_STREAMS":
+            cell.update(status="BLOCKED", marketEvidenceIds=["C-F015", "C-F016"])
+    assert not [r for r in evaluate(cells) if r["code"] == "G1"]
+
+
+def test_G1_은_확인된_칸은_그대로_통과시킨다():
+    """반대 방향 — 규칙을 조인 것이지 전부 걸리게 만든 것이 아니다."""
+    assert not [r for r in evaluate(_healthy()) if r["code"] == "G1"]
+
+
 def test_G1_은_시장_라벨이_하나라도_있으면_안_건다():
     """근거 id 가 없어도 시장 라벨이 붙었으면 조사는 닿은 것이다."""
     cells = _healthy()
@@ -231,7 +272,12 @@ def test_찾아_놓고_인용을_안_했으면_B급이다():
 
 
 def test_성적표가_재지_않는_칸은_모른다고_적는다():
-    """채널 과목이 성적표에 **없다**. 없는 것을 「수집 실패」로 단정하지 않는다."""
+    """그 실행의 성적표에 채널 줄이 **없으면** 갈래를 모른다고 적는다.
+
+    ⚠ 2026-08-15 정정: 이 시험은 *"채널 과목이 성적표에 **없다**"* 를 전제로 적혀 있었다.
+    판 ㊸ 이 `CHANNEL`·`UNIT_ECONOMICS`·`REGULATION` 세 과목을 넣어 그 전제는 깨졌다.
+    남은 참인 말은 **「이 실행이 채널을 안 쟀으면 모른다」**이고, 그것을 시험한다.
+    """
     cells = _cells()
     for cell in cells:
         if cell["canvasCell"] == "CHANNELS":
@@ -240,6 +286,42 @@ def test_성적표가_재지_않는_칸은_모른다고_적는다():
     reasons = evaluate(cells, _score(MARKET_SIZE="FILLED", DEMAND="FILLED", PRICE="FILLED"))
     channels = [r for r in reasons if r["cell"] == "CHANNELS"]
     assert channels and channels[0]["cause"] == "UNMAPPED"
+
+
+def test_성적표에_채널_줄이_있으면_갈래가_나온다():
+    """★ 화면이 「조사 항목에 없어서 갈래를 알 수 없어요」라고 거짓말하던 자리.
+
+    성적표에 채널 과목이 생겼는데 `_CELL_SUBJECT` 만 안 따라와서, 채널 사유는 언제나
+    `UNMAPPED` 이었다. 갈래가 없으면 사용자는 **다음 행동**(재조사인가 배선인가)을 못 받는다.
+    """
+    cells = _cells()
+    for cell in cells:
+        if cell["canvasCell"] == "CHANNELS":
+            cell["marketEvidenceIds"] = []
+            cell["sourceLabels"] = ["concept_snapshot"]
+    못찾음 = evaluate(cells, _score(MARKET_SIZE="FILLED", DEMAND="FILLED",
+                                 PRICE="FILLED", CHANNEL="MISSING"))
+    assert [r for r in 못찾음 if r["cell"] == "CHANNELS"][0]["cause"] == "UNCOLLECTED"
+    인용누락 = evaluate(cells, _score(MARKET_SIZE="FILLED", DEMAND="FILLED",
+                                  PRICE="FILLED", CHANNEL="FILLED"))
+    assert [r for r in 인용누락 if r["cell"] == "CHANNELS"][0]["cause"] == "UNCITED"
+
+
+def test_모델이_시장_라벨을_써_넣어도_G1_을_못_피한다():
+    """★ 게이트에 뚫려 있던 구멍.
+
+    G1 은 ①근거 id ②시장 라벨 둘 중 하나만 있으면 안 걸린다. 그런데 근거가 0건이면
+    `mapping._labels_for` 폴백이 **모델이 쓴 라벨을 되살렸고**, 거기 `market_size` 가
+    섞여 있으면 ②로 통과했다 — 모델이 「이 칸은 market_size 에서 왔다」고 쓰기만 하면
+    반증을 피한 것이다. 이 시험은 그 문이 닫혔는지 **게이트 쪽에서** 확인한다.
+    """
+    cells = _cells()
+    for cell in cells:
+        if cell["canvasCell"] == "CHANNELS":
+            cell["marketEvidenceIds"] = []
+            # 폴백을 지난 뒤의 모양(시장 라벨이 걸러진 상태)
+            cell["sourceLabels"] = ["concept_snapshot"]
+    assert any(r["cell"] == "CHANNELS" and r["code"] == "G1" for r in evaluate(cells))
 
 
 def test_알_수_없는_판정은_거부한다():

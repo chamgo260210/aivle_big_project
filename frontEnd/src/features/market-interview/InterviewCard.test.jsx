@@ -40,7 +40,7 @@ describe('InterviewFootnote', () => {
   it('결과가 없어도 면책은 남는다', () => {
     render(<InterviewFootnote result={null} />);
     expect(screen.getByText(/한국미디어패널조사\(KISDI\)/)).toBeInTheDocument();
-    expect(screen.getByText(/백분율로 환산하지 마라/)).toBeInTheDocument();
+    expect(screen.getByText(/백분율로 환산하지 마/)).toBeInTheDocument();
   });
 
   it('서버가 보낸 경계 문구를 그대로 편다', () => {

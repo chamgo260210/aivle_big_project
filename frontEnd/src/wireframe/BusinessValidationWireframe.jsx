@@ -15,7 +15,7 @@ import Emphasis from '../features/market/emphasis.jsx';
 import useCellFocus from '../features/market/useCellFocus.js';
 import {
   CANVAS_CELL_LABEL, DECISION_VIEW, GATE_CAUSE_VIEW, GATE_TITLE, SCORE_STATE_VIEW,
-  SUBJECT_LABEL,
+  SECTION_ORDER, SECTION_TITLE, SUBJECT_LABEL,
   abbreviateKrw, formatValue, normalizeMarketResult,
 } from '../features/market/marketResult.js';
 import { SAMPLE_RESULT, SAMPLE_REVISION, SUBJECT_EVIDENCE } from './sample.js';
@@ -24,7 +24,11 @@ const result = normalizeMarketResult(SAMPLE_RESULT);
 
 /** 매 렌더마다 다시 만들 이유가 없다 — 결과가 모듈 상수라 표도 상수다. */
 const SCORE = Object.fromEntries((result.scorecard ?? []).map((row) => [row.subject, row]));
-const SUBJECTS = Object.keys(SUBJECT_LABEL).map((subject, index) => [subject, index + 1]);
+// ⚠ **목차의 정본은 `SECTION_ORDER` 다** (판 ㊺). 예전에는 `Object.keys(SUBJECT_LABEL)` 로
+//    셌는데, 성장률·계산이 1절 «안»으로 접히고 8·9절이 새로 서면서 **10칸·옛 순서**로
+//    갈렸다. 이 파일 위 주석이 「와이어프레임이 갈리면 거짓말이 된다」고 스스로 적어 뒀고,
+//    실제로 갈렸다 — 화면 테스트는 이 파일을 안 본다.
+const SUBJECTS = SECTION_ORDER.map((subject, index) => [subject, index + 1]);
 const NOOP = () => {};
 
 /** 조사는 20분 넘게 걸린다 — 「중」이 반드시 자리를 가져야 한다. */
@@ -285,7 +289,8 @@ function Subject({ subject, n, row, open, focused, onToggle }) {
       <button type="button" className="wf-sub__h" onClick={openable ? onToggle : NOOP}
         aria-expanded={openable ? open : undefined} disabled={!openable}>
         <span className="wf__n num">{n}</span>
-        <b>{SUBJECT_LABEL[subject]}</b>
+        {/* 목차 제목은 목표 보고서 것 — 화면과 같은 표를 본다. */}
+        <b>{SECTION_TITLE[subject] ?? SUBJECT_LABEL[subject] ?? subject}</b>
         {view ? <Badge tone={view.tone}>{view.label}</Badge> : null}
         <span className="wf-sub__d">{row?.detail ?? '이 과목은 결과에 없어요.'}</span>
         {openable ? (

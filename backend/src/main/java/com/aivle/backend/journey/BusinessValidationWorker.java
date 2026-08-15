@@ -37,8 +37,23 @@ public class BusinessValidationWorker {
      *
      * <p>lease 는 예산보다 넉넉해야 한다 — 같거나 짧으면 정상 실행이 만료로 회수돼
      * 중복 실행된다. 여기서 중복은 23분짜리를 한 번 더 태우는 것이다.
+     *
+     * <p>★ <b>판 ㊺ — 33분 → 60분.</b> 위의 23분은 <b>예산 270 · {@code gpt-4o-mini}</b> 로
+     * 잰 값이고, 이 판에서 두 가지가 동시에 커졌다:
+     *
+     * <ul>
+     *   <li>호출 수 <b>266 → 470</b>(재질문이 문서의 46%에만 닿던 것을 전량으로) — <b>≈1.8배</b></li>
+     *   <li>발췌 모델이 <b>추론 모델</b>({@code gpt-5.6-luna})이 됐다 — 호출당 시간도 는다</li>
+     * </ul>
+     *
+     * <p>⚠ <b>넘기면 그냥 실패가 아니다.</b> {@code REQUEST_DEADLINE_EXCEEDED} 는 retryable 이라
+     * <b>같은 것을 한 번 더 태운다</b> — 이미 지불한 수집 비용을 잃고 그만큼을 또 쓴다.
+     * 그래서 <b>넉넉한 쪽으로 틀린다.</b> 예산은 상한이지 지출이 아니라, 빨리 끝나면 빨리 끝난다.
+     *
+     * <p>⚠ 60분은 <b>산수지 실측이 아니다</b>(23분 × 1.8 ≈ 41분 + 추론 모델 여유).
+     * 첫 유료 재실행에서 <b>실제 벽시계를 재고 이 숫자를 고친다.</b>
      */
-    private static final Duration BUDGET = Duration.ofMinutes(33);
+    private static final Duration BUDGET = Duration.ofMinutes(60);
     private static final Duration LEASE = BUDGET.plusMinutes(3);
 
     private static final Set<String> FORBIDDEN_FIELDS = Set.of("storageUrl", "objectKey", "presignedUrl",

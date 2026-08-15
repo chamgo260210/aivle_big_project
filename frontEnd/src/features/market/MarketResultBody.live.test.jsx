@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -29,16 +29,32 @@ describe.skipIf(!있다)('MarketResultBody — 실측 봉투', () => {
     <MarketResultBody result={실측()} activeId={null} onJump={() => {}} />,
   );
 
-  it('열 과목이 다 서고 터지지 않는다', () => {
+  it('아홉 절이 다 서고 터지지 않는다', () => {
     const { container } = draw();
-    expect(container.querySelectorAll('[id^="sec-"]')).toHaveLength(10);
+    // 판 ㊺ — 목차가 목표 보고서와 같은 아홉 절이다(정본 `marketResult.SECTION_ORDER`).
+    expect(container.querySelectorAll('[id^="sec-"]')).toHaveLength(9);
   });
 
-  it('2·8·9절이 실측 값으로 그려진다', () => {
-    draw();
-    expect(screen.getByText(/이 가격이 시장 어디에 서 있나/)).toBeTruthy();
-    expect(screen.getByText(/못 구한 것 — 어디서 구하나/)).toBeTruthy();
-    expect(screen.getByText(/이 사업안을 미는 것과 흔드는 것/)).toBeTruthy();
+  it('2·8·9절이 실측 값으로 **목차 안에서** 그려진다', () => {
+    const { container } = draw();
+    // ⚠ 판 ㊺ 부터 이 셋은 목차 «밖» 카드가 아니라 **2·8·9절 그 자체**다.
+    //    밖에 두면 목차가 아홉인데 카드가 셋 더 서서 「이게 몇 절인가」를 셀 수 없다.
+    const 편다 = (subject) => {
+      const 줄 = container.querySelector(`#sec-${subject}`);
+      fireEvent.click(within(줄).getByRole('button'));
+      return 줄;
+    };
+    // 실측 봉투는 비교 갈래가 여럿이라 여러 줄이 잡힌다 — 한 줄이라고 단정하지 않는다.
+    expect(within(편다('PRICE')).getAllByText(/안 씁니다|계산:/).length).toBeGreaterThan(0);
+    // ★ 셋째 열(「어디서」)이 이 표의 값어치다 — 「못 구했다」로 끝나면 사업가는 거기서 멈춘다.
+    const 처방 = 편다('GAPS');
+    expect(within(처방).getByRole('columnheader', { name: /어디서 구하나/ })).toBeTruthy();
+    expect(within(처방).getAllByRole('row').length).toBeGreaterThan(1);  // 머리줄 + 최소 한 줄
+    // ⚠ **두 갈래가 «둘 다» 서야 한다.** 빈 갈래를 지우면 「흔드는 사실이 0건이었다」와
+    //    「흔듦을 아예 안 쟀다」가 화면에서 같아 보인다.
+    const 합성 = 편다('SYNTHESIS');
+    expect(within(합성).getByRole('heading', { level: 4, name: /미는 것/ })).toBeTruthy();
+    expect(within(합성).getByRole('heading', { level: 4, name: /흔드는 것/ })).toBeTruthy();
   });
 
   it('★ 수요 줄이 **두 수를 모순 없이** 말한다', () => {
@@ -49,12 +65,14 @@ describe.skipIf(!있다)('MarketResultBody — 실측 봉투', () => {
     expect(screen.queryByText(/최고 등급 None/)).toBeNull();
   });
 
-  it('★ 요약이 죽은 실행은 **죽었다고 말한다**', () => {
-    // 이 실행의 `summary` 는 CHECK_FAILED 로 null 이다. 카드가 사라지므로
-    // 사유가 안 뜨면 사용자는 요약이 있어야 한다는 사실 자체를 모른다.
+  // ⚠ 판 ㊻ 에서 뒤집혔다(사용자 지시). 옛 규칙과 그 이유는
+  //   `MarketResultBody.test.jsx` 의 같은 자리 주석에 그대로 적어 뒀다.
+  it('★ 요약이 죽어도 **사유 상자를 안 그린다** — 봉투에는 그대로 온다', () => {
     draw();
     expect(실측().summary).toBeFalsy();
-    expect(screen.getByText(/요약 문장이 검사를 통과하지 못해 버렸어요/)).toBeTruthy();
+    // 잃은 것은 화면 자리뿐이다 — 사유는 봉투가 계속 들고 온다.
+    expect((실측().degradations ?? []).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/요약 문장이 검사를 통과하지 못해 버렸어요/)).toBeNull();
   });
 
   it('★ 경계 문장이 **화면에 닿는다** — 봉투에만 있고 화면에 없으면 지운 것과 같다', () => {

@@ -12,10 +12,25 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from app.research.bm.contracts import BMAnalysisResult, BMCanvasItem, CanvasStatus
+from app.validation import mapping
 from app.validation.gate import PLANNED_CELLS
 from app.validation.mapping import (CELL_NAME_KO, CLAIM_TYPE_CELL, CLAIM_TYPE_LABEL,
                                     apply, derive)
+
+#: 절 → 칸 표가 **켜져 있던 때**의 값. `mapping.SECTION_CELL` 은 2026-08-15 에 비웠다
+#: (자료가 그 칸의 주장이 아니었다 — 그쪽 주석 참조). 기구 자체는 계속 시험한다:
+#: 시장조사 판이 절 배정을 손보면 이 표를 되돌리는 것으로 다시 켜지기 때문이다.
+_켠_표 = {"CHANNEL": "CHANNELS", "PRICE": "REVENUE_STREAMS", "DEMAND": "VALUE_PROPOSITIONS"}
+
+
+@pytest.fixture
+def 절_칸_연결(monkeypatch):
+    """이 시험 동안만 절→칸 연결을 켠다."""
+    monkeypatch.setattr(mapping, "SECTION_CELL", _켠_표)
+    return _켠_표
 
 _ALL_CELLS = ("CUSTOMER_SEGMENTS", "VALUE_PROPOSITIONS", "CHANNELS", "CUSTOMER_RELATIONSHIPS",
               "REVENUE_STREAMS", "KEY_RESOURCES", "KEY_ACTIVITIES", "KEY_PARTNERS",
@@ -27,6 +42,17 @@ VOCAB = (Path(__file__).parents[1] / "app" / "research" / "research2"
 
 def _card(card_id: str, cell: str, **over) -> dict:
     base = {"카드_id": card_id, "종류": "관측", "칸": cell, "등급": "gov_stat"}
+    base.update(over)
+    return base
+
+
+def _승격(card_id: str, 절: str, **over) -> dict:
+    """**절 조사가 승격시킨 카드**(`tools/promote_cards.py`)의 모양.
+
+    ⚠ 슬롯 카드와 다르다 — `칸`(claim_type)이 **없고** `_절` 만 있다. 이 차이 때문에
+    승격 카드가 어느 칸에도 안 붙어, 절 조사가 찾은 사실 128건이 캔버스에서 인용 0건이었다.
+    """
+    base = {"카드_id": card_id, "종류": "관측", "_절": 절, "등급": "gov_stat"}
     base.update(over)
     return base
 
@@ -62,9 +88,13 @@ def test_claim_type_에서_칸과_라벨이_나온다():
     assert out["VALUE_PROPOSITIONS"]["sourceLabels"] == ["demand_evidence"]
     assert out["REVENUE_STREAMS"]["marketEvidenceIds"] == ["C-F005"]
     assert out["REVENUE_STREAMS"]["sourceLabels"] == ["price_analysis"]
-    # CHANNEL 에 맞는 라벨은 화이트리스트에 없다 — 새로 만들지 않는다.
+    # ⚠ 2026-08-15 정정: 이 자리는 「CHANNEL 에 맞는 라벨은 화이트리스트에 없다」로
+    #   `sourceLabels == []` 을 못박고 있었다. 그것이 **결함이었다** — 파생 라벨이 늘 0건이라
+    #   `_labels_for` 폴백이 모델이 쓴 `concept_snapshot`(사용자가 쓴 컨셉 서술문)을 되살려
+    #   채널 칸만 「자기 입력을 자기가 확인」이 통과했다. `channel_analysis` 를 화이트리스트
+    #   넷에 더해 자리를 만들었다.
     assert out["CHANNELS"]["marketEvidenceIds"] == ["C-F004"]
-    assert out["CHANNELS"]["sourceLabels"] == []
+    assert out["CHANNELS"]["sourceLabels"] == ["channel_analysis"]
 
 
 def test_모델이_인용을_안_했어도_기계가_붙인다():
@@ -126,12 +156,126 @@ def test_계획_5칸은_입력_그대로다():
         assert _by_cell(fixed, name).market_evidence_ids == []
 
 
+# ── ㉢-2 절(section) → 칸 · 라벨 (승격 카드) ─────────────────────────────────
+def test_절_칸_표가_지금은_비어_있다():
+    """★ **2026-08-15 — 표를 비웠다. 자료가 그 칸의 주장이 아니었다.**
+
+    유료 실행(`p46-bm-01`)으로 실제 자료를 붙여 놓고 사람이 읽은 결과: 가치 제안 칸에 붙은
+    105건이 「가업승계 비율」·「기부 경험」·「국민의 취침 시각」·「자가 소유 필요성」 같은
+    것이었고, 수익원 칸에는 「전세보증금 평균」이 판매가와 나란히 섰다. 미리 못박아 둔
+    실패선(「한 칸에서 «아니다»가 1/3 이상이면 배지가 거짓」)을 **세 칸 모두 넘겼다.**
+
+    ⚠ 이 시험은 **기능이 꺼져 있다는 사실**을 못박는다. 병은 이 층이 아니라 절 배정
+    (`tools/publish_gate.절()` — 시장조사 판 소유)에 있고, 그쪽이 고쳐지면 표를 되돌린다.
+    아래 시험들이 `절_칸_연결` 로 기구를 계속 재는 이유가 그것이다.
+    """
+    assert mapping.SECTION_CELL == {}
+    out = derive([_승격("sec-0001", "CHANNEL"), _승격("sec-0002", "PRICE"),
+                  _승격("sec-0003", "DEMAND")])
+    assert all(not out[name]["marketEvidenceIds"] for name in out)
+
+
+def test_승격_카드가_칸에_붙는다(절_칸_연결):
+    """표를 되돌리면 절 조사가 찾은 사실이 캔버스에 닿는다 — 기구는 살아 있다."""
+    out = derive([_승격("P-0001", "CHANNEL"), _승격("P-0002", "PRICE"),
+                  _승격("P-0003", "DEMAND")])
+    assert out["CHANNELS"]["marketEvidenceIds"] == ["P-0001"]
+    assert out["CHANNELS"]["sourceLabels"] == ["channel_analysis"]
+    assert out["REVENUE_STREAMS"]["sourceLabels"] == ["price_analysis"]
+    assert out["VALUE_PROPOSITIONS"]["sourceLabels"] == ["demand_evidence"]
+
+
+def test_시장크기_성장률_경쟁_절은_칸에_안_붙는다():
+    """★ **일부러 안 잇는다.**
+
+    시장이 11조라는 것과 「수도권 25~44세 1인 가구」라는 세그먼트 정의가 맞다는 것은
+    다른 주장이다. 이으면 고객 세그먼트 칸의 근거 수가 불어 배지가 「근거 있음」으로 굳고,
+    승격 카드를 슬롯 판정에 안 넣기로 한 규율이 **배지 층에서 도로 뚫린다.**
+    """
+    out = derive([_승격("P-0010", "MARKET_SIZE"), _승격("P-0011", "GROWTH"),
+                  _승격("P-0012", "COMPETITOR")])
+    assert out["CUSTOMER_SEGMENTS"]["marketEvidenceIds"] == []
+    assert out["VALUE_PROPOSITIONS"]["marketEvidenceIds"] == []
+
+
+def test_원가_규제_절도_칸에_안_붙는다():
+    """대응하는 관측 칸이 없다. 계획 5칸에 붙이면 경계 문구가 사라진다."""
+    out = derive([_승격("P-0020", "UNIT_ECONOMICS"), _승격("P-0021", "REGULATION")])
+    assert all(not out[name]["marketEvidenceIds"] for name in out)
+
+
+def test_슬롯_카드와_승격_카드가_한_칸에서_섞인다(절_칸_연결):
+    """둘 다 채널이면 한 칸에 나란히 선다 — 모집단이 갈리지 않는다."""
+    out = derive([_card("C-F004", "CHANNEL"), _승격("P-0001", "CHANNEL")])
+    assert out["CHANNELS"]["marketEvidenceIds"] == ["C-F004", "P-0001"]
+    assert out["CHANNELS"]["sourceLabels"] == ["channel_analysis"]
+
+
+# ── ㉢-3 승격 카드는 «붙되» 판정을 올리지 못한다 (2026-08-15) ─────────────────
+def test_승격_카드만_있으면_확인됨이_되지_않는다(절_칸_연결):
+    """★ **실측으로 잡은 거짓 확신.**
+
+    승격 카드를 개수에 같이 세니 채널 칸이 `UNVERIFIED`(근거 0건) → `VERIFIED`(근거 4건)로
+    뒤집혔는데, 그 4건이 **귀촌 전 거주지역 구성비 · 우체국 택배 배송기간 2건 ·
+    온라인몰 구입 비율 1건**이었다. 화면은 「채널은 시장이 확인해 줬어요」라고 적는다.
+
+    **0건 `UNVERIFIED` 는 참말이었고 4건 `VERIFIED` 는 거짓말이다 — 빈손보다 나쁘다.**
+    승격 카드는 「그 절에 실을 만한 사실」이지 「이 칸의 주장을 겨냥해 모은 근거」가 아니다.
+    """
+    out = derive([_승격(f"sec-{n:04d}", "CHANNEL") for n in range(1, 5)])
+    assert out["CHANNELS"]["status"] is CanvasStatus.UNVERIFIED
+    # ⚠ **근거는 그대로 붙어 있어야 한다.** 떼면 화면 근거표가 비고, 자바 계약
+    #   (`marketEvidenceIds ⊆ evidence[].id`)과도 무관하게 사용자가 볼 것이 사라진다.
+    assert len(out["CHANNELS"]["marketEvidenceIds"]) == 4
+    assert out["CHANNELS"]["sourceLabels"] == ["channel_analysis"]
+
+
+def test_슬롯_카드가_둘이면_승격과_무관하게_확인됨이다(절_칸_연결):
+    """반대 방향도 잰다 — 규칙을 조인 것이 아니라 **모집단을 가른 것**이다."""
+    out = derive([_card("C-F004", "CHANNEL"), _card("C-F005", "CHANNEL"),
+                  _승격("sec-0001", "CHANNEL")])
+    assert out["CHANNELS"]["status"] is CanvasStatus.VERIFIED
+    assert len(out["CHANNELS"]["marketEvidenceIds"]) == 3
+
+
+def test_슬롯_카드_한_장은_승격이_아무리_많아도_부분이다(절_칸_연결):
+    """승격 105장이 붙어도 「부분」을 「확인됨」으로 밀어 올리지 못한다."""
+    out = derive([_card("C-F010", "PRICE")]
+                 + [_승격(f"sec-{n:04d}", "PRICE") for n in range(1, 106)])
+    assert out["REVENUE_STREAMS"]["status"] is CanvasStatus.PARTIAL
+    assert len(out["REVENUE_STREAMS"]["marketEvidenceIds"]) == 106
+
+
 # ── ㉣ content 가 있으면 라벨을 비우지 않는다 ────────────────────────────────
 def test_파생_라벨이_0건이어도_라벨을_비우지_않는다():
-    """content 가 비어 있지 않은데 sourceLabels 가 0건이면 자바 계약이 거부한다."""
+    """content 가 비어 있지 않은데 sourceLabels 가 0건이면 자바 계약이 거부한다.
+
+    ⚠ 카드를 **주지 않는다.** 카드를 주면 이제 파생 라벨이 나와(`channel_analysis`)
+    폴백 자체를 안 탄다 — 그러면 이 시험은 아무것도 안 재는 시험이 된다.
+    """
     fixed = apply(_analysis(_item("CHANNELS", source_labels=["concept_snapshot", "made_up"])),
-                  [_card("C-F004", "CHANNEL")])
+                  [])
     assert _by_cell(fixed, "CHANNELS").source_labels == ["concept_snapshot"]
+
+
+def test_폴백은_시장_라벨을_되살리지_않는다():
+    """★ 게이트 G1 이 라벨만 보고 통과하던 구멍.
+
+    G1 은 ①근거 id 가 있다 ②시장 라벨이 하나라도 있다 — 둘 중 하나만 통과하면 안 걸린다.
+    폴백이 모델이 쓴 `market_size` 를 되살리면 **근거 0건인데 반증을 피한다.** 모델이
+    「이 칸은 market_size 에서 왔다」고 쓰기만 하면 되던 것이다.
+    """
+    fixed = apply(_analysis(_item("CUSTOMER_SEGMENTS", source_labels=["market_size"])), [])
+    labels = _by_cell(fixed, "CUSTOMER_SEGMENTS").source_labels
+    assert labels == ["concept_snapshot"], "시장 라벨이 되살아나면 안 된다"
+    assert labels, "그렇다고 비우면 자바 계약이 거부한다"
+
+
+def test_폴백은_시장_라벨이_아닌_것은_남긴다():
+    """`execution_constraints` 는 사용자 입력이라 남긴다 — 그것이 사실이다."""
+    fixed = apply(_analysis(_item("CHANNELS",
+                                  source_labels=["execution_constraints", "price_analysis"])), [])
+    assert _by_cell(fixed, "CHANNELS").source_labels == ["execution_constraints"]
 
 
 def test_content_가_비면_라벨도_빈다():
@@ -193,6 +337,12 @@ def test_칸_표가_vocab_json_과_일치한다():
 
 
 def test_라벨_표는_칸_표와_같은_claim_type_을_다룬다():
-    """라벨이 없는 claim_type 은 CHANNEL 하나뿐이다 — 화이트리스트에 자리가 없다."""
-    assert set(CLAIM_TYPE_CELL) - set(CLAIM_TYPE_LABEL) == {"CHANNEL"}
+    """모든 claim_type 에 라벨이 있다.
+
+    ⚠ 2026-08-15 정정: 이 시험은 *"라벨이 없는 claim_type 은 CHANNEL 하나뿐"* 을 못박고
+    있었다. 그 빈자리가 채널 칸의 자기확인 회로를 열어 두던 원인이라 `channel_analysis`
+    를 화이트리스트에 더했다. **이제 빈자리는 0개여야 한다** — 새 빈자리가 생기면 같은
+    병이 다른 칸에서 재발한다.
+    """
+    assert not set(CLAIM_TYPE_CELL) - set(CLAIM_TYPE_LABEL)
     assert not set(CLAIM_TYPE_LABEL) - set(CLAIM_TYPE_CELL)

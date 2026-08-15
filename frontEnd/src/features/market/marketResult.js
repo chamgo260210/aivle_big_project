@@ -63,7 +63,12 @@ export const GATE_TITLE = {
  */
 export const GATE_CAUSE_VIEW = {
   UNCOLLECTED: { label: '못 찾음', tone: 'danger', note: '컨셉을 고쳐도 안 고쳐져요 — 다시 조사해야 해요' },
-  UNCITED: { label: '연결 안 됨', tone: 'warning', note: '찾아 놓고 이 칸에 붙이지 못했어요' },
+  // ⚠ 2026-08-15 정정. 이 갈래는 「찾아 놓고 이 칸에 붙이지 못했어요」라고 적고 있었다.
+  //    이제 **붙어는 있는데 그 칸을 확인해 주진 못하는** 경우가 같은 갈래로 온다
+  //    (채널 칸에 조사 결과 4건이 붙었지만 귀촌 통계·택배 배송기간이었다 — 유료 실측
+  //    `p46-bm-01`). 옛 문구를 그대로 두면 근거표에 4건이 보이는 옆에서 「못 붙였다」고
+  //    말해 **한 화면이 스스로를 부정한다.** 두 경우를 다 담는 말로 바꾼다.
+  UNCITED: { label: '확인 못 함', tone: 'warning', note: '찾긴 했는데 이 칸을 확인해 주진 못해요' },
   UNMAPPED: { label: '판별 불가', tone: 'neutral', note: '조사 항목에 없어서 갈래를 알 수 없어요' },
 };
 
@@ -86,6 +91,43 @@ export const SUBJECT_LABEL = {
   REGULATION: '규제',
   NOT_FOUND: '찾지 못한 것',
 };
+
+/**
+ * <b>목차에 서는 절 제목</b> — 목표 보고서(`TARGET_REPORT.md`)의 절 제목 그대로다.
+ *
+ * <p>⚠ <b>`SUBJECT_LABEL` 과 일부러 갈랐다</b>(판 ㊺). 그 표는 <b>두 주인을 섬긴다</b> —
+ * 성적표 라벨(`:405`)과 「근거 보기」 링크 문구(`RefinementSummary`)가 같이 쓴다.
+ * 거기에 「시장 크기 — 얼마나 큰가」 같은 <b>물음형 제목을 넣으면 성적표 배지 옆이 길어져
+ * 한눈에 안 든다.</b> 목차는 읽히는 제목이 필요하고 성적표는 짧은 이름이 필요하다.
+ *
+ * <p>여기 없는 과목은 `SUBJECT_LABEL` 로 물러선다.
+ */
+export const SECTION_TITLE = {
+  MARKET_SIZE: '시장 크기 — 얼마나 큰가',
+  PRICE: '내 가격은 어디에 서는가',
+  COMPETITOR: '경쟁 지형 — 그 자리에 누가 있나',
+  CHANNEL: '채널 — 어디서 팔리나',
+  DEMAND: '수요 — 우리 고객이 실재하는가',
+  UNIT_ECONOMICS: '원가와 수익성 — 이 사업이 남기는가',
+  REGULATION: '규제 — 팔기 전에 확인할 것',
+  GAPS: '못 구한 것 — 어디서 구하나',
+  SYNTHESIS: '이 조사가 말하는 것',
+};
+
+/**
+ * <b>화면 목차 순서</b> — 목표 보고서(`docs/market-research-redesign/TARGET_REPORT.md`)와 같다.
+ *
+ * <p>⚠ <b>절 번호의 정본은 이제 이 배열이다</b>(`SUBJECT_LABEL` 의 키 순서가 아니다).
+ * 판 ㊺ 전에는 키 순서였는데, 성장률·계산을 1절 «안으로» 접으면서 「목차에 있는 것」과
+ * 「성적표가 보내는 것」이 갈렸다. 두 목록을 한 표에 두면 접힌 과목이 절 번호를 먹는다.
+ *
+ * <p>`GAPS`·`SYNTHESIS` 는 성적표 과목이 <b>아니다</b> — 처방·9절이라 서버 판정이 없다.
+ * 그래서 화면이 라벨과 설명을 직접 준다.
+ */
+export const SECTION_ORDER = [
+  'MARKET_SIZE', 'PRICE', 'COMPETITOR', 'CHANNEL',
+  'DEMAND', 'UNIT_ECONOMICS', 'REGULATION', 'GAPS', 'SYNTHESIS',
+];
 
 /** 성적표 과목 상태. ⚠ 「확인됨」이 여기 있다 — `CELL_STATUS_VIEW` 와 낱말이 겹치면 안 된다. */
 export const SCORE_STATE_VIEW = {
@@ -212,6 +254,21 @@ export const SHORTFALL_VIEW = {
   CHECK_FAILED: '**요약 문장이 검사를 통과하지 못해 버렸어요.** 값과 근거는 그대로예요 — 문장만 없어요',
 };
 
+/**
+ * <b>실패가 아니라 「이만큼만 보여 준다」는 알림.</b> `SHORTFALL_VIEW` 와 <b>일부러 갈라
+ * 놓았다.</b>
+ *
+ * <p>⚠ 이 코드를 `SHORTFALL_VIEW` 에 넣으면 안 된다. 그 상자의 제목은 「이 조사가 다 돌지
+ * 못했어요」인데 서랍 표본은 <b>정상 실행마다 항상</b> 뜬다 — 성공한 조사에 실패 딱지가
+ * 붙고, 위 주석이 경고한 <b>「전부 그리면 진짜 경고가 안 읽힌다」</b>가 그대로 일어난다.
+ *
+ * <p>그렇다고 안 그릴 수도 없다. 안 그리면 「근거 42건」이 <b>전량인 척</b>한다 —
+ * 실제로는 203건 중 20건이다.
+ */
+export const NOTICE_VIEW = {
+  DRAWER_SAMPLED: '**참고 근거는 절마다 20건까지만 보여 줘요.** 접힌 것도 조사 원장에는 그대로 있어요',
+};
+
 /** 경쟁사 지표로 취급하는 계량. ⚠ 임시 — 봉투에 과목 필드가 생기면 이 표는 없어진다. */
 export const COMP_METRICS = [
   '가입 매장 수', '누적 가입자 수', '매출액', '이용 요금', '월 활성 사용자',
@@ -219,6 +276,7 @@ export const COMP_METRICS = [
 
 const list = (value) => (Array.isArray(value) ? value : []);
 const text = (value) => (typeof value === 'string' && value.trim() ? value : null);
+const count = (value) => (typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : 0);
 
 /** 출처 도메인. 건수와 독립성은 다르다 — 한 도메인에서 3건은 3중 확인이 아니다. */
 export function hostOf(url) {
@@ -509,7 +567,52 @@ export function normalizeMarketResult(raw) {
         })),
       }))
       : null,
+    // ── 봉투가 실어 주는 «보고서 글» ────────────────────────────
+    // ⚠ **`null` 일 수 있다.** 그때 화면은 글 없이 지금 모양 그대로 선다.
+    // ⚠ `unverifiedNumbers`·`conceptLeaks` 는 **경고의 근거**다. 안 왔으면 0 으로 두되,
+    //    「AI 가 쓴 글」이라는 사실 자체는 수와 상관없이 늘 말한다.
+    report: raw.report && typeof raw.report === 'object'
+      ? {
+        writtenBy: text(raw.report.writtenBy),
+        unverifiedNumbers: count(raw.report.unverifiedNumbers),
+        conceptLeaks: count(raw.report.conceptLeaks),
+        // ⚠ **머리말은 경계 표시다** — 재료 건수·쓴 모델·인용 대조 여부·유령 수가 여기 있다.
+        //    ⚠ 꼬리말은 **지금 늘 `null`** 이다(도구가 아직 안 쓴다). 없으면 안 그린다.
+        lead: text(raw.report.lead),
+        tail: text(raw.report.tail),
+        sections: list(raw.report.sections).map((section) => ({
+          subject: text(section?.subject) ?? 'UNKNOWN',
+          markdown: text(section?.markdown) ?? '',
+        })),
+      }
+      : null,
   };
+}
+
+/** 절 하나의 보고서 글. 없으면 `null` — 화면이 그 절만 글 없이 선다. */
+export function reportMarkdown(report, subject) {
+  if (!report) return null;
+  const found = report.sections.find((section) => section.subject === subject);
+  return found && found.markdown ? found.markdown : null;
+}
+
+/** 공백·기호를 접고 비교한다. 발췌가 같은 말을 두 칸에 넣는 일이 잦다. */
+function 같은값(a, b) {
+  const n = (x) => String(x ?? '').replace(/[\s,·]/g, '').toLowerCase();
+  return Boolean(n(a)) && n(a) === n(b);
+}
+
+/**
+ * 표·카드의 <b>「구분」 칸에 쓰는 이름.</b>
+ *
+ * <p>⚠ <b>`subject` 와 `metric` 은 둘 다 없을 수 있다.</b> 그대로 이어 붙이면 화면에
+ * <b>「null · null」</b>이 찍힌다 — 2026-08-15 실측(7절 규제 표 첫 줄, 발췌가 값만 건지고
+ * 이름을 못 건진 카드). 같은 이유로 절 머리 카드의 라벨이 <b>빈칸</b>으로 서서
+ * 「미확보」라는 값만 덩그러니 떴다.
+ */
+export function factName(item) {
+  if (같은값(item.subject, item.metric)) return item.metric;
+  return [item.subject, item.metric].filter(Boolean).join(' · ') || '(이름이 오지 않았어요)';
 }
 
 /**
@@ -561,6 +664,35 @@ export function sectionEvidence(result) {
     if (out[item.section]) out[item.section].push(item);
   }
   return out;
+}
+
+
+
+/**
+ * <b>절 머리만 고른다.</b> 봉투의 `placement` 가 「밖」이면 서랍(참고)이다.
+ *
+ * <p>⚠ <b>이 구분이 없으면 「원가와 수익성」 표에 넥슨 영업이익률이 앉는다</b>
+ * (2026-08-15 실측 — 머리 17건 중 4건이 게임회사였다). 서랍은 「버리지 않는다」의 결과라
+ * 화면에 남지만, <b>절의 답으로 읽히면 안 된다.</b>
+ *
+ * <p>정렬은 ① 등급 ② 같은 표끼리(`tableKey`) ③ 최신 연도. 목표 보고서가 절마다
+ * <b>한 표</b>를 세우는 모양을 그대로 만든다.
+ */
+export function headFacts(rows) {
+  // ★ **줄 세우기를 여기서 «다시» 하지 않는다** (판 ㊺).
+  //
+  // 서버(`promote_cards.build`)가 이미 「갈래 → 절 표지 적중 → 등급」으로 세워서 보낸다.
+  // 화면이 또 세우면 **같은 물음을 두 곳이 각자 푸는** 그 함정이고, 실제로 한 번 밟았다 —
+  // 화면이 등급을 먼저 보는 바람에 「지역자율형바우처 20억원」(확정)이
+  // 「가정간편식 판매액 6조 8천억」(추정)을 이겼다. 그 판정은 **어휘를 아는 쪽**이 해야 한다.
+  //
+  // 여기서 하는 일은 **거르기뿐**이다.
+  return list(rows).filter((item) => item?.placement && item.placement !== '밖');
+}
+
+/** 서랍(참고). <b>버리지 않되 절의 답으로 세우지 않는다.</b> */
+export function drawerFacts(rows) {
+  return list(rows).filter((item) => item?.placement === '밖');
 }
 
 /** ⚠ **판 ㊸ 이전 결과 전용 폴백.** 새 결과에는 쓰이지 않는다. */
@@ -616,9 +748,32 @@ export function evidenceSubjectIndex(result) {
   return index;
 }
 
-/** 과목의 순번(1부터). 화면 1 의 일곱 줄 순서와 같은 곳에서 온다. */
+/**
+ * <b>접힌 과목 → 그것을 품은 절.</b>
+ *
+ * <p>⚠ 판 ㊺ 에서 성장률·계산이 1절 «안»으로, 「찾지 못한 것」이 8절로 접혔다.
+ * 이 표가 없으면 「근거 보기 — 시장 분석 <b>{null}</b>. 성장률」이 찍히고
+ * (React 가 `null` 을 안 그려 <b>주인 없는 마침표</b>만 남는다),
+ * 눌러도 `getElementById('sec-GROWTH')` 가 없어 <b>화면만 바뀌고 아무 데도 안 간다.</b>
+ * 감사에서 잡힌 자리다 — 시장 테스트 99개가 전부 통과하는 채로 깨져 있었다.
+ */
+export const SECTION_PARENT = {
+  GROWTH: 'MARKET_SIZE',
+  CALCULATION: 'MARKET_SIZE',
+  NOT_FOUND: 'GAPS',
+};
+
+/** 그 과목이 화면에서 <b>실제로 서는 자리</b>. 접힌 것은 부모 절로 접는다. */
+export function sectionAnchor(subject) {
+  return SECTION_PARENT[subject] ?? subject;
+}
+
+/**
+ * 절 번호(1부터). <b>접힌 과목은 그것을 품은 절의 번호</b>를 돌려준다.
+ * 목차에도 없고 부모도 없는 것만 `null` 이다.
+ */
 export function subjectNumber(subject) {
-  const at = Object.keys(SUBJECT_LABEL).indexOf(subject);
+  const at = SECTION_ORDER.indexOf(sectionAnchor(subject));
   return at < 0 ? null : at + 1;
 }
 

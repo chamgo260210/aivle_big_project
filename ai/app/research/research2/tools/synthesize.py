@@ -23,9 +23,11 @@ for p in (ROOT, HERE, os.path.join(ROOT, "adapters")):
 import prompts
 import publish_gate as PG          # ⚠ 절 배정 규칙의 정본은 PG.절() 하나다
 from base import load_env_key      # ⚠ `adapters/base.py` 다 — 위 경로 추가가 있어야 뜬다
-from runlog import Meter, Run, load_rules
+from runlog import Meter, Run, call_options, load_rules
 
-MODEL = "gpt-4o-mini"
+#: 판 ㊾ 에서 `gpt-4o-mini` → `gpt-5.6-luna`. 발췌(`read_sections`)가 판 ㊺ 에 먼저
+#: 옮겨간 것과 같은 이유이고, 인자 차이는 `runlog.call_options` 가 흡수한다.
+MODEL = "gpt-5.6-luna"
 MAX_OUT = 4096                 # 판 ㊶ 교훈 — 상한을 안 주면 잘리고 통째로 파싱 실패가 된다
 _NUM = re.compile(r"[0-9][0-9,]*(?:\.[0-9]+)?")
 JSON_OBJ = re.compile(r"\{.*\}", re.S)
@@ -93,7 +95,7 @@ def _실린(d: dict) -> list:
     out = []
     for r in d["문서별"]:
         for it in r.get("items", []):
-            if not it.get("게재") or it["게재"] == "OFF_TOPIC":
+            if not PG.머리인가(it):      # 9절도 절 머리만 — 판 ㊹ 3단계
                 continue
             sec = PG.절(it)
             out.append({**it, "_절": sec, "_url": r.get("url") or ""})
@@ -104,7 +106,31 @@ def _nums(s: str) -> set:
     return {m.replace(",", "") for m in _NUM.findall(str(s or ""))}
 
 
-_단위값 = (("조", 10 ** 12), ("억", 10 ** 8), ("만", 10 ** 4), ("천", 10 ** 3))
+#: **큰 배율.** 한국어 수는 이 셋으로 «자리»가 끊긴다 — 각 자리 안에 다시 천·백·십이 온다.
+_단위값 = (("조", 10 ** 12), ("억", 10 ** 8), ("만", 10 ** 4))
+#: 한 자리 «안»의 작은 배율. `8천억` 의 `천` 이 여기다.
+_잔단위 = (("천", 1000), ("백", 100), ("십", 10))
+
+
+def _소단위(s: str) -> float | None:
+    """한 자리 안의 수 — `8천` → 8000 · `7421` → 7421 · `백` → 100 · `` → None.
+
+    ⚠ **수 없이 배율말만 오는 것이 정상이다** (`백만원` 의 `백`, `십억` 의 `십`).
+      그때 계수는 1 이다 — 0 으로 두면 값이 통째로 사라진다.
+    """
+    남, 총, 봄 = s, 0.0, False
+    for 말, 배 in _잔단위:
+        if 말 not in 남:
+            continue
+        앞, 남 = 남.split(말, 1)
+        m = _NUM.search(앞)
+        총 += (float(m.group(0)) if m else 1.0) * 배
+        봄 = True
+    m = _NUM.search(남)
+    if m:
+        총 += float(m.group(0))
+        봄 = True
+    return 총 if 봄 else None
 
 
 def _수값(s) -> float:
@@ -113,6 +139,22 @@ def _수값(s) -> float:
     글자 비교로는 이 셋이 서로 다른 값처럼 보인다. 판 ㊵ 의 「804만 5천 ×4 중복」이
     이 자리의 병이었고, 실측에서 `804만 5천` 과 `804만5,000` 이 **둘 다 살아남았다.**
     못 읽으면 `-1` — **추측해서 같다고 하지 않는다.**
+
+    ## ⚠ 판 ㊹ 2단계 — **배율말이 겹치면 앞의 것을 통째로 잃고 있었다**
+
+    옛 구현은 조·억·만·천을 **한 줄에 세워** 각 자리에서 «첫 숫자 하나»만 집었다.
+    그래서 `8천억` 의 `8천` 에서 **`8`만** 집어 8억이 됐다. 실측(고치기 전):
+
+    | 표기 | 옛 값 | 참값 | 틀린 배 |
+    |---|---|---|---|
+    | `6조 8천억` | 6,000,800,000,000 | **6.8조** | 8천억을 8억으로 |
+    | `8천억` | 800,000,000 | **8천억** | **1,000배** |
+    | `3천만` | 30,000 | **3천만** | **1,000배** |
+    | `1억 2천만` | 100,020,000 | **1.2억** | 2천만을 2만으로 |
+
+    `6조 8천억` 은 이 판의 **왕관 사실**이고, 그것이 봉투에 `6,000,800,000,000` 으로
+    앉아 있었다. **자리를 끊고(조·억·만) 자리 «안»을 따로 읽는다**(`_소단위`)로 고친다.
+    덤으로 `1,140,941백만원` 같은 공시 표기도 바르게 읽힌다(`백`을 자리 안에서 처리).
     """
     t = str(s or "").replace(",", "").replace(" ", "")
     if not t:
@@ -122,13 +164,13 @@ def _수값(s) -> float:
         if 말 not in 남:
             continue
         앞, 남 = 남.split(말, 1)
-        m = _NUM.search(앞)
-        if not m:
+        v = _소단위(앞)
+        if v is None:
             return -1.0
-        총 += float(m.group(0)) * 배
-    m = _NUM.search(남)
-    if m:
-        총 += float(m.group(0))
+        총 += v * 배
+    v = _소단위(남)
+    if v is not None:
+        총 += v
     return 총 if 총 else -1.0
 
 
@@ -280,11 +322,14 @@ def build(d: dict, c: dict, 판단: dict | None = None, *, run_id: str = "p43-sy
     from openai import OpenAI
     run = Run(run_id, rules=load_rules())
     meter = Meter(OpenAI(), run)
-    # **온도를 명시한다.** 안 주면 판마다 다른 줄이 금지어에 걸려 **내용 손실이
-    # 비결정적**이 된다(실측: `긍정적` → `잠재력`). 이것은 답에 맞춰 깎는 것이 아니라
-    # **측정 조건을 고정**하는 것이다 — `max_output_tokens` 를 명시하는 것과 같은 종류다.
+    # **측정 조건을 고정한다.** 온도를 안 주면 판마다 다른 줄이 금지어에 걸려 **내용 손실이
+    # 비결정적**이 된다(실측: `긍정적` → `잠재력`). 답에 맞춰 깎는 것이 아니라 조건을
+    # 고정하는 것이고, `max_output_tokens` 를 명시하는 것과 같은 종류다.
     # ⚠ 여러 판을 굴려 살아남은 것만 고르는 것은 **부정**이다. 편차를 줄이는 게 아니라 감춘다.
-    r = meter.create("a5_synth", model=MODEL, max_output_tokens=MAX_OUT, temperature=0,
+    #
+    # ⚠ 추론 모델(판 ㊾ 부터)은 온도를 못 받는다. 대신 `call_options` 가 **출력 상한을
+    #   4배로 연다** — 생각한 토큰이 상한을 먹어 본문이 빈 채로 «성공»하는 것을 막는다.
+    r = meter.create("a5_synth", model=MODEL, **call_options(MODEL, MAX_OUT),
                      input=prompts.render(PROMPT, concept=개념, groups=본문))
     raw = getattr(r, "output_text", "") or ""
     got, 잘림 = _읽는다(raw)

@@ -29,7 +29,20 @@ public final class MarketResearchContract {
         "stages", "degradations",
         "scorecard", "market", "canvas", "bm", "evidence", "summary", "notes",
         // 판 ㊸ — 사람 보고서의 2·8·9절. AI 쪽 {@code serialize.ENVELOPE} 와 같은 집합이다.
-        "judgment", "prescriptions", "synthesis");
+        "judgment", "prescriptions", "synthesis",
+        // 엔진이 쓴 사람 보고서 본문. **칸은 항상 있고 값이 null 일 수 있다** —
+        // 없는 것과 안 쓴 것이 같아지면 「보고서를 못 만들었다」를 화면이 말할 수 없다.
+        "report");
+
+    /**
+     * 보고서 절의 주제. 성적표 과목({@link #SUBJECTS})과 <b>다른 목록</b>이다 —
+     * {@code GROWTH}·{@code CALCULATION}·{@code NOT_FOUND} 는 사람이 읽는 절이 아니고,
+     * 반대로 {@code GAPS}(8절 — 못 구한 것)·{@code SYNTHESIS}(9절 — 이 조사가 말하는 것)는
+     * 성적표에 없는 절이다. AI 쪽 {@code _SECTION_SUBJECT} 와 같은 집합이어야 한다.
+     */
+    private static final Set<String> REPORT_SUBJECTS = Set.of(
+        "MARKET_SIZE", "PRICE", "COMPETITOR", "CHANNEL", "DEMAND", "UNIT_ECONOMICS", "REGULATION",
+        "GAPS", "SYNTHESIS");
 
     /**
      * {@code VALIDATION} 은 FULL+BM 을 한 실행으로 이은 것이다(여정 3번 「사업 검증」).
@@ -69,10 +82,17 @@ public final class MarketResearchContract {
         "REVENUE_STREAMS", "KEY_RESOURCES", "KEY_ACTIVITIES", "KEY_PARTNERS", "COST_STRUCTURE");
     private static final Set<String> CANVAS_STATUSES = Set.of(
         "VERIFIED", "PARTIAL", "UNVERIFIED", "PLAN", "BLOCKED");
-    /** AI 쪽 {@code ALLOWED_CANVAS_SOURCE_LABELS} 와 같은 목록이어야 한다. */
+    /**
+     * AI 쪽 {@code ALLOWED_CANVAS_SOURCE_LABELS} 와 같은 목록이어야 한다.
+     *
+     * <p>⚠ {@code channel_analysis} 는 2026-08-15 에 더한 여덟째다. 나머지 일곱은 전부
+     * {@code MarketJoinData} 의 필드 이름인데 채널만 대응 필드가 없어, 채널 칸의 파생 라벨이
+     * 구조적으로 0건이었고 폴백이 {@code concept_snapshot}(사용자가 쓴 컨셉 서술문)을
+     * 되살렸다. <b>이 집합은 포함 검사만 하므로 늘려도 옛 봉투·골든 픽스처가 그대로 통과한다.</b>
+     */
     private static final Set<String> SOURCE_LABELS = Set.of(
         "concept_snapshot", "market_size", "growth_rate", "competitor_analysis",
-        "price_analysis", "demand_evidence", "execution_constraints");
+        "price_analysis", "demand_evidence", "channel_analysis", "execution_constraints");
 
     private static final Set<String> DECISIONS = Set.of(
         "PASS", "CONDITIONAL", "REVISION_REQUIRED", "BLOCKED");
@@ -130,9 +150,42 @@ public final class MarketResearchContract {
             bm(result.get("bm"));
         }
         summary(result.get("summary"), evidenceIds);
+        report(result.get("report"));
         judgment(result.get("judgment"));
         prescriptions(result.get("prescriptions"));
         synthesis(result.get("synthesis"));
+    }
+
+    /**
+     * 엔진이 쓴 <b>사람 보고서 본문</b>. {@code null} 이 정상인 경우가 여럿이다 —
+     * 재채점 모드·예산 부족·생성 실패. <b>보고서가 없다고 시장조사 결과를 버리지 않는다</b>
+     * ({@link #bm} 과 같은 원칙).
+     *
+     * <p>{@code unverifiedNumbers}·{@code conceptLeaks} 는 <b>경계 표시</b>다 — 「검증 안 된
+     * 숫자가 몇 개인가」와 「컨셉 서술이 사실인 척 샜는가」를 세어 나른다. 그래서 문장이
+     * 아니라 정수이고, 0 이상만 받는다.
+     *
+     * <p>{@code lead}·{@code tail} 은 <b>머리말·꼬리말 마크다운</b>이다. 화면이 절 안에 글을
+     * 끼우는 대신 <b>보고서 전문</b>을 그리므로 봉투가 머리·꼬리까지 나른다. 없을 수 있지만
+     * <b>빈 문자열은 거부</b>한다 — 「안 썼다」와 「빈칸을 썼다」가 같아진다.
+     */
+    private static void report(JsonNode report) {
+        if (report == null || report.isNull()) return;
+        exact(report, Set.of("writtenBy", "unverifiedNumbers", "conceptLeaks",
+            "lead", "tail", "sections"));
+        text(report, "writtenBy");
+        nonNegativeInteger(report, "unverifiedNumbers");
+        nonNegativeInteger(report, "conceptLeaks");
+        nullableNonBlankText(report.get("lead"));
+        nullableNonBlankText(report.get("tail"));
+        JsonNode sections = report.get("sections");
+        if (sections == null || !sections.isArray()) invalid();
+        for (JsonNode section : sections) {
+            exact(section, Set.of("subject", "markdown"));
+            if (!REPORT_SUBJECTS.contains(text(section, "subject"))) invalid();
+            // 본문이 비면 목차에 절만 서고 화면이 빈칸을 그린다.
+            text(section, "markdown");
+        }
     }
 
     // ── 판 ㊸ — 사람 보고서의 2·8·9절 ────────────────────────────────────
@@ -436,6 +489,11 @@ public final class MarketResearchContract {
     private static void nullableText(JsonNode value) {
         if (value != null && !value.isNull() && !value.isTextual()) invalid();
     }
+    /** null 은 「없다」, 빈 문자열은 <b>사고</b>다 — 둘을 갈라 받는다. */
+    private static void nullableNonBlankText(JsonNode value) {
+        if (value == null || value.isNull()) return;
+        if (!value.isTextual() || value.asText().isBlank()) invalid();
+    }
     private static void nullableNumber(JsonNode value) {
         if (value != null && !value.isNull() && !value.isNumber()) invalid();
     }
@@ -445,6 +503,11 @@ public final class MarketResearchContract {
     private static void nonNegative(JsonNode value, String field) {
         JsonNode item = value.get(field);
         if (item == null || !item.isNumber() || item.asDouble() < 0) invalid();
+    }
+    /** 세는 값은 <b>정수</b>다 — 「16.5개」가 들어오면 어딘가 계산이 어긋난 것이다. */
+    private static void nonNegativeInteger(JsonNode value, String field) {
+        JsonNode item = value.get(field);
+        if (item == null || !item.isIntegralNumber() || item.asInt() < 0) invalid();
     }
     private static void mustBeNull(JsonNode value, String field) {
         JsonNode item = value.get(field);

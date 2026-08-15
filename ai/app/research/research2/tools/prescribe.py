@@ -38,7 +38,7 @@ def _센다(d: dict) -> tuple:
             if not it.get("게재"):
                 continue
             sec = PG.절(it)
-            if it["게재"] != "OFF_TOPIC":
+            if PG.머리인가(it):
                 실림[sec] += 1
             else:
                 사유.setdefault(it["section"], Counter())[it["게재_사유"].split("(")[0]] += 1
@@ -80,7 +80,7 @@ def build(d: dict, c: dict, J: dict | None = None) -> list:
     조건어 = ("수수료", "입점", "계약", "마진", "매대", "리베이트")
     if 실림.get("CHANNEL", 0) >= 문턱:
         있 = [it for r in d["문서별"] for it in r.get("items", [])
-              if it.get("게재") and it["게재"] != "OFF_TOPIC"
+              if PG.머리인가(it)
               and any(w in str(it.get("subject") or "") for w in 조건어)]
         진단 = ("채널별 비중은 잡혔으나 **입점 조건·수수료가 없다** — 「어디서 팔리나」에는 "
                 "답하고 「**어디부터 열까**」에는 못 답한다")

@@ -48,9 +48,10 @@ TIMEOUT = int(os.environ.get("SMOKE_TIMEOUT", "300"))
 #: 자바 `MarketResearchContract.ENVELOPE` 와 같은 집합.
 #: ⚠ 판 ㊸ 에서 **세 칸이 늘었다**(2·8·9절). 이 상수를 안 따라 고치면 스모크가
 #:   「봉투 불일치」로 **거짓 실패**하고, 배선이 깨진 것으로 오진하게 된다.
+#: ⚠ 판 ㊻ 에서 `report` 가 늘었다 — 같은 사고를 두 번째로 겪은 자리다.
 ENVELOPE = {"runId", "conceptId", "asOf", "generatedAt", "mode", "stages", "degradations",
             "scorecard", "market", "canvas", "bm", "evidence", "summary", "notes",
-            "judgment", "prescriptions", "synthesis"}
+            "judgment", "prescriptions", "synthesis", "report"}
 #: 판 ㊸ 에서 7 → 10 과목. 뒤 셋은 절 체인이 채운다(`serialize._SECTION_SUBJECT`).
 SUBJECTS = {"MARKET_SIZE", "GROWTH", "COMPETITOR", "PRICE", "DEMAND", "CALCULATION", "NOT_FOUND",
             "CHANNEL", "UNIT_ECONOMICS", "REGULATION"}

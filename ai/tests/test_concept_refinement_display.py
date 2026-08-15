@@ -160,7 +160,10 @@ class TestContractMatchesRealConceptShapes:
         try:
             drift.check("channels", self.CONCEPT["channels"], "백화점 팝업, 홈쇼핑, 방문판매", self.CONCEPT)
         except drift.DriftRejection as failure:
-            assert "추가·교체" in failure.reason
+            # ⚠ **문구를 그대로 못박지 않는다.** 이 사유는 화면 「못 푼 것」에 그대로 서므로
+            #   사람 말로 다듬을 일이 생긴다(2026-08-15 에 한 번 다듬었다). 재야 할 것은
+            #   「한 번에 몇 개까지인지 말해 주는가」이지 특정 낱말이 아니다.
+            assert str(drift.LIST_CHANGE_ALLOWANCE) in failure.reason, failure.reason
         else:
             raise AssertionError("통째로 갈아 끼운 값이 통과했다 — 계약이 죽었다")
 

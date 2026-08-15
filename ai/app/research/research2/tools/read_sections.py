@@ -30,8 +30,53 @@ import runpath
 from base import load_env_key
 from runlog import Meter, Run, load_rules
 
-MODEL = "gpt-4o-mini"
-WORKERS = 6
+#: 발췌 모델. **`reask_sections` 가 이 값을 그대로 쓴다** — 두 곳에 적으면 갈린다.
+#:
+#: 판 ㊺ 에서 `gpt-4o-mini` → `gpt-5.6-luna`. 같은 문서 10건·같은 프롬프트·읽기 1회 실측:
+#:
+#:     모델            뽑음   절 머리   채우는 절   입력$/1M   출력$/1M
+#:     gpt-4o-mini      71      30       2절        0.15      0.60
+#:     gpt-4o           95      56       2절        2.50     10.00
+#:     gpt-5.6-terra   342     123       6절        2.00     12.00
+#:     gpt-5.6-luna    350     121       5절        0.20      1.20   ← 채택
+#:
+#: `mini` 는 「총매출 3조 6,745억」 같은 **큰 수만 긁고 세부 항목을 건너뛴다.**
+#: `luna` 는 `terra` 성능에 값이 1/10 이고, **절 머리 1건당 원가는 `mini` 보다도 낮다.**
+#: ⚠ 추론 모델이다 — `temperature` 를 **넘기지 않는다**(넘기면 400). 여기는 원래 안 넘긴다.
+MODEL = "gpt-5.6-luna"
+
+#: 1M 토큰당 달러. **모델과 «반드시» 같이 움직인다** — 안 그러면 실행이 스스로 보고하는
+#: 원가가 거짓이 되고, `expected.md` 원장이 그 거짓 숫자로 채워진다(판 ㊺ 에서 잡은 자리).
+PRICE_IN, PRICE_OUT = 0.20, 1.20
+
+#: 추론 모델의 **「답하기 전에 얼마나 생각할까」** 손잡이. 온도 자리를 대신한다.
+#: 받는 값: `none` · `low` · `medium`(기본) · `high` · `xhigh`. 빈 문자열이면 안 넘긴다.
+#:
+#: ⚠ **발췌에서는 «많이 생각하는 것»이 해로울 수 있다.** 다른 모듈(분류/코드북) 실측에서
+#:   `high` 는 추론 토큰을 40배 쓰고 이름표를 **더 뭉갰다**(6→3). 발췌는 **세부를 많이
+#:   남겨야** 하는 일이라 정반대 방향이다 — 뭉치면 그만큼 사실이 사라진다.
+#:   그래서 **재고 정한다.** 값은 `tools/effort_probe` 결과를 여기 적는다.
+EFFORT = ""
+
+#: 출력 상한. **추론 토큰이 여기서 같이 깎인다** — 빠듯하면 생각하다 끝나 본문이 빈 채로
+#: 「성공」한다. `reask_sections` 가 이 값을 그대로 쓴다(두 곳에 적으면 갈린다).
+MAX_OUT = 65536
+
+
+def _옵션(effort: str = "") -> dict:
+    """모델이 받는 손잡이만 골라 넘긴다. **없으면 안 넘긴다** — 400 으로 죽는다."""
+    e = (effort or EFFORT or "").strip()
+    return {"reasoning": {"effort": e}} if e else {}
+
+#: 동시에 세우는 줄 수. **벽시계를 정하는 것은 모델이 아니라 이 수다** — 호출 수를
+#: 이것으로 나눈 만큼이 걸린다(판 ㊺ 실측: 읽기 112회 ÷ 6 = 약 6분).
+#:
+#: ★ **판 ㊺ — 6 → 12.** 6 은 이유가 적힌 적 없는 맨 상수였다. 올려도 되는 근거:
+#:   `OpenAI()` 기본 클라이언트가 429 를 **지수 백오프로 2회 재시도**하고, 그래도 실패한
+#:   문서는 `_one` 이 `llm_failed` 로 **값으로** 남기지 판을 죽이지 않는다.
+#: ⚠ **비용은 한 푼도 안 변한다** — 호출 수가 같다. 바뀌는 것은 벽시계뿐이다.
+#: ⚠ 429 가 실제로 늘면 원장의 `llm.*.error` 가 센다. **거기가 이 수를 되돌릴 자리다.**
+WORKERS = 12
 JSON_OBJ = re.compile(r"\{.*\}", re.S)
 #: 인용 대조용 정규화 — 공백과 **문장부호까지만** 접는다.
 #: 그 이상(숫자만 맞으면 통과 따위)으로 관대해지면 「대조했다」가 거짓이 된다.
@@ -58,6 +103,80 @@ _PUNCT = str.maketrans("", "", _punct())
 
 def _norm(s: str) -> str:
     return _WS.sub("", s or "").translate(_PUNCT)
+
+
+#: 되찾은 인용의 앞뒤 폭. 문장 하나가 담기고 문단은 안 담기는 크기다.
+_앞, _뒤 = 160, 90
+_문장끝 = "。.!?●■◆\n\t"
+
+
+def 재정박(num_raw: str, subject: str, body: str, unit_raw: str = "") -> str | None:
+    """모델이 쓴 인용이 본문에 없을 때, **본문에서 그 수가 있는 진짜 문장을 되찾는다.**
+
+    ## 왜 필요한가 — 인용 대조가 «가장 좋은 문서»를 골라 죽이고 있었다
+
+    실측(판 ㊹ 4단계, `p41-merged`): 이 판의 왕관 사실 **「간편식 국내 판매액 6조 8천억」**과
+    목표 보고서 6절 머릿값 **「식품 제조업 영업이익률 4% 미만」**이 **둘 다 「인용이 본문에
+    없다」로 떨어져 있었다.** 그런데 본문에는 있다 —
+
+        본문:   「…국내 판매액은 2025년 6조 8천억 규모로 예상됨, 프리미엄화와 냉동 제품 출…」
+        모델:   「2025년 간편식의 국내 판매액 규모를 … 약 6조 8천억 원 규모로 추정됨.」
+
+    정부 PDF 는 레이아웃이 본문에 섞여 들어와(「환경변화와 식품시장 전망 < 기후 환경 >」이
+    문장 한가운데 박힌다) **글자 그대로 인용하는 것이 불가능**하다. 모델은 그것을 읽기 좋게
+    고쳐 썼고, 대조는 그것을 거짓으로 판정했다. **재료가 좋을수록 더 죽는다.**
+
+    ## ⚠ 이것은 관문을 «느슨하게» 하는 것이 아니다
+
+    모델이 쓴 문장을 봐주는 게 아니라 **버리고 본문 문장으로 갈아 끼운다.** 결과적으로
+    인용은 **정의상 본문 그대로**가 된다 — 지금보다 엄격해진다.
+
+    두 겹으로 오정박을 막는다:
+      ① 그 수가 본문에 **한 번만** 나오거나,
+      ② 되찾은 창 안에 **주어의 낱말이 겹칠 때**만 인정한다.
+    둘 다 아니면 **되찾지 않는다** — 아무 자리에나 정박하면 값의 정체가 바뀐다.
+    """
+    n = (num_raw or "").split("~")[0].strip()
+    u = (unit_raw or "").strip()
+    if not n or not body:
+        return None
+
+    # ⚠ **짧은 수는 «수+단위»로만 찾는다.** 실측(판 ㊹ 4단계 1차): `num="4"` 가 본문
+    #   아무 데나 걸려 인용이 **「경」 한 글자**가 됐다. `4%` 로 찾으면 그 일이 없다.
+    #   `4` 는 어느 문서에나 수백 번 나오고, 그런 수는 «어디에 있었나»가 정보가 아니다.
+    후보 = [f"{n}{u}", f"{n} {u}"] if u else []
+    후보 += [n] if len(n.replace(",", "")) >= 2 else []
+    자리, 쓴 = [], ""
+    for cand in 후보:
+        cand = cand.strip()
+        자리 = [m.start() for m in re.finditer(re.escape(cand), body)]
+        if not 자리 and "," in cand:                # `1,140,941` ↔ `1140941`
+            cand = cand.replace(",", "")
+            자리 = [m.start() for m in re.finditer(re.escape(cand), body)]
+        if 자리:
+            쓴 = cand
+            break
+    if not 자리:
+        return None
+
+    말 = {w for w in re.findall(r"[가-힣A-Za-z]{2,}", subject or "") if len(w) >= 2}
+    for i in 자리:
+        창 = body[max(0, i - _앞): i + _뒤]
+        if not (len(자리) == 1 or (말 and any(w in 창 for w in 말))):
+            continue
+        # 문장 경계로 다듬는다 — 앞은 마지막 끝맺음 뒤부터, 뒤는 첫 끝맺음까지
+        앞부분, 뒷부분 = 창[:_앞], 창[_앞:]
+        for ch in _문장끝:
+            k = 앞부분.rfind(ch)
+            if k >= 0:
+                앞부분 = 앞부분[k + 1:]
+        끝 = min([j for j in (뒷부분.find(c) for c in _문장끝) if j >= 0] or [len(뒷부분)])
+        got = " ".join((앞부분 + 뒷부분[:끝 + 1]).split()).strip()
+        # ⚠ **다듬다가 빈 껍데기가 되면 버린다.** 문장 부호가 수 바로 앞뒤에 있으면
+        #   창이 통째로 깎여 한두 글자가 남는다 — 그런 인용은 근거가 아니다.
+        if len(got) >= 12 and 쓴 in got:
+            return got
+    return None
 
 
 def _corpus(source_run: str) -> list[dict]:
@@ -148,7 +267,11 @@ def _read_one(d: dict, meter, cap: int, max_items: int) -> dict:
     out = {"trace_id": d["trace_id"], "url": d["url"], "글자": d["글자"],
            "조회일": d.get("조회일"), "보낸_글자": len(body), "별칭": d["별칭"]}
     try:
-        r = meter.create("a3_sections", model=MODEL,
+        # ⚠ **출력 상한을 «명시»한다** (판 ㊺). 안 주면 모델이 스스로 끊고 그 사실이
+        #   어디에도 안 남는다 — 그리고 추론 모델은 **생각한 토큰도 이 상한에서 깎아서**
+        #   생각하다 끝나면 **본문이 빈 채로 「성공」한다.** 실패보다 나쁜 자리다(조용하다).
+        #   `reask_sections.MAX_OUT` 과 같은 값이다.
+        r = meter.create("a3_sections", model=MODEL, max_output_tokens=MAX_OUT, **_옵션(),
                          input=prompts.render(
                              prompts.EXTRACT_SECTIONS,
                              sections=prompts._SECTION_MENU,
@@ -178,6 +301,14 @@ def _read_one(d: dict, meter, cap: int, max_items: int) -> dict:
         it["section"] = sec
         # ── 두 겹. **떨어뜨리되 지우지 않는다** ──────────────────────
         it["quote_verified"] = bool(q) and _norm(q) in hay
+        if not it["quote_verified"]:
+            # **본문에서 진짜 문장을 되찾는다** (판 ㊹ 4단계). 되찾으면 인용은
+            # 정의상 본문 그대로가 된다 — 관문이 느슨해지는 게 아니라 엄격해진다.
+            다시 = 재정박(it.get("number_raw") or "", it.get("subject") or "", body,
+                        it.get("unit_raw") or "")
+            if 다시 and _norm(다시) in hay:
+                it["quote"], it["quote_verified"] = 다시, True
+                it["인용_되찾음"] = True
         it["section_valid"] = sec in codes
         it["채택"] = it["quote_verified"] and it["section_valid"]
         it["탈락_사유"] = ("" if it["채택"] else
@@ -187,7 +318,14 @@ def _read_one(d: dict, meter, cap: int, max_items: int) -> dict:
     return {**out, "status": "found", "note": "", "items": items}
 
 
-def build(source_run: str, run_id: str, *, cap: int = 60000, max_items: int = 20,
+#: 문서 하나에서 받을 사실 수 상한. **모델과 한 몸이다.**
+#: 판 ㊺ 전에는 20 이었고 그것이 옳았다 — `mini` 실측 최댓값이 **19**라 상한에 **닿은 적이 없다**.
+#: 그런데 `luna`·`terra` 는 문서 10건 시범에서 **60(그때 상한)에 닿았다.** 모델을 올리면
+#: 「상한은 병이 아니다」가 뒤집힌다. ⚠ 모델을 되돌리면 이 값도 같이 되돌린다.
+MAX_ITEMS = 60
+
+
+def build(source_run: str, run_id: str, *, cap: int = 60000, max_items: int = MAX_ITEMS,
           limit: int = 0, only_pdf: bool = False, pdf_refetch: bool = False) -> tuple:
     """**절 단위로 문서를 읽는다.** LLM 을 문서 수만큼 부른다 — 이 체인에서 가장 비싸다.
 
@@ -235,6 +373,12 @@ def build(source_run: str, run_id: str, *, cap: int = 60000, max_items: int = 20
             "상태": {s: sum(1 for r in results if r["status"] == s)
                    for s in sorted({r["status"] for r in results})},
             "인용_총": len(items), "인용_채택": len(ok), "절별": per_sec,
+            # ★ **고친 본문을 그대로 물려준다** (판 ㊺). `_refetch_pdfs` 는 메모리 안에서만
+            #   고치므로, 재질문이 `_corpus` 를 새로 부르면 **옛 2단 조판 본문을 다시 읽는다.**
+            #   실측: 그 상태로는 읽기 94회만 새 본문이고 **재질문 376회가 옛 본문** — 지출의 80%다.
+            #   ⚠ **원장에 쓰기 전에 «반드시» 빼라** — 본문 전량이라 `sections.json` 이 수 MB 로
+            #     불어난다. 빼는 자리는 `pipeline._sections` 의 저장 직전 한 곳이다.
+            "_문서목록": docs,
             "문서별": results}, run
 
 
@@ -243,7 +387,7 @@ def main() -> int:
     ap.add_argument("source_run")
     ap.add_argument("--id", required=True, help="새 실행 id (원장을 덮지 않는다)")
     ap.add_argument("--cap", type=int, default=60000, help="문서당 보낼 글자 상한")
-    ap.add_argument("--max-items", dest="max_items", type=int, default=20)
+    ap.add_argument("--max-items", dest="max_items", type=int, default=MAX_ITEMS)
     ap.add_argument("--limit", type=int, default=0, help="문서 N건만 (싼 확인용)")
     ap.add_argument("--only-pdf", dest="only_pdf", action="store_true",
                     help="PDF 문서만. `--pdf-refetch` 효과를 재는 용도")
@@ -267,7 +411,8 @@ def main() -> int:
     m = run.counters
     print(f"LLM {m.get('llm.calls', 0):.0f}회 · 토큰 in {m.get('llm.tokens_in', 0):,.0f} "
           f"out {m.get('llm.tokens_out', 0):,.0f} · "
-          f"≈ ${m.get('llm.tokens_in', 0) / 1e6 * 0.15 + m.get('llm.tokens_out', 0) / 1e6 * 0.60:.3f}")
+          f"≈ ${m.get('llm.tokens_in', 0) / 1e6 * PRICE_IN + m.get('llm.tokens_out', 0) / 1e6 * PRICE_OUT:.3f}"
+          f" ({MODEL})")
     return 0
 
 

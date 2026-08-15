@@ -23,7 +23,8 @@ BOARD = {"conceptName": "귀가 알림 밴드", "targetUsers": "맞벌이 부모
          "priceKrw": 39000}
 
 ANY_ONE = TargetCriteria(ageMin=0, ageMax=0, genders=[], householdSizeMin=0,
-                         householdSizeMax=0, regions=[], incomeKeywords=[], jobKeywords=[])
+                         householdSizeMax=0, regions=[], incomeKeywords=[], jobKeywords=[],
+                         hasChildren=0, householdRoles=[])
 
 
 def answer(index: int) -> dict:
@@ -127,6 +128,54 @@ def test_too_few_usable_responses_fails_instead_of_shrinking_the_survey(monkeypa
 def test_half_the_sample_lost_also_fails(monkeypatch):
     install(monkeypatch, answered=9, requested=20)
     with pytest.raises(ProviderFailure):
+        run({"conceptBoard": BOARD, "sampleSize": 20})
+
+
+# ── 타겟 0명이면 돈을 쓰기 «전에» 멈춘다 (2026-08-15 신설) ──────────────
+#
+# 실측 판(n=40)은 「맞벌이」로 걸러 타겟이 0명인 것을 알고도 40회를 태웠다.
+# 표집은 응답 수집보다 앞에 있으므로 그 시점에 이미 알 수 있었다.
+
+def _no_target(monkeypatch, criteria):
+    """타겟이 0명으로 갈린 표집. 응답을 걷으려 들면 그 자리에서 터뜨린다."""
+    install(monkeypatch, answered=20, requested=20)
+
+    async def fake_criteria(target_users, problem, timeout):
+        return criteria
+
+    monkeypatch.setattr(I, "resolve_criteria", fake_criteria)
+    monkeypatch.setattr(I, "draw_split", lambda cards, frame, size, _criteria: (
+        frame[:size], set(),
+        {"requested": size, "drawn": size, "strata": {}, "shortCells": {}},
+        {"criteria": _criteria.model_dump(), "criteriaText": "직업에 '맞벌이'(0명)",
+         "targetRequested": 16, "nonTargetRequested": 4,
+         "targetDrawn": 0, "nonTargetDrawn": size, "shortfall": 0,
+         "targetShortCells": {}, "nonTargetShortCells": {}}))
+
+    def explode(*_args, **_kwargs):
+        raise AssertionError("타겟이 0명인데 응답을 걷었다 — 돈이 나갔다")
+
+    monkeypatch.setattr(I, "run_interviews", explode)
+
+
+def test_zero_target_stops_before_a_single_response_is_bought(monkeypatch):
+    """타겟 0명인 타겟 조사는 타겟 조사가 아니다. 그리고 아직 한 푼도 안 썼다."""
+    _no_target(monkeypatch, TargetCriteria(**{**ANY_ONE.model_dump(),
+                                             "jobKeywords": ["맞벌이"]}))
+    with pytest.raises(ProviderFailure) as failure:
+        run({"conceptBoard": BOARD, "sampleSize": 20})
+    assert failure.value.reason == "MARKET_INTERVIEW_NO_TARGET_SAMPLE"
+    assert failure.value.retryable is False        # 다시 눌러도 같다 — 조건을 고쳐야 한다
+    # 어느 조건이 0명이었는지를 사용자가 짚을 수 있어야 한다. 없으면 「AI 서비스 이상」만 남는다.
+    diagnostics = failure.value.safe_diagnostics
+    assert diagnostics["conditionMatches"][-1]["condition"] == "전부 동시에 만족"
+    assert diagnostics["conditionMatches"][-1]["matched"] == 0
+
+
+def test_a_survey_with_no_conditions_is_never_blocked(monkeypatch):
+    """「누구나」로 돌린 조사에 「타겟이 없다」고 말하는 것은 경고가 아니라 소음이다."""
+    _no_target(monkeypatch, ANY_ONE)
+    with pytest.raises(AssertionError, match="응답을 걷었다"):
         run({"conceptBoard": BOARD, "sampleSize": 20})
 
 

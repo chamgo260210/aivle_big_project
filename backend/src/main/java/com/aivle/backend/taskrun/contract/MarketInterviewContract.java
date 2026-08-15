@@ -52,9 +52,18 @@ public final class MarketInterviewContract {
         "targetDrawn", "nonTargetDrawn", "shortfall",
         "targetShortCells", "nonTargetShortCells");
 
+    /**
+     * 타겟 술어. <b>{@code ai/app/interview/targeting.TargetCriteria} 와 정확히 같은 집합</b>
+     * 이어야 한다 — 한쪽만 늘리면 결과가 통째로 거부된다.
+     *
+     * <p>{@code hasChildren}·{@code householdRoles} 는 2026-08-15 에 붙었다. 「초등 저학년
+     * 자녀를 둔 맞벌이 부모」가 거를 칸이 없어 직업 키워드로 밀려났고, 뱅크에 「맞벌이」가
+     * 0회라 타겟이 0명이 된 판에서 왔다. 둘은 <b>한 쌍</b>이다 — 자녀 있는 가구의 27% 가
+     * 그 집 자녀 본인이라 세대구성만 보면 자녀가 부모로 잡힌다.
+     */
     private static final Set<String> CRITERIA = Set.of(
         "ageMin", "ageMax", "genders", "householdSizeMin", "householdSizeMax",
-        "regions", "incomeKeywords", "jobKeywords");
+        "regions", "incomeKeywords", "jobKeywords", "hasChildren", "householdRoles");
 
     private static final Set<String> COMPREHENSION = Set.of(
         "accurate", "partial", "misunderstood", "unclassified", "misreadPoints");
@@ -208,10 +217,12 @@ public final class MarketInterviewContract {
             shortCells(targeting.get(field));
         }
         JsonNode criteria = targeting.get("criteria");
-        for (String field : List.of("ageMin", "ageMax", "householdSizeMin", "householdSizeMax")) {
+        for (String field : List.of("ageMin", "ageMax", "householdSizeMin", "householdSizeMax",
+                                    "hasChildren")) {
             nonNegativeInteger(criteria, field);
         }
-        for (String field : List.of("genders", "regions", "incomeKeywords", "jobKeywords")) {
+        for (String field : List.of("genders", "regions", "incomeKeywords", "jobKeywords",
+                                    "householdRoles")) {
             stringArray(criteria.get(field));
         }
     }

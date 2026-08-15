@@ -75,6 +75,9 @@ public class ProjectModuleStatusService {
             : legacySelection == null ? null
                 : marketSeedSnapshotRepository.findBySelectionIdAndProjectIdAndDeletedAtIsNull(
                     legacySelection.getId(), projectId).orElse(null);
+        // 시장 인터뷰만 이것을 본다. 다른 칸은 「시드가 있나」로 충분하지만, 인터뷰는 그 시드의
+        // 여섯 칸을 **응답자에게 그대로 보여 주므로** 어느 판의 시드인지가 결과의 뜻을 바꾼다.
+        boolean refinedSeed = selectedSnapshot != null && selectedSnapshot.isRefinementApplied();
         MarketInterviewRun interviewRun = marketInterviewRunRepository
             .findTopByProjectIdAndDeletedAtIsNullOrderByCreatedAtDescIdDesc(projectId).orElse(null);
         MarketResearchRun marketRun = latestResearchRun(projectId, MarketResearchRun.Kind.FULL);
@@ -175,9 +178,13 @@ public class ProjectModuleStatusService {
             //   requiredInputs 는 **없는 것부터** 센다 — 앞 단계를 먼저 가리켜야 길이 된다.
             //   시장조사와 같은 규칙으로, **실행이 있으면 게이트와 무관하게 그 상태를 보여준다** —
             //   막아 두면 다 끝난 모듈이 「준비 전」으로 보이는 거짓말이 된다.
+            //   ⚠ **다듬기를 지난 시드만 받는다**(2026-08-15). 시드는 두 번 발급된다 — 사업안을
+            //   고른 직후 한 번, 다듬기 끝에 「이 컨셉으로 확정하기」로 한 번. 앞의 것으로 열어 주면
+            //   사용자는 **다듬기 전 사업안**을 소비자에게 물어보게 되고, 인터뷰는 출시 전 마지막
+            //   확인이라 그 답은 쓸 데가 없다. 확정을 지나야 열린다.
             response(projectId, PipelineModuleType.PANEL_SURVEY,
-                interviewOrGate(interviewRun, selectedSnapshot != null && financialSnapshot != null),
-                interviewRequiredInputs(selectedSnapshot != null, financialSnapshot != null),
+                interviewOrGate(interviewRun, refinedSeed && financialSnapshot != null),
+                interviewRequiredInputs(selectedSnapshot, financialSnapshot != null),
                 new NextAction("시장 인터뷰", "/market-interview"),
                 interviewRun == null ? null : String.valueOf(interviewRun.getId()),
                 interviewRun == null ? null : interviewRun.getTaskRun().getId(),
@@ -235,10 +242,17 @@ public class ProjectModuleStatusService {
         return inputsReady ? PipelineModuleStatus.READY : PipelineModuleStatus.NOT_READY;
     }
 
-    /** 빠진 것을 여정 순서대로 센다 — 컨셉이 재무보다 앞이라 먼저 나온다. */
-    private List<String> interviewRequiredInputs(boolean conceptReady, boolean financialReady) {
+    /**
+     * 빠진 것을 여정 순서대로 센다 — 컨셉이 재무보다 앞이라 먼저 나온다.
+     *
+     * <p>컨셉 쪽은 <b>사유를 갈라 센다.</b> 「사업안을 아직 안 골랐다」와 「골랐지만 다듬기
+     * 확정을 안 지났다」는 사용자가 갈 곳이 완전히 다르다 — 앞은 사업안 화면, 뒤는 사업 검증
+     * 화면의 「이 컨셉으로 확정하기」다. 한 이름으로 묶으면 어디로 가라는 말인지 알 수 없다.
+     */
+    private List<String> interviewRequiredInputs(MarketAnalysisSeedSnapshot seed, boolean financialReady) {
         List<String> missing = new ArrayList<>();
-        if (!conceptReady) missing.add("marketAnalysisSeedSnapshotId");
+        if (seed == null) missing.add("marketAnalysisSeedSnapshotId");
+        else if (!seed.isRefinementApplied()) missing.add("refinedConceptConfirmation");
         if (!financialReady) missing.add("financialSnapshotId");
         return missing;
     }

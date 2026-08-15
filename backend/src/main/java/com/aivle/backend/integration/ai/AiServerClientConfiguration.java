@@ -66,13 +66,17 @@ public class AiServerClientConfiguration {
      *
      * <p>트윈(900s)에 얹지 않고 등급을 또 나누는 이유도 같다. 900초로는 FULL 하나도
      * 못 끝낸다.
+     *
+     * <p>★ <b>판 ㊺ — 2100s(35분) → 3600s(60분).</b> {@code BusinessValidationWorker.BUDGET}
+     * 과 <b>같이 움직여야 한다</b> — 워커만 늘리면 HTTP 가 먼저 끊겨서 늘린 뜻이 없다.
+     * 커진 이유는 그쪽에 적었다(호출 266→470 · 발췌가 추론 모델로).
      */
     @Bean
     @Qualifier("aiServerValidationRestClient")
     RestClient aiServerValidationRestClient(
         AiServerProperties properties,
         @org.springframework.beans.factory.annotation.Value(
-            "${app.ai-server.validation-read-timeout:2100s}") java.time.Duration validationReadTimeout) {
+            "${app.ai-server.validation-read-timeout:3600s}") java.time.Duration validationReadTimeout) {
         return createRestClient(properties, validationReadTimeout);
     }
 

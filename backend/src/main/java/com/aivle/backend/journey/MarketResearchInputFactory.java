@@ -74,8 +74,26 @@ public class MarketResearchInputFactory {
      * {@code SECTIONS_TRUNCATED} 로 <b>덜 읽었다는 사실이 원장에 남는다</b>.
      *
      * <p>⚠ 실행 1회가 ≈1,200원에서 <b>≈1,600원</b>이 된다. 사람이 정했다(2026-08-15).
+     *
+     * <p>★ <b>판 ㊺ — 270 → 500.</b> 270 은 재질문이 문서의 <b>절반에 못 미치는</b> 수였다.
+     * 산수는 {@code pipeline._sections} 에서 그대로 나온다(문서 94건 기준):
+     *
+     * <pre>
+     *   270 → 여유 266 → 읽기 94회        → 남은 176
+     *       → 남은 172 → 문서상한 43      → 재질문 43×4 = 172회
+     * </pre>
+     *
+     * <p>즉 <b>재질문이 문서 94건 중 43건(46%)에만 닿고, 나머지 51건은 경고조차 안 뜬다</b>
+     * ({@code 문서상한 > 0} 이라 {@code REASK_SKIPPED} 가 안 걸린다). 전량을 덮으려면
+     * {@code 94 + 94×4 + 9절 1 + 요약 3 = 474} 이고, 문서가 더 많은 원장을 위해 <b>500</b>으로 둔다.
+     *
+     * <p>⚠ 그리고 <b>수집까지 도는 새 사업안은 270 으로 요약을 통째로 잃었다</b> —
+     * 수집 ≈83 을 빼면 읽기 94 + 재질문 88 + 9절 1 로 <b>요약 몫 3이 남지 않는다</b>.
+     * 모델과 무관한 현존 결함이었다.
+     *
+     * <p>⚠ <b>상한이지 지출이 아니다.</b> 문서가 적은 사업안은 적게 쓴다.
      */
-    private static final int LLM_BUDGET_FULL = 270;
+    private static final int LLM_BUDGET_FULL = 500;
     public String full(JsonNode concept, String conceptId, String asOf) {
         ObjectNode root = mapper.createObjectNode();
         root.set("textContents", textContents("concept", mapper.writeValueAsString(concept)));

@@ -50,6 +50,14 @@ public class MarketInterviewBoardService {
         MarketAnalysisSeedSnapshot snapshot = seeds.current(projectId).orElseThrow(
             () -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND,
                 "확정된 사업안이 없다 — 사업안을 선택하고 확정한 뒤에 인터뷰를 걸 수 있다"));
+        // ⚠ **다듬기를 지난 시드만 자극이 된다.** 여정 칸 게이트만으로는 부족하다 — 주소를 직접
+        //    치면 이 화면이 열리고, 그러면 사용자는 다듬기 전 사업안을 소비자에게 물어보게 된다.
+        //    막는 자리를 둘 두는 것이 아니라, **자극을 만드는 이 자리가 진짜 문**이다.
+        if (!snapshot.isRefinementApplied()) {
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND,
+                "사업 검증에서 「이 컨셉으로 확정하기」를 아직 안 눌렀다 — 다듬어진 컨셉을 확정한 "
+                + "뒤에 인터뷰를 걸 수 있다. 다듬기 전 사업안으로 물어본 답은 출시 판단에 쓸 수 없다");
+        }
         JsonNode seed = mapper.readTree(snapshot.getSnapshotJson());
         JsonNode concept = seed.path("selectedConcept");
         JsonNode hypotheses = seed.path("finalHypotheses");

@@ -238,6 +238,97 @@
 .mi-panel--flat { background: var(--color-bg-subtle); }
 .mi-panel__aside { margin: 0; font-size: .78rem; line-height: 1.7; color: var(--color-text-secondary); }
 .mi-panel__aside--tight { margin: -.5rem 0 0; }
+
+/* ── 「이 조사가 센 것」 — 화면 맨 위. 스크롤 전에 읽히는 유일한 절이다.
+      이 화면에서 «가장 크게 보여야 하는» 자리라 카드보다 강한 테두리를 준다. */
+.mi-headline {
+  display: grid; gap: .5rem;
+  padding: 1.25rem 1.5rem;
+  border: 1px solid var(--color-border, #d8dde5);
+  border-left: 4px solid var(--mi-lead);
+  border-radius: 8px;
+  background: var(--color-surface, #fff);
+}
+.mi-headline__title {
+  margin: 0 0 .25rem; font-size: .8rem; font-weight: 700;
+  color: var(--color-text-secondary); letter-spacing: .02em;
+}
+.mi-headline__line { margin: 0; font-size: 1rem; line-height: 1.75; }
+.mi-headline__big { font-size: 1.15rem; font-variant-numeric: tabular-nums; }
+/* 타겟 분모. 본문보다 약하게 두되 «지우지는 않는다» — 이 괄호가 없으면
+   「20명 중 19명」이 타겟 수 행세를 한다. */
+.mi-headline__scope { color: var(--color-text-secondary); font-weight: 400; }
+.mi-headline__resolved {
+  margin: -.25rem 0 0; padding-left: .5rem;
+  font-size: .95rem; line-height: 1.75; color: var(--mi-lead);
+}
+.mi-headline__aside { color: var(--color-text-secondary); font-size: .8rem; }
+.mi-headline__open {
+  margin-top: .5rem; padding: .75rem 1rem;
+  background: var(--color-surface-subtle, #f6f8fa); border-radius: 6px;
+}
+.mi-headline__open-title {
+  margin: 0 0 .375rem; font-size: .8rem; font-weight: 700;
+  color: var(--color-text-secondary);
+}
+.mi-headline__open ul { margin: 0; padding-left: 1.1rem; }
+.mi-headline__open li { font-size: .85rem; line-height: 1.7; }
+.mi-headline__foot {
+  margin: .25rem 0 0; font-size: .78rem; line-height: 1.7;
+  color: var(--color-text-secondary);
+}
+
+/* ── 접는 서랍. **지우는 것이 아니라 접는 것이다** — 펴면 전부 그대로 있다.
+      머리 줄에 그 절의 결정적인 수를 남겨 「접었다는 사실」이 정보 손실이 안 되게 한다. */
+.mi-fold {
+  border: 1px solid var(--color-border, #d8dde5); border-radius: 8px;
+  background: var(--color-surface, #fff);
+}
+.mi-fold > summary {
+  cursor: pointer; padding: .875rem 1.25rem;
+  font-size: .9rem; font-weight: 600; color: var(--color-text-primary);
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: .5rem;
+}
+.mi-fold__hint {
+  font-size: .78rem; font-weight: 400; color: var(--color-text-secondary);
+}
+.mi-fold__body { display: grid; gap: 1rem; padding: 0 1.25rem 1.25rem; }
+.mi-fold[open] > summary { border-bottom: 1px solid var(--color-border, #d8dde5); margin-bottom: 1rem; }
+
+/* ── 신뢰도 서랍 — 엔진이 자기 사정을 말하는 것을 **한 곳에** 모은 자리.
+      머리 줄이 「주의 N건」이 아니라 «가장 아픈 것 한 줄»인 것이 설계다. */
+.mi-trust {
+  border: 1px solid var(--mi-warn); border-radius: 8px;
+  background: var(--color-warning-surface, #fff8e6);
+}
+.mi-trust > summary {
+  cursor: pointer; padding: .75rem 1.25rem;
+  font-size: .85rem; line-height: 1.6; color: var(--color-text-primary);
+}
+.mi-trust__body {
+  display: grid; gap: .625rem; padding: 0 1.25rem 1.125rem;
+  font-size: .82rem; line-height: 1.75; color: var(--color-text-primary);
+}
+.mi-trust__body > p { margin: 0; }
+
+/* ── 층 딱지. 띠(`mi-layers`)를 대신한다 — 띠는 절을 층 순서에 묶어 순서를 못 바꾸게 했다. */
+.mi-layertag {
+  display: inline-block; vertical-align: middle; margin-left: .5rem;
+  padding: .0625rem .375rem; border-radius: 3px;
+  font-size: .625rem; font-weight: 600; letter-spacing: .02em;
+  color: var(--color-text-secondary); background: var(--color-surface-subtle, #f0f2f5);
+  border-left: 2px solid var(--mi-fact);
+}
+.mi-layertag[data-layer="insight"] { border-left-color: var(--mi-insight); }
+.mi-layertag[data-layer="sowhat"] { border-left-color: var(--mi-sowhat); }
+/* 축 커버리지 경고 — 「40명 중 2명만 분류됐다」. 절 안에 있어야 그 절의 수를 의심하게 된다. */
+.mi-panel__aside--warn {
+  color: var(--color-text-primary);
+  background: var(--color-warning-surface, #fff8e6);
+  border-left: 3px solid var(--color-warning, #d99000);
+  padding: .6rem .8rem;
+  border-radius: 4px;
+}
 .mi-panel__aside code {
   padding: .1rem .3rem; border-radius: var(--mi-radius-sm);
   background: var(--color-bg-subtle); font-size: .95em;

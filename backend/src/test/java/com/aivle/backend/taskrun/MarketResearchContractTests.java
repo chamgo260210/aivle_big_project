@@ -294,6 +294,169 @@ class MarketResearchContractTests {
             .isInstanceOf(ExecutionFailure.class);
     }
 
+    // ── report — 엔진이 쓴 사람 보고서 본문 ──────────────────────────────
+    /** 골든 픽스처는 3층 공용이라 여기서 고치지 않는다 — 새 칸은 테스트가 얹는다. */
+    private static ObjectNode withReport(ObjectNode node) {
+        ObjectNode report = node.putObject("report");
+        report.put("writtenBy", "gpt-5.6-luna");
+        report.put("unverifiedNumbers", 16);
+        report.put("conceptLeaks", 1);
+        report.put("lead", "## 시장조사 보고서\n\n이 문서는 공개 자료만으로 쓴다.");
+        report.putNull("tail");
+        ArrayNode sections = report.putArray("sections");
+        ObjectNode section = sections.addObject();
+        section.put("subject", "MARKET_SIZE");
+        section.put("markdown", "### 1.1 시장 규모\n\n문단\n\n| 표 |\n|---|\n| 값 |");
+        ObjectNode gaps = sections.addObject();
+        gaps.put("subject", "GAPS");
+        gaps.put("markdown", "### 8. 못 구한 것\n\n- 단가 원자료");
+        return node;
+    }
+
+    @Test
+    @DisplayName("⭐ report 가 실린 봉투가 통과한다 — 새 칸을 봉투가 받아야 실행이 산다")
+    void reportAccepted() throws Exception {
+        assertThatCode(() -> MarketResearchContract.validate(withReport(payload("full.json"))))
+            .doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("report 가 null 이어도 통과한다 — 재채점·예산 부족·생성 실패가 정상 경로다")
+    void nullReportAccepted() throws Exception {
+        ObjectNode node = payload("full.json");
+        node.putNull("report");
+        assertThatCode(() -> MarketResearchContract.validate(node)).doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("report 칸이 아예 없으면 거부한다 — 「못 만들었다」는 null 로 말한다")
+    void absentReportRejected() throws Exception {
+        ObjectNode node = payload("full.json");
+        node.remove("report");
+        assertThatThrownBy(() -> MarketResearchContract.validate(node))
+            .isInstanceOf(ExecutionFailure.class);
+    }
+
+    @Test
+    @DisplayName("머리말·꼬리말은 없어도 되지만 빈 문자열은 거부한다")
+    void blankLeadRejected() throws Exception {
+        ObjectNode ok = withReport(payload("full.json"));
+        ((ObjectNode) ok.get("report")).putNull("lead");
+        assertThatCode(() -> MarketResearchContract.validate(ok)).doesNotThrowAnyException();
+
+        ObjectNode bad = withReport(payload("full.json"));
+        ((ObjectNode) bad.get("report")).put("tail", "");
+        assertThatThrownBy(() -> MarketResearchContract.validate(bad))
+            .isInstanceOf(ExecutionFailure.class);
+    }
+
+    @Test
+    @DisplayName("8·9절도 보고서 절이다 — GAPS·SYNTHESIS 가 통과한다")
+    void gapsAndSynthesisSectionsAccepted() throws Exception {
+        ObjectNode node = withReport(payload("full.json"));
+        ((ObjectNode) node.get("report").get("sections").get(1)).put("subject", "SYNTHESIS");
+        assertThatCode(() -> MarketResearchContract.validate(node)).doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("report 안에 계약 밖 칸이 있으면 거부한다 — 초과도 부족도 거부다")
+    void unknownReportFieldRejected() throws Exception {
+        ObjectNode node = withReport(payload("full.json"));
+        ((ObjectNode) node.get("report")).put("tokens", 1200);
+        assertThatThrownBy(() -> MarketResearchContract.validate(node))
+            .isInstanceOf(ExecutionFailure.class);
+    }
+
+    @Test
+    @DisplayName("report 에서 칸이 빠지면 거부한다 — 안 센 것과 0건이 같아지면 안 된다")
+    void missingReportFieldRejected() throws Exception {
+        ObjectNode node = withReport(payload("full.json"));
+        ((ObjectNode) node.get("report")).remove("unverifiedNumbers");
+        assertThatThrownBy(() -> MarketResearchContract.validate(node))
+            .isInstanceOf(ExecutionFailure.class);
+    }
+
+    @Test
+    @DisplayName("세는 값이 음수면 거부한다 — 경계 표시가 거짓말을 하게 된다")
+    void negativeReportCountRejected() throws Exception {
+        ObjectNode node = withReport(payload("full.json"));
+        ((ObjectNode) node.get("report")).put("conceptLeaks", -1);
+        assertThatThrownBy(() -> MarketResearchContract.validate(node))
+            .isInstanceOf(ExecutionFailure.class);
+    }
+
+    @Test
+    @DisplayName("세는 값이 정수가 아니면 거부한다")
+    void fractionalReportCountRejected() throws Exception {
+        ObjectNode node = withReport(payload("full.json"));
+        ((ObjectNode) node.get("report")).put("unverifiedNumbers", 16.5);
+        assertThatThrownBy(() -> MarketResearchContract.validate(node))
+            .isInstanceOf(ExecutionFailure.class);
+    }
+
+    @Test
+    @DisplayName("절 주제가 아는 절 코드 밖이면 거부한다 — 화면 목차가 조용히 넓어지지 않게")
+    void unknownReportSubjectRejected() throws Exception {
+        ObjectNode node = withReport(payload("full.json"));
+        ((ObjectNode) node.get("report").get("sections").get(0)).put("subject", "GROWTH");
+        assertThatThrownBy(() -> MarketResearchContract.validate(node))
+            .isInstanceOf(ExecutionFailure.class);
+    }
+
+    @Test
+    @DisplayName("절 본문이 비면 거부한다 — 목차에 절만 서고 화면이 빈칸을 그린다")
+    void blankReportMarkdownRejected() throws Exception {
+        ObjectNode node = withReport(payload("full.json"));
+        ((ObjectNode) node.get("report").get("sections").get(0)).put("markdown", "  ");
+        assertThatThrownBy(() -> MarketResearchContract.validate(node))
+            .isInstanceOf(ExecutionFailure.class);
+    }
+
+    @Test
+    @DisplayName("절에 계약 밖 칸이 있으면 거부한다")
+    void unknownSectionFieldRejected() throws Exception {
+        ObjectNode node = withReport(payload("full.json"));
+        ((ObjectNode) node.get("report").get("sections").get(0)).put("html", "<p/>");
+        assertThatThrownBy(() -> MarketResearchContract.validate(node))
+            .isInstanceOf(ExecutionFailure.class);
+    }
+
+    @Test
+    @DisplayName("sections 가 배열이 아니면 거부한다")
+    void nonArraySectionsRejected() throws Exception {
+        ObjectNode node = withReport(payload("full.json"));
+        ((ObjectNode) node.get("report")).putNull("sections");
+        assertThatThrownBy(() -> MarketResearchContract.validate(node))
+            .isInstanceOf(ExecutionFailure.class);
+    }
+
+    @Test
+    @DisplayName("BM·VALIDATION 봉투도 report 를 받는다 — 모드마다 갈리지 않는다")
+    void reportAcceptedInEveryMode() throws Exception {
+        assertThatCode(() -> MarketResearchContract.validate(withReport(payload("bm.json"))))
+            .doesNotThrowAnyException();
+        assertThatCode(() -> MarketResearchContract.validate(withReport(validationPayload())))
+            .doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("봉투에 report 를 더해도 모르는 칸은 여전히 거부한다")
+    void unknownFieldStillRejectedAlongsideReport() throws Exception {
+        ObjectNode node = withReport(payload("full.json"));
+        node.put("appendix", "x");
+        assertThatThrownBy(() -> MarketResearchContract.validate(node))
+            .isInstanceOf(ExecutionFailure.class);
+    }
+
+    @Test
+    @DisplayName("봉투 필수 칸이 빠지면 거부한다 — report 를 더해도 부족은 부족이다")
+    void missingEnvelopeFieldRejected() throws Exception {
+        ObjectNode node = withReport(payload("full.json"));
+        node.remove("scorecard");
+        assertThatThrownBy(() -> MarketResearchContract.validate(node))
+            .isInstanceOf(ExecutionFailure.class);
+    }
+
     @Test
     @DisplayName("FULL 인데 canvas 가 차 있으면 거부한다 — 모드가 섞이면 안 된다")
     void modeMixRejected() throws Exception {

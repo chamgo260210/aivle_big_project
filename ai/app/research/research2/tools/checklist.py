@@ -16,7 +16,7 @@
     ② 사람 — 적중 후보의 `subject` 를 눈으로 대조한다
        ⚠ 숫자만 맞으면 안 된다. 실측: `50%` 가 「자립준비청년 취업률」로도 걸린다
 
-**모집단은 「화면에 실린 것」 하나로 고정한다**(`게재 != OFF_TOPIC`). `--population` 은
+**모집단은 「절 머리에 서는 것」 하나로 고정한다**(`publish_gate.머리인가`). `--population` 은
 진단용이며, 판정에 쓰지 않는다 — 눈금이 갈리면 처치를 못 잰다.
 
 채점할 때마다 **게이트 규칙 버전**을 같이 찍는다. 안 적으면 다음 판과 비교가 안 된다.
@@ -28,6 +28,11 @@ from collections import Counter
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
+for _p in (ROOT, HERE, os.path.join(ROOT, "adapters")):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
+import publish_gate as PG          # noqa: E402 — 「무엇이 실렸나」의 정본은 거기 하나다
 
 REF = os.path.join(ROOT, "data", "reference_facts.json")
 RULES = os.path.join(ROOT, "rules", "publish.v1.json")
@@ -150,7 +155,10 @@ def load_output(path: str, population: str) -> list:
     ok = [it for it in items if it.get("채택")]
     if population == "verified":
         return ok
-    return [it for it in ok if it.get("게재") and it["게재"] != "OFF_TOPIC"]
+    # ⚠ **모집단은 «절 머리»다** (판 ㊹ 3단계). 서랍(`밖`)까지 넣으면 모집단이 사실상
+    #   전체가 되어 **before/after 를 정의상 못 재게 된다** — 처치를 재려고 만든 잣대가
+    #   처치 때문에 무의미해지는 자리다.
+    return [it for it in ok if PG.머리인가(it)]
 
 
 def score(refs: list, items: list) -> tuple:

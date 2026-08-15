@@ -99,9 +99,80 @@ def _값(number_raw: str, unit_raw: str, 환산: dict) -> tuple:
     return n, (u or None)
 
 
-def build(publish: dict, concept: dict | None = None) -> list:
-    """실린 사실 → **한글 카드 목록**. 안 실린 것(`OFF_TOPIC`)은 오지 않는다."""
+def _원문값(n, u) -> str:
+    """원문 표기 그대로. **단위 중복만 접는다.**
+
+    ⚠ 실측(판 ㊹ 6단계): 「5.3억원원」·「80%%」·「3조 5,340억 원원」이 표에 앉았다.
+      추출이 `number_raw` 에 단위를 이미 넣은 경우가 있는데 무조건 이어 붙였다.
+      **값을 고치는 게 아니라 겹친 꼬리만 안 붙인다.**
+    """
+    n, u = str(n or "").strip(), str(u or "").strip()
+    if not u or n.endswith(u) or n.replace(" ", "").endswith(u.replace(" ", "")):
+        return n
+    return f"{n}{u}"
+
+
+#: 절 하나가 봉투에 싣는 **서랍(`밖`) 카드 상한.** 절 머리는 이 상한을 안 받는다.
+#:
+#: ★ **판 ㊺ — 왜 상한이 필요한가.** 발췌가 `gpt-5.6-luna` 가 된 뒤 근거가 봉투 계약을
+#: 넘겼다. 실측(원장 `0c54ffb5…`):
+#:
+#:     봉투 상한 (`ai/main.py:36`)          2.00 MiB
+#:     재질문 4절                            5.52 MiB   evidence 5,640
+#:     재질문을 «전부 꺼도»                   2.31 MiB   evidence 2,666   ← 그래도 넘는다
+#:
+#: 그래서 이것은 재질문을 줄여 풀 수 있는 문제가 아니다. 그리고 넘으면 조용히 잘리는 게
+#: 아니라 **실행 전체가 `PAYLOAD_TOO_LARGE` 로 죽는다** — 이미 지불한 수집을 통째로 잃는다.
+#: 같은 이유로 BM 도 그 앞에서 `context_length_exceeded` 로 죽었다.
+#:
+#: ⚠ **절 머리는 한 건도 접지 않는다.** 화면 본문이 그것이고, 사업가가 읽는 것도 그것이다.
+#:   접히는 것은 「더 있다」를 보여주는 참고뿐이고, **몇 건 중 몇 건인지 반드시 알린다**
+#:   (`pipeline._sections` 가 `DRAWER_SAMPLED` 로 화면까지 올린다).
+#: ⚠ **원장에서 지우는 것이 아니다.** 사실은 그대로 있고 봉투에만 표본이 실린다 —
+#:   「버리는 자리는 질문과 게재뿐」 규율에서 이것은 **게재**다.
+서랍_상한 = 20
+
+
+def _접기(카드: list, 표: dict, 상한: int, 생략: dict | None) -> list:
+    """절마다 서랍 카드를 `상한` 건까지만 남긴다. **절 머리는 그대로 통과시킨다.**
+
+    남길 것을 고르는 순서는 ① 값을 읽은 것 ② 등급이 높은 것 ③ 원래 차례다.
+    값이 없는 서랍 카드는 화면에서 「참고」 이상이 못 되므로 먼저 접힌다.
+    """
+    순위 = {lv: i for i, lv in enumerate(k for k in 표 if not k.startswith("_"))}
+    머리 = [c for c in 카드 if c["_갈래"] != "밖"]
+    서랍: dict = {}
+    for c in 카드:
+        if c["_갈래"] == "밖":
+            서랍.setdefault(c["_절"], []).append(c)
+
+    남김 = []
+    for 절, 목록 in 서랍.items():
+        고른 = sorted(enumerate(목록),
+                     key=lambda t: (t[1]["값"] is None,
+                                    순위.get(t[1]["등급"], len(순위)), t[0]))[:상한]
+        남김 += [c for _, c in 고른]
+        if 생략 is not None and len(목록) > 상한:
+            생략[절] = {"전체": len(목록), "실음": 상한}
+    # 원래 차례를 되살린다 — id 는 `build` 가 이미 붙였고, 뒤섞이면 화면 순서가 흔들린다.
+    자리 = {id(c): i for i, c in enumerate(카드)}
+    return sorted(머리 + 남김, key=lambda c: 자리[id(c)])
+
+
+def build(publish: dict, concept: dict | None = None, *,
+          서랍상한: int = 0, 생략: dict | None = None) -> list:
+    """실린 사실 → **한글 카드 목록**. 사실이 아닌 것(`OFF_TOPIC`)만 안 온다.
+
+    ⚠ 서랍(`밖`)도 온다 — **버리지 않는 것이 이 모듈의 전부**다. 대신 카드마다
+      「어떻게 읽어야 하는지」가 `경계` 로 붙고, 화면이 접는다.
+
+    `서랍상한` 을 주면 절마다 서랍을 그만큼만 남긴다(0 이면 전량 — 종전 그대로).
+    `생략` 에 dict 를 주면 **절별로 몇 건 중 몇 건을 실었는지** 채워 준다 —
+    부르는 쪽은 그것을 반드시 사용자에게 알린다."""
     P, F, WL = _규칙()
+    # ⚠ **한 번만 읽는다.** `PG._rules()` 는 캐시가 없어 항목마다 부르면 JSON 을
+    #   수천 번 읽는다(실측 원장 기준 2,876회).
+    PGR = PG._rules()
     표, 환산 = F.get("등급표") or {}, P["단위_환산"]
     불가 = F.get("채택_불가_부류") or {}
     갈래경계, 앞머리 = P["갈래_경계"], P["id_앞머리"]
@@ -112,7 +183,9 @@ def build(publish: dict, concept: dict | None = None) -> list:
         kind, 어떻게 = kind_of(url, WL)
         등급 = _등급(kind, 표)
         for it in r.get("items") or []:
-            if not it.get("게재") or it["게재"] == "OFF_TOPIC":
+            # **서랍(`밖`)도 카드가 된다** (판 ㊹ 3단계) — 안 그러면 「버리지 않는다」가
+            # 화면에서 거짓이 된다. 어떻게 읽을지는 아래 `경계` 가 붙인다.
+            if not PG.실었나(it):
                 continue
             사유 = _채택(it, r, kind, 불가)
             if 사유:
@@ -165,12 +238,33 @@ def build(publish: dict, concept: dict | None = None) -> list:
                 "_절": PG.절(it), "_갈래": 갈래,
                 "_발행사": (it.get("게재_발행사") or None),
                 "_표키": (f"{r.get('trace_id')}|{tc}|{it.get('year') or ''}" if tc else None),
-                "_원문값": f"{it.get('number_raw')}{it.get('unit_raw') or ''}",
+                # ⚠ **단위가 이미 수 안에 있으면 또 붙이지 않는다.** 실측: 「5.3억원원」·
+                #   「80%%」·「3조 5,340억 원원」이 표에 앉았다 — 값이 깨져 보인다.
+                "_원문값": _원문값(it.get("number_raw"), it.get("unit_raw")),
+                # 줄 세우기용. `serialize._EVIDENCE` 밖이라 봉투로는 안 나가고,
+                # **순서로만** 화면에 전달된다 — 화면이 중요도를 다시 풀지 않게 하려는 것이다.
+                "_표지": PG.표지적중(it, PGR),
             })
+
+    # ★ 판 ㊺ — **절 안에서 「그 절이 묻는 것에 답하는 것」이 먼저 선다.**
+    #   왜 갈래·등급만으로는 모자란지는 `PG.표지적중` 에 실측과 함께 적었다.
+    #   ⚠ **아무것도 버리지 않는다.** 순서만 바꾼다.
+    #   ⚠ 안정 정렬이라 같은 등급 안에서는 **원장에 실린 차례**가 그대로 남는다.
+    갈래순 = {"OURS_SEGMENT": 0, "OURS_UMBRELLA": 1, "SUBSTITUTE": 2,
+             "COMPETITOR_FIRM": 3, "밖": 4}
+    등급순 = {lv: i for i, lv in enumerate(k for k in 표 if not k.startswith("_"))}
+    카드.sort(key=lambda c: (갈래순.get(c["_갈래"], 5),
+                           0 if c["_표지"] else 1,
+                           등급순.get(c["등급"], 9)))
     if 거부:
         from collections import Counter                             # noqa: PLC0415
         print("승격 거부 —", " · ".join(f"{k} {v}" for k, v in
                                     Counter(x["사유"] for x in 거부).most_common()))
+    if 서랍상한 > 0:
+        전 = len(카드)
+        카드 = _접기(카드, 표, 서랍상한, 생략)
+        if len(카드) != 전:
+            print(f"서랍 접기 — {전} → {len(카드)}장 (절마다 최대 {서랍상한}건 · 절 머리는 전량)")
     return 카드
 
 

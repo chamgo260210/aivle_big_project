@@ -66,7 +66,7 @@ def _merge(full: dict, bm: dict) -> dict:
     merged["evidence"] = _merge_evidence(full.get("evidence"), bm.get("evidence"))
     merged["scorecard"] = _merge_scorecard(full.get("scorecard"), bm.get("scorecard"))
     # 2·8·9절은 FULL 만 만든다. BM 의 `null` 이 이기면 조사 결과가 조용히 사라진다.
-    for name in ("judgment", "prescriptions", "synthesis"):
+    for name in ("judgment", "prescriptions", "synthesis", "report"):
         merged[name] = full.get(name) if full.get(name) is not None else bm.get(name)
     merged["stages"] = list(full.get("stages") or []) + list(bm.get("stages") or [])
     merged["degradations"] = list(full.get("degradations") or []) + list(bm.get("degradations") or [])
