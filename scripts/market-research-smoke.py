@@ -17,6 +17,7 @@ ai-server 는 호스트에 포트를 열지 않는다. 그래서 이 파일을 s
 """
 
 import hashlib
+import io
 import json
 import os
 import unicodedata
@@ -33,10 +34,26 @@ CONCEPT_ID = os.environ.get("SMOKE_CONCEPT_ID", "beauty-noshow")
 MODE = os.environ.get("SMOKE_MODE", "RESCORE").upper()
 TEXT = "cafe subscription market research smoke"
 
+#: **유료 갈래**(판 ㊸). 실린 컨셉을 보내고 `sourceRun` 을 **안** 보내면 파이프라인이
+#: 「표에 없는 이름표 = 제품 사업안」으로 읽어 원장을 새로 만든다(`collect=True`) —
+#: 그것이 실제 사용자 경로이자 돈이 드는 자리다. 견본 원장 위 재채점으로는
+#: 수집·절 체인·요약이 **한 번도 안 밟힌다**(RESCORE 실측: sections=SKIPPED).
+#:
+#: ⚠ 입력은 `MarketResearchInputFactory.full()` 을 그대로 베낀다. 예산을 안 실으면
+#:   AI 쪽이 `Budget(total=0)` 으로 떨어져 절 체인이 조용히 통째로 degrade 된다.
+CONCEPT_FILE = os.environ.get("SMOKE_CONCEPT_FILE", "")
+LLM_BUDGET = int(os.environ.get("SMOKE_LLM_BUDGET", "270"))
+TIMEOUT = int(os.environ.get("SMOKE_TIMEOUT", "300"))
+
 #: 자바 `MarketResearchContract.ENVELOPE` 와 같은 집합.
+#: ⚠ 판 ㊸ 에서 **세 칸이 늘었다**(2·8·9절). 이 상수를 안 따라 고치면 스모크가
+#:   「봉투 불일치」로 **거짓 실패**하고, 배선이 깨진 것으로 오진하게 된다.
 ENVELOPE = {"runId", "conceptId", "asOf", "generatedAt", "mode", "stages", "degradations",
-            "scorecard", "market", "canvas", "bm", "evidence", "summary", "notes"}
-SUBJECTS = {"MARKET_SIZE", "GROWTH", "COMPETITOR", "PRICE", "DEMAND", "CALCULATION", "NOT_FOUND"}
+            "scorecard", "market", "canvas", "bm", "evidence", "summary", "notes",
+            "judgment", "prescriptions", "synthesis"}
+#: 판 ㊸ 에서 7 → 10 과목. 뒤 셋은 절 체인이 채운다(`serialize._SECTION_SUBJECT`).
+SUBJECTS = {"MARKET_SIZE", "GROWTH", "COMPETITOR", "PRICE", "DEMAND", "CALCULATION", "NOT_FOUND",
+            "CHANNEL", "UNIT_ECONOMICS", "REGULATION"}
 
 
 def canonical(value):
@@ -49,6 +66,11 @@ def canonical(value):
     return value
 
 
+if CONCEPT_FILE:
+    # 실린 컨셉이 **이름표를 이긴다**(`_inline_concept`). 컨셉을 안 실으면 표에 없는
+    # 이름표는 컨셉 파일을 못 찾는다.
+    TEXT = io.open(CONCEPT_FILE, encoding="utf-8").read()
+
 digest = "sha256:" + hashlib.sha256(TEXT.encode()).hexdigest()
 task_input = {
     "textContents": [{"contentKey": "concept", "contentType": "TEXT", "language": "ko-KR",
@@ -59,6 +81,10 @@ task_input = {
     "sourceRun": SEED_RUN,
     "conceptId": CONCEPT_ID,
 }
+if CONCEPT_FILE:
+    # ⚠ **`sourceRun` 을 지운다.** 남겨 두면 그 씨앗 원장 위 재채점이 되어 수집이 안 돈다.
+    task_input.pop("sourceRun")
+    task_input["llmBudget"] = LLM_BUDGET
 if MODE == "BM":
     task_input["llmBudget"] = 2
     # 사용자가 앞 화면에서 채우는 실행 계획. 여기서 같이 태워야 **배선이 실제로 도는지**를
@@ -75,7 +101,7 @@ correlation = "smoke-" + uuid.uuid4().hex[:8]
 body = {"contractVersion": "1.0", "taskType": "MARKET_RESEARCH", "taskSchemaVersion": "1.0",
         "taskRunId": correlation, "taskAttemptId": "smoke-" + uuid.uuid4().hex[:12],
         "correlationId": correlation,
-        "deadlineAt": (datetime.now(timezone.utc) + timedelta(seconds=300))
+        "deadlineAt": (datetime.now(timezone.utc) + timedelta(seconds=TIMEOUT))
         .isoformat(timespec="seconds").replace("+00:00", "Z"),
         "locale": "ko-KR", "input": task_input}
 subset = {key: body[key] for key in
@@ -87,7 +113,8 @@ body["canonicalInputHash"] = "sha256:" + hashlib.sha256(
 home = os.environ.get("RESEARCH2_HOME", "/app/app/research/research2")
 print(f"home    : {home} exists={os.path.isdir(home)} "
       f"seed={os.path.isdir(os.path.join(home, 'runs', SEED_RUN))}")
-print(f"mode    : {MODE}   source={SEED_RUN}")
+print(f"mode    : {MODE}   source={task_input.get('sourceRun') or '(수집한다 — 유료)'}"
+      f"   concept={CONCEPT_FILE or CONCEPT_ID}   llmBudget={task_input.get('llmBudget')}")
 
 request = urllib.request.Request(
     f"{BASE}/internal/v1/ai/executions",
@@ -96,7 +123,7 @@ request = urllib.request.Request(
              "X-Correlation-Id": correlation},
 )
 try:
-    with urllib.request.urlopen(request, timeout=300) as response:
+    with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
         status, payload = response.status, json.load(response)
 except urllib.error.HTTPError as error:
     status, payload = error.code, json.load(error)
@@ -108,6 +135,13 @@ if status != 200:
 
 result = payload["result"]
 problems = []
+
+# 유료 실행의 봉투는 **남긴다.** 자바 계약(`MarketResearchContract`) 왕복은 이 파이썬이
+# 대신하지 못하는데, 봉투를 버리면 그것을 재려고 **또 사야 한다**.
+if os.environ.get("SMOKE_OUT"):
+    io.open(os.environ["SMOKE_OUT"], "w", encoding="utf-8").write(
+        json.dumps(result, ensure_ascii=False, indent=1))
+    print(f"봉투    : {os.environ['SMOKE_OUT']} 에 남겼다")
 
 missing, extra = ENVELOPE - set(result), set(result) - ENVELOPE
 if missing or extra:
@@ -124,7 +158,8 @@ if result.get("mode") == "FULL":
     print("scorecard: " + " · ".join(
         f"{row['subject']}={row['state']}" for row in (result.get("scorecard") or [])))
     if subjects != SUBJECTS:
-        problems.append(f"7과목이 아니다: {sorted(subjects)}")
+        problems.append(f"10과목이 아니다 — 빠짐 {sorted(SUBJECTS - subjects)} · "
+                        f"남음 {sorted(subjects - SUBJECTS)}")
     if not (result.get("market") or {}).get("notFound"):
         problems.append("⑦행(못 찾은 것)이 비었다 — 절대 빼지 않는 칸이다")
     if result.get("canvas") is not None or result.get("bm") is not None:
@@ -155,6 +190,61 @@ if result.get("mode") == "FULL":
     print(f"요인    : {seen}줄   표 밖 해석 경계 {prose}문장")
     if not seen:
         problems.append("요인이 0줄이다 — 계산식의 항이 표로 서지 않았다")
+
+    # ── 판 ㊸ 출시 차단 목록 (`expected.md` §34) ──────────────────────
+    #   ⚠ 여기는 **모양**이 아니라 **내용**을 본다. 앞의 검사가 전부 통과해도
+    #   「돌긴 도는데 사람이 읽을 것이 없다」가 그대로 통과하던 자리다.
+    by_stage = {s["name"]: s for s in stages}
+    sec = by_stage.get("sections")
+    print(f"절체인  : {sec}")
+    codes = [d.get("code") for d in (result.get("degradations") or [])]
+    print(f"덜 된 것: {codes or '없음'}")
+
+    # ⚠ **재채점에서는 이 목록을 재지 않는다.** RESCORE 는 LLM 0회라 절 체인이 설계대로
+    #   SKIPPED 다. 그것을 FAIL 로 세면 「검사가 빨간데 코드는 멀쩡한」 거짓 경보가 되고,
+    #   그 다음부터 아무도 이 스모크를 안 믿는다. 차단 목록은 **유료 실행의 잣대**다.
+    if "MODE_RESCORE" in codes:
+        print("§34    : 재채점이라 재지 않는다 — 차단 목록은 유료 FULL 에서만 선다")
+        for line in problems:
+            print(f"FAIL: {line}")
+        raise SystemExit(1 if problems else 0)
+
+    # ② 예산 270 에서 절 체인이 실제로 도는가. **없는 단계**와 **실패한 단계**를 가른다.
+    if sec is None:
+        problems.append("sections 단계가 아예 없다 — 절 체인이 제품 경로에서 안 돈다")
+    elif sec.get("status") not in ("OK", "SUCCEEDED", "DEGRADED"):
+        problems.append(f"sections 단계가 {sec.get('status')} 다")
+    if "BUDGET_EXHAUSTED" in codes:
+        problems.append("BUDGET_EXHAUSTED — 예산 270 이 모자랐다")
+
+    # 2·8·9절이 **실제로 찼는가.** null 이면 화면에 그 자리가 아예 안 선다.
+    for name in ("judgment", "prescriptions", "synthesis"):
+        block = result.get(name)
+        n = len(block) if isinstance(block, list) else (0 if block is None else 1)
+        print(f"{name:13s}: {'없음' if not n else f'{n}건'}")
+        if not n:
+            problems.append(f"{name} 이 비었다 — 이 판이 이으려던 절이다")
+
+    # ③ ★ 원가·수익성 거짓 「확인됨」 — 지금 화면에서 **유일하게 틀린 확신을 주는 줄**이다.
+    #    건수만 보는 `_section_rows` 가 「한 개 팔면 얼마 남나」에 0건인 채로 FILLED 를 준다.
+    ue = next((r for r in (result.get("scorecard") or [])
+               if r["subject"] == "UNIT_ECONOMICS"), None)
+    원가 = [e for e in (result.get("evidence") or [])
+            if e.get("section") == "UNIT_ECONOMICS"
+            and any(w in (e.get("metric") or "") + (e.get("subject") or "")
+                    for w in ("원가", "마진", "매출총이익", "제조원가", "단위당", "기여이익"))]
+    print(f"원가    : UNIT_ECONOMICS={ue and ue.get('state')} · 원가에 닿는 사실 {len(원가)}건")
+    if ue and ue.get("state") == "FILLED" and not 원가:
+        problems.append("UNIT_ECONOMICS 가 「확인됨」인데 원가에 닿는 사실이 0건이다 "
+                        "— 거짓 확신. 출시 차단(§34-3)")
+
+    # ④ 9절이 연도를 들고 오는가 (화면 표기의 원천).
+    if isinstance(result.get("synthesis"), list):
+        해 = sum(1 for line in result["synthesis"]
+                 for s in (line.get("sources") or []) if s.get("period"))
+        print(f"9절 연도: 출처 {해}개에 연도가 있다")
+        if not 해:
+            problems.append("9절 출처에 연도가 하나도 없다 — 화면이 연도를 못 쓴다")
 else:
     cells = ((result.get("canvas") or {}).get("cells")) or []
     print(f"canvas  : {len(cells)}칸   decision={(result.get('bm') or {}).get('decision')}")

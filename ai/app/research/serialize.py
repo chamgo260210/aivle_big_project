@@ -281,8 +281,34 @@ def scorecard(doc: dict, section_counts: dict | None = None,
         if state is None:
             raise ContractDrift(f"{korean} 상태가 계약 밖이다: {row.get('상태')!r}")
         out.append({"subject": subject, "state": state,
-                    "detail": _text(_detail(korean, row), "세부 없음")})
+                    "detail": _text(_곁들임(_detail(korean, row), subject, section_counts),
+                                    "세부 없음")})
     return out
+
+
+def _곁들임(detail: str, subject: str, counts: dict | None) -> str:
+    """슬롯 판정 줄에 **절 조사가 실은 사실 수**를 덧붙인다.
+
+    ⚠ **판정을 바꾸지 않는다.** `state` 는 슬롯 카드가 정한 그대로다 — 이 함수는
+    **말을 맞출 뿐**이다.
+
+    왜 필요한가(유료 스모크 실측 2026-08-15). 성적표 수요 줄이
+
+        5  수요  [미확보]  근거 0건 · 최고 등급 None        근거 13건 ▾
+
+    로 나갔다. 「0건」은 슬롯 카드의 수고 「13건」은 절 조사가 실은 수인데, 화면은 두
+    모집단을 모른 채 **한 줄에 두 수**를 찍었다. 사용자에게는 동시에 참일 수 없는 말이라
+    어느 쪽을 믿어도 손해다 — 배지를 믿으면 실린 13건을 버리고, 표를 믿으면 배지를
+    화면 고장으로 읽는다.
+
+    두 모집단을 **성적표에서 합치는 것은 설계 결정**이라 이 판에서 하지 않는다.
+    여기서는 **모순으로 보이지 않게 이름을 붙일 뿐**이다.
+    """
+    n = int((counts or {}).get(subject) or 0)
+    if not n:
+        return detail
+    return (f"{detail} · 절 조사가 실은 **정황 근거 {n}건**은 아래에 있다 "
+            f"— 위 판정을 세운 직접 근거는 아니다")
 
 
 def _section_rows(counts: dict | None, threshold: int) -> list[dict]:
@@ -334,7 +360,11 @@ def _detail(korean: str, row: dict) -> str:
     if korean == "4_가격":
         return f"표시가격 {row.get('n')}건{_what(row)}"
     if korean == "5_수요":
-        return f"근거 {row.get('n')}건 · 최고 등급 {row.get('최고_등급')}{_what(row)}"
+        # ⚠ **파이썬 `None` 을 한국어 문장에 넣지 않는다.** 등급이 없으면 없다고 말한다 —
+        #   실측(유료 스모크): 「최고 등급 None」 이 그대로 화면에 앉았다.
+        등급 = row.get("최고_등급")
+        꼬리 = f" · 최고 등급 {등급}" if 등급 else " · 등급을 매길 근거가 없다"
+        return f"근거 {row.get('n')}건{꼬리}{_what(row)}"
     if korean == "6_계산":
         # 값이 없으면 **없다고 말한다.** 예전에는 `TAM None원 · 가정 1개 명시` 로 나갔다.
         if row.get("TAM") is None:

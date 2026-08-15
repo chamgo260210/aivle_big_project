@@ -99,3 +99,29 @@ def test_url이_없으면_승격되지_않는다(promote):
 
 def test_인용_대조에_떨어진_것은_승격되지_않는다(promote):
     assert promote.build(_publish(quote_verified=False)) == []
+
+
+@pytest.mark.parametrize(("number_raw", "unit_raw", "값"), [
+    # ★ 실측 결함 (유료 스모크 2026-08-15). `8조 9,854` + `억원` 을 갈라 읽어
+    #   8.0e12 × 1e8 = **8.0e20 원**(80,000경)이 나갔다. 정답은 8조 + 9,854억.
+    ("8조 9,854", "억원", 8.9854e12),
+    ("5조 4,082", "억원", 5.4082e12),
+    # 배율말이 한쪽에만 있으면 종전 길 그대로다 — 이 검사가 그것도 같이 못박는다.
+    ("34805394", "백만원", 3.4805394e13),
+    ("6,513", "원", 6513),
+    ("1조 6,058", "억원", 1.6058e12),
+])
+def test_배율을_두_번_곱하지_않는다(promote, number_raw, unit_raw, 값):
+    """**자릿수가 깨진 수는 상한도 아니다.**
+
+    ⚠ 이 절(MARKET_SIZE)이 9절 합성의 입력이라, 여기서 깨지면 경계 문구를 붙여도
+    막지 못한다 — 첫 화면 결론에 그대로 섞인다.
+    """
+    it = _publish()["문서별"][0]["items"][0]
+    it.update({"number_raw": number_raw, "unit_raw": unit_raw})
+    doc = {"문서별": [{**_publish()["문서별"][0], "items": [it]}]}
+
+    카드 = promote.build(doc)
+    assert len(카드) == 1
+    assert 카드[0]["단위"] == "원"
+    assert 카드[0]["값"] == pytest.approx(값)

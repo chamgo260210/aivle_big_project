@@ -86,6 +86,21 @@ describe('MarketResultBody — 판 ㊸ 배선', () => {
     expect(screen.queryByText(/저장된 수집 위에서 돈다/)).toBeNull();
   });
 
+  it('요약이 죽은 실행은 **죽었다고 말한다** — 카드가 사라지면 사용자는 있었는지도 모른다', () => {
+    // ⚠ 유료 스모크(2026-08-15)의 **유일한 실패**가 이것인데 화면 0곳에 닿았다.
+    //    요약 카드는 summary 가 null 이면 통째로 안 그려지므로, 이 줄이 없으면
+    //    「요약이 없다」와 「요약을 못 만들었다」가 사용자에게 같은 말이 된다.
+    draw((raw) => {
+      raw.summary = null;
+      raw.degradations = [
+        { stage: 'summary', code: 'CHECK_FAILED', detail: '검사 미통과 3회 — 요약을 버리고 카드만 낸다' },
+      ];
+    });
+    expect(screen.getByText(/요약 문장이 검사를 통과하지 못해 버렸어요/)).toBeTruthy();
+    // 값과 근거는 살아 있다고 말해 준다 — 「전부 틀렸다」로 읽히면 그것도 거짓이다.
+    expect(screen.getByText(/값과 근거는 그대로예요/)).toBeTruthy();
+  });
+
   it('옛 결과의 없는 과목은 **「안 쟀다」고 말한다** — 말없이 비워 두지 않는다', () => {
     // 판 ㊸ 이전 결과는 성적표가 7과목이라 새 셋이 아예 없다.
     const { container } = draw((raw) => {

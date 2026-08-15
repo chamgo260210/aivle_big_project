@@ -597,6 +597,7 @@ def _sections(ledger: Run, budget: Budget, source_run: str, concept_path: str,
     빈 = {"cards": [], "counts": None, "judgment": None,
           "prescriptions": None, "synthesis": None}
     stage = ledger.stage("sections")
+    began = time.monotonic()
     # ⚠ `concept_path` 는 **research2 뿌리 기준 상대 경로**다(`_concept_path_of`). 그대로
     #   열면 CWD 가 다른 곳에서 죽는다 — 다른 단계들은 research2 안에서 열려 안 드러났다.
     path = (concept_path if os.path.isabs(concept_path)
@@ -620,7 +621,12 @@ def _sections(ledger: Run, budget: Budget, source_run: str, concept_path: str,
         여유 = budget.remaining() - _SUMMARY_RESERVE - _SYNTH_CALLS
         try:
             sections, run = READ.build(source_run, f"{run_id}-sec", limit=여유)
-            budget.charge(int(run.counters.get("llm.calls", 0)))
+            부른_횟수 = int(run.counters.get("llm.calls", 0))
+            budget.charge(부른_횟수)
+            # ⚠ **예산에만 청구하고 단계에는 안 적으면 원장이 거짓말한다.** 실측(유료 스모크
+            #   2026-08-15): 문서 132건을 읽고도 봉투의 단계표는 `llmCalls: 0` 이었고,
+            #   실행 전체가 137회를 부르고 **4회라고 보고했다** — 34배다.
+            stage.llm_calls += 부른_횟수
             # ⚠ **잘림은 호출 수로 되짚지 않는다.** LLM 실패가 섞이면 `쓴 < 여유` 가 되어
             #    **잘렸는데 표시가 안 붙는다.** 잘림을 아는 것은 `READ.build` 안이다.
             안본 = int(sections.get("안_읽은_문서") or 0)
@@ -651,6 +657,12 @@ def _sections(ledger: Run, budget: Budget, source_run: str, concept_path: str,
                PRESCRIBE.build(publish, concept, judgments)),
            "synthesis": None}
 
+    # ⚠ **여기까지 왔으면 이 단계는 돌았다.** 이 두 줄이 없으면 초기값 `SKIPPED` 가 그대로
+    #   남아, 문서 132건을 읽고 절을 다 채운 실행이 **「안 돌았다」로 보고된다**(실측).
+    #   실패 경로만 `FAILED` 를 적고 성공 경로가 아무것도 안 적던 것이 원인이다.
+    stage.status = "OK"
+    stage.seconds = int(time.monotonic() - began)
+
     # ── 9절만 유료다(LLM 1회). 여기가 막혀도 앞의 것은 다 살아 있다 ──
     if rescore or not budget.can_afford(1):
         ledger.degrade("sections", "SYNTHESIS_SKIPPED",
@@ -660,8 +672,10 @@ def _sections(ledger: Run, budget: Budget, source_run: str, concept_path: str,
         out["synthesis"] = serialize.synthesis(
             SYNTH.build(publish, concept, judgments, run_id=f"{run_id}-synth"))
         budget.charge(1)
+        stage.llm_calls += 1
     except Exception as error:                      # noqa: BLE001 — SOFT 다
         ledger.degrade("sections", "SYNTHESIS_FAILED", str(error)[:200])
+    stage.seconds = int(time.monotonic() - began)
     return out
 
 
