@@ -37,6 +37,9 @@ SYSTEM = """당신은 사업안을 **시장 근거와 법률 소견으로 다듬
   `legalRef` 에 「법령명 제N조」를 적는다(`evidenceIds` 는 비워도 된다).
 - 직전 라운드에서 기각된 제안이 주어지면 **같은 제안을 반복하지 않는다**. 왜 막혔는지를
   읽고 다른 길을 찾거나, 길이 없으면 그 칸을 비운다.
+- `previouslyDeclinedByUser` 는 **사람이 읽어 보고 넘긴 제안**이다. 같은 칸에 **같은 값**을
+  다시 내지 않는다. 왜 넘겼는지는 **주어지지 않는다** — 짐작해서 이유를 지어내지 말고,
+  그 칸을 고칠 **다른 값**을 찾거나 비운다.
 - 고칠 것이 없으면 **빈 목록**을 낸다. 억지로 채우지 않는다.
 
 각 제안은 사람이 읽는 말을 함께 낸다:
@@ -80,6 +83,9 @@ async def propose_refinements(material: dict[str, Any], concept: dict[str, Any])
         "legalFindings": material.get("legalFindings") or [],
         "previouslyRejectedByContract": material.get("driftRejections") or [],
         "previouslyRejectedByLegal": material.get("legalRejections") or [],
+        # 사람이 넘긴 것. 계약·법이 막은 것과 **다른 종류**라 따로 준다 — 이것은
+        # 「규칙 위반」이 아니라 「사람이 원하지 않았다」다.
+        "previouslyDeclinedByUser": material.get("userDeclined") or [],
     }, ensure_ascii=False, sort_keys=True)
 
     payload = await execute_structured_prompt(system=SYSTEM, user=user,

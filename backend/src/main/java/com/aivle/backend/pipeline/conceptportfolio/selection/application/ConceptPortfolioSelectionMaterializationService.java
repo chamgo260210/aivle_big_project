@@ -6,7 +6,6 @@ import com.aivle.backend.pipeline.conceptportfolio.selection.repository.*;
 import com.aivle.backend.pipeline.marketseed.domain.MarketAnalysisSeedSnapshot;
 import com.aivle.backend.pipeline.marketseed.repository.MarketAnalysisSeedSnapshotRepository;
 import com.aivle.backend.pipeline.refinement.ConceptRefinementRound;
-import com.aivle.backend.pipeline.refinement.ConceptRefinementApplyService;
 import com.aivle.backend.pipeline.refinement.ConceptRefinementRoundRepository;
 import com.aivle.backend.taskrun.integration.InternalAiExecutionClient.ExecutionResponse;
 import com.aivle.backend.taskrun.service.*;
@@ -28,7 +27,6 @@ public class ConceptPortfolioSelectionMaterializationService {
     private final ConceptPortfolioJsonHasher hasher;
     private final TaskRunService taskRuns;
     private final ConceptRefinementRoundRepository rounds;
-    private final ConceptRefinementApplyService refinementApply;
     private final com.aivle.backend.pipeline.refinement.ConceptRefinementService refinement;
     private final ObjectMapper mapper;
     private final Clock clock;
@@ -40,12 +38,11 @@ public class ConceptPortfolioSelectionMaterializationService {
             MarketAnalysisSeedSnapshotRepository marketSeeds,
             ConceptPortfolioSelectionService selectionService, ConceptPortfolioJsonHasher hasher,
             TaskRunService taskRuns, ConceptRefinementRoundRepository rounds,
-            ConceptRefinementApplyService refinementApply,
             com.aivle.backend.pipeline.refinement.ConceptRefinementService refinement,
             ObjectMapper mapper, Clock clock) {
         this.selections=selections; this.hypotheses=hypotheses; this.deltas=deltas;
         this.reports=reports; this.marketSeeds=marketSeeds; this.selectionService=selectionService;
-        this.hasher=hasher; this.taskRuns=taskRuns; this.rounds=rounds; this.refinementApply=refinementApply;
+        this.hasher=hasher; this.taskRuns=taskRuns; this.rounds=rounds;
         this.refinement=refinement; this.mapper=mapper; this.clock=clock;
     }
 
@@ -83,7 +80,13 @@ public class ConceptPortfolioSelectionMaterializationService {
                 // 다듬기 워커는 「법률 결과가 적힌 라운드」만 보므로 **루프가 조용히 멈췄다**
                 // (2026-08-13 실측: 라운드 1이 6분 넘게 그대로였다).
                 // 다시 볼 법이 없다는 것은 «막은 법이 없다»는 뜻이므로 PASSED 로 닫는다.
-                if(allReady&&!deltaRequired) closeRoundWithoutDelta(selection.getId());
+                if(allReady&&!deltaRequired) closeRoundWithoutDelta(selection.getId(), true);
+                // ⚠ **넷째 길.** 사람이 고른 값이 의미 검사에 걸리면(`!allReady`) 델타도 안 붙고
+                // 위 줄도 안 지나 **라운드를 닫는 자가 아무도 없다** — 화면이 「고를 차례」에
+                // 영영 갇힌다. 「고칠 것 없음이 도달 불가였던」 결함과 같은 병이다.
+                // 법이 막은 것이 아니므로 BLOCKED 가 아니라 FAILED 로 적고, 화면은 그것을
+                // 「고른 값이 서지 않았어요」라고 말한다.
+                if(!allReady) closeRoundAsNotStanding(selection.getId());
             }
             case "PROPOSE_ALTERNATIVE" -> {
                 JsonNode item=result.path("alternative"); require(item.isObject());
@@ -122,17 +125,31 @@ public class ConceptPortfolioSelectionMaterializationService {
                 // 라운드를 **DB 에 남긴다**. 워커는 폴링마다 새로 깨어나므로 라운드 번호와
                 // 기각 사유를 메모리에 두면 재시작 한 번에 루프가 처음부터 다시 돈다.
                 int round = input.path("refinementMaterial").path("round").asInt(1);
+                // ⚠ **어느 조사판을 근거로 만든 라운드인지 새긴다.** 이것이 없으면 조사를
+                //   다시 돌려도 다듬기가 안 걸려, 화면 왼쪽은 오늘 조사고 오른쪽은 이틀 전
+                //   제안인 상태가 된다(2026-08-16 실측: 오늘 검증 5회 성공, 라운드는 8/13 것 하나).
                 rounds.save(ConceptRefinementRound.of(selection.getProjectId(), selection.getId(), round,
                     mapper.writeValueAsString(result.path("refinementProposals")),
-                    mapper.writeValueAsString(result.path("driftRejections"))));
+                    mapper.writeValueAsString(result.path("driftRejections")),
+                    refinement.currentResearchVersion(selection.getProjectId())));
                 // 상태는 그대로 둔다 — 다듬기는 선택의 «단계»가 아니라 그 위에서 도는 루프다.
                 selection.completeTask(context.taskRunId(), selection.getStatus(), false);
                 adopt(claim,context,response);
-                // 통과분을 **바로 적용한다**. 여기서 안 하면 라운드는 기록만 되고 컨셉은
-                // 그대로다 — 루프가 도는 흉내만 내게 된다.
-                refinementApply.apply(context.ownerId(), selection.getProjectId(), selection.getId(),
-                    result.path("refinementProposals"),
-                    context.idempotencyKey()+":apply:"+round);
+                // ⚠ **제안이 0건이면 그 자리에서 닫는다.** 적용할 것이 없으면 `apply()` 가
+                // 아무것도 안 하고, 그러면 가설 확정도 법률 델타도 안 붙어 **라운드에 법률
+                // 결과를 적는 자가 아무도 없다.** 워커는 닫힌 라운드만 보므로 루프가 조용히
+                // 멈추고 화면은 영영 「다듬는 중」을 말한다 — 즉 「고칠 것 없음」이라는 결말에
+                // **도달하는 경로 자체가 없었다**(2026-08-15 실측).
+                // ⚠⚠ **여기서 적용하지 않는다.** 2026-08-15 에 뗐다.
+                //   이 자리가 코드 전체에서 **유일한 자동 적용 지점**이었고, 그래서 AI 가
+                //   「가격을 9,500원으로」라고 «말하는 동시에» 이미 올려 버렸다. 사용자가 볼
+                //   기회도, 거절할 문도 없었다(실측: 근거 0건 제안 2건 → 8,900 → 9,500원).
+                //   적용은 이제 사람이 고른 뒤 `ConceptRefinementService.decide` 가 한다.
+                //   라운드는 `legalOutcome == null` 인 채로 남고, 워커는 닫힌 라운드만 보므로
+                //   (`ConceptRefinementWorker:52`) **저절로 사람 앞에 멈춘다.**
+                if (result.path("refinementProposals").isEmpty()) {
+                    closeRoundWithoutDelta(selection.getId(), false);
+                }
             }
             case "NARRATE_REFINED" -> {
                 selection.completeTask(context.taskRunId(), selection.getStatus(), false);
@@ -158,9 +175,18 @@ public class ConceptPortfolioSelectionMaterializationService {
                     .orElseThrow(ContractViolation::new);
                 String id=market.path("snapshotId").asText(); String snapshotHash=result.path("marketSeedSnapshotHash").asText();
                 require(snapshotHash.equals(hasher.productionCompatibleHash(market)));
+                // ⚠ **옛 시드는 여기서, 시드만 낡음 처리한다.** 두 자리가 다 함정이다.
+                //   ① 요청 자리(`finalizeMarketSeed`)에서 걸면 AI 가 실패했을 때 프로젝트에
+                //      현재 시드가 하나도 없는 상태가 남아 인터뷰·마케팅·재무 게이트가 같이 내려앉는다.
+                //   ② `staleDependents()` 를 쓰면 **CURRENT 법률 보고서까지** 낡음이 되는데,
+                //      바로 윗줄이 그 보고서를 반드시 찾아야 한다 — 확정이 100% 실패한다.
+                //   안 걸면 non-stale 시드가 두 행이 되어 `MarketAnalysisSeedLookup.current()` 가 터진다.
+                marketSeeds.findAllByPortfolioSelectionIdAndStaleAtIsNullAndDeletedAtIsNull(selection.getId())
+                    .forEach(value->value.markStale(Instant.now(clock)));
                 marketSeeds.save(MarketAnalysisSeedSnapshot.createPortfolio(id,selection.getProjectId(),selection.getId(),
                     selection.getConceptId(),report.getId(),"2.0",market.path("sourceSnapshotHash").asText(),snapshotHash,
-                    mapper.writeValueAsString(market),context.ownerId(),Instant.now(clock)));
+                    mapper.writeValueAsString(market),context.ownerId(),Instant.now(clock),
+                    refinement.refined(selection.getId())));
                 selection.completeTask(context.taskRunId(),ConceptPortfolioSelectionStatus.READY_FOR_MARKET,false);
                 adopt(claim,context,response);
             }
@@ -233,11 +259,20 @@ public class ConceptPortfolioSelectionMaterializationService {
         List<String> marks=new ArrayList<>();
         for(ConceptRefinementRound round:rounds.findBySelectionIdAndDeletedAtIsNullOrderByRoundAsc(selectionId)){
             if(round.getProposalJson()==null)continue;
-            for(JsonNode proposal:mapper.readTree(round.getProposalJson()))
+            // ⚠⚠ **채택분만 잣대로 쓴다.** 사람이 고르는 문이 생긴 뒤로 `proposal_json` 전량은
+            //   「제안된 것」이지 「반영된 것」이 아니다. 전량을 그대로 쓰면 모델에게
+            //   **사용자가 체크하지 않은 변경까지 최종 컨셉 문장에 담으라**고 시키게 되고,
+            //   담으면 그것이 최종 컨셉이 된다 — 이 판이 없애려는 손해 그 자체다.
+            java.util.Set<String> 채택 = refinement.acceptedOf(round);
+            for(JsonNode proposal:mapper.readTree(round.getProposalJson())){
+                // 옛 라운드(결정 칸이 없던 시절)는 전량이 이미 적용된 것이라 그대로 센다.
+                if(round.getAcceptedFieldsJson()!=null
+                    && !채택.contains(proposal.path("fieldKey").asText()))continue;
                 // ⚠ 잣대는 값 전체가 아니라 **바뀐 말**이다. 같은 계산을 서술문 입력에도 쓴다 —
                 // 두 곳이 갈리면 모델은 A 를 담으라는 말을 듣고 서버는 B 를 찾는다.
                 marks.add(com.aivle.backend.pipeline.refinement.ConceptRefinementService.changeMark(
                     proposal.path("beforeText").asText(""), proposal.path("afterText").asText("")));
+            }
         }
         return narrativeMatchesChanges(narrative, marks);
     }
@@ -249,10 +284,33 @@ public class ConceptPortfolioSelectionMaterializationService {
      * 지나기 때문이다. 「사유 없음」으로 적는 이유는 <b>막은 법이 없기 때문</b>이지 검토를
      * 건너뛴 것이 아니다.
      */
-    private void closeRoundWithoutDelta(Long selectionId){
+    private void closeRoundWithoutDelta(Long selectionId, boolean requireDecided){
         rounds.findTopBySelectionIdAndDeletedAtIsNullOrderByRoundDesc(selectionId)
+            // ⚠ **아직 아무도 결정하지 않은 라운드를 닫지 않는다.** 다듬기와 무관한 일반 가설
+            // 확정도 이 자리를 지나는데, 그때 열린 라운드를 PASSED 로 닫으면 화면이
+            // 「다듬기 완료 — 법률 검토까지 통과했어요」라고 말한다. **적용된 것은 0건인데**
+            // 그렇다. 게다가 그 뒤 사용자가 고르려 하면 「이미 닫힌 라운드」라며 거절당한다.
+            .filter(open -> !requireDecided || open.getAcceptedFieldsJson()!=null)
             .filter(open -> open.getLegalOutcome()==null)
             .ifPresent(open -> open.recordLegal(ConceptRefinementRound.LegalOutcome.PASSED, "[]"));
+    }
+
+    /**
+     * 사람이 고른 값이 <b>의미 검사에서 서지 못한</b> 라운드를 닫는다.
+     *
+     * <p>열린 라운드가 없으면 아무것도 안 한다 — 다듬기와 무관한 일반 가설 확정도 이 자리를
+     * 지나기 때문이다. {@code FAILED} 는 「법이 막았다」가 <b>아니다</b>: 법은 아직 보지도 못했다.
+     */
+    private void closeRoundAsNotStanding(Long selectionId){
+        // ⚠ **사유를 `legal_reasons_json` 에 넣지 않는다.** 화면의 「못 푼 것」이 그 칸을
+        // 무조건 「법률 — 」 접두로 그리는데(`ConceptRefinementController.unresolvedOf`),
+        // 이 라운드는 **법을 보지도 못했다**. 배지 각주는 「법은 아직 보지도 못했어요」라고
+        // 말하면서 목록은 「법률 — …」이라 하면 한 화면에서 두 말이 부딪힌다.
+        // 사유는 결말 이름(`DECISION_NOT_APPLIED`)이 이미 말하고 있다.
+        rounds.findTopBySelectionIdAndDeletedAtIsNullOrderByRoundDesc(selectionId)
+            .filter(open -> open.getLegalOutcome()==null)
+            .filter(open -> open.getAcceptedFieldsJson()!=null)
+            .ifPresent(open -> open.recordLegal(ConceptRefinementRound.LegalOutcome.FAILED, "[]"));
     }
 
     /**

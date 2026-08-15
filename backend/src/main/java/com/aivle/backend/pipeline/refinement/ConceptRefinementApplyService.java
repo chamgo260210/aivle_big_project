@@ -64,6 +64,17 @@ public class ConceptRefinementApplyService {
      */
     private static final List<String> OVERLAY_FIELDS = List.of("targetUsers", "featureSet");
 
+    /**
+     * 이 칸을 고치면 <b>법률을 다시 봐야 하는가</b>.
+     *
+     * <p>사람이 고른 것만 적용하는 문({@code ConceptRefinementService.decide})이 라운드를
+     * 언제 닫을지 정할 때 쓴다. 가설 칸이 하나라도 섞이면 {@code confirm()} 이 델타 법률을
+     * 걸고 <b>그 결과가</b> 라운드를 닫는다. 안 섞이면 다시 볼 법이 없으니 그 자리에서 닫는다.
+     */
+    public static boolean isHypothesisField(String field) {
+        return HYPOTHESIS_OF_FIELD.containsKey(field);
+    }
+
     private final ConceptPortfolioSelectionService selectionService;
     private final BmPlanPreparationService bmPlans;
     private final ConceptRefinementFinalRepository finals;

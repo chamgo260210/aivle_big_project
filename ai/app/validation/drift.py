@@ -224,8 +224,11 @@ def _check_list(field: str, current: Any, proposed: Any) -> None:
     removed = len(before) - len(kept)
     added = len([item for item in after if item not in before])
     if removed > LIST_CHANGE_ALLOWANCE or added > LIST_CHANGE_ALLOWANCE:
+        # ⚠ 이 문장은 **화면 「못 푼 것」에 그대로 선다.** 세는 말(「뺀 것 2 · 더한 것 2」)만
+        #   적으면 사용자는 무엇을 못 했는지 모른다 — 한 번에 얼마나 바꿀 수 있는지를 먼저 쓴다.
         raise DriftRejection(
-            field, f"추가·교체는 {LIST_CHANGE_ALLOWANCE}개까지다 (뺀 것 {removed} · 더한 것 {added})")
+            field, f"한 번에 {LIST_CHANGE_ALLOWANCE}개까지만 더하거나 바꿀 수 있어요"
+                   f" (이번 제안은 {removed}개를 빼고 {added}개를 더했어요)")
 
 
 def _check_narrow(field: str, current: Any, proposed: Any) -> None:
@@ -276,6 +279,81 @@ def _reject_partner_overlap(proposed: Any, partner_requirements: Any) -> None:
         raise DriftRejection(
             "keyPartners",
             f"동결된 파트너 요건과 어휘가 겹친다 ({', '.join(sorted(overlap))})")
+
+
+#: 근거를 요구하지 않는 갈래. 법률이 시킨 수정은 조항(`legalRef`)이 근거 자리를 대신한다
+#: (`app/tasks/concept_refinement.py` 프롬프트가 「`evidenceIds` 는 비워도 된다」고 적는다).
+_LEGAL_SOURCE = "LEGAL"
+
+
+def filter_ungrounded(proposals: list[dict],
+                      evidence: list[dict] | None) -> tuple[list[dict], list[dict]]:
+    """**근거 계약.** 근거 없는 제안을 기각한다. `(통과분, 기각분)`.
+
+    <b>왜 따로 있나.</b> 프롬프트는 *"시장 근거로 고치는 제안에는 근거 id가 붙어야 한다.
+    근거 없는 제안은 버려진다"* 고 약속하는데 **그 검사를 하는 코드가 아무 데도 없었다** —
+    `filter_proposals` 는 값의 폭만 보고, Java `requireProposals()` 는 모양만 본다.
+    그래서 근거 0건인 제안이 그대로 적용됐고, 화면에는 「근거 없음」 배지를 단 채 떴다
+    (실측: 가격 1팩 8,900원 → 9,500원). 「시장 근거로 다듬는다」가 문장으로만 있었다.
+
+    <b>왜 `filter_proposals` 안에 안 넣나.</b> 기존 시험 다섯이 **근거 없는 제안**으로 값
+    판정만 시험한다. 안에 넣으면 그 다섯이 깨지고, 「값 계약」과 「근거 계약」이 한 함수에
+    섞여 다음 사람이 어느 쪽 때문에 기각됐는지 못 가린다.
+
+    두 가지를 본다:
+      ① `MARKET` 인데 `evidenceIds` 가 비었다 → 기각
+      ② 든 id 중 **봉투에 없는 것**은 떼어 낸다. 떼고 나서 **남는 것이 0건이면 기각**한다.
+         저장소 규칙 §5-5(「AI 가 ID 를 돌려주는 task 는 보낸 ID 와 대조한다」)가 여기서만
+         안 지켜지고 있었다. 같은 원리의 코드가
+         `research/bm/analyze.py::validate_market_evidence_ids` 에 이미 있고, **둘 다 지운다.**
+
+    ⚠ **②는 원래 「하나라도 없으면 통째로 기각」이었다. 2026-08-15 에 뒤집었다.**
+      실측(`runs-generated/p47-refine-01.json`): 편의점 도시락 판매가 **18건을 제대로 인용한**
+      가격 제안(8,900 → 6,900원)이 **열아홉 번째로 지어낸 번호 하나** 때문에 죽고, 대신
+      **시장 규모 38조를 근거로 「차별점」을 바꾸자던 제안**이 통과했다 — 그 38조에는
+      「음·식료품 전체다 · 상한으로만 읽어라」는 경계가 붙어 있다. **게이트가 정확히
+      거꾸로 걸렀다.** 지어낸 번호 하나의 벌을 진짜 근거 18건에까지 물릴 이유가 없다.
+
+    ⚠ **제안의 «값»은 여전히 안 지운다.** 떼는 것은 가리키는 번호뿐이고
+      `proposedValue`·`afterText` 는 그대로다 — 그래서 「반쪽짜리 제안」이 되지 않는다.
+
+    ⚠ `evidence` 가 `None` 이면(재료를 못 받은 실행) ②는 **재지 않는다.** 모르는 것을
+      「환각」으로 단정하면 멀쩡한 제안이 전부 기각된다. ①은 그때도 잰다.
+    """
+    allowed = None
+    if evidence is not None:
+        allowed = {str(item.get("id")) for item in evidence
+                   if isinstance(item, dict) and item.get("id") is not None}
+
+    passed: list[dict] = []
+    rejected: list[dict] = []
+    for proposal in proposals:
+        ids = [str(x) for x in (proposal.get("evidenceIds") or [])]
+        source = str(proposal.get("source") or "MARKET")
+        if source == _LEGAL_SOURCE:
+            if str(proposal.get("legalRef") or "").strip():
+                passed.append(proposal)
+            else:
+                rejected.append({**proposal,
+                                 "rejectionReason": "법률 근거(legalRef)가 없다"})
+            continue
+        if not ids:
+            rejected.append({**proposal,
+                             "rejectionReason": "시장 근거가 0건이다 — 근거 없는 수정은 하지 않는다"})
+            continue
+        if allowed is not None:
+            없는 = [x for x in ids if x not in allowed]
+            남는 = [x for x in ids if x in allowed]
+            if 없는 and not 남는:
+                rejected.append({**proposal,
+                                 "rejectionReason":
+                                     f"조사 결과에 없는 근거를 들었다: {', '.join(없는[:3])}"})
+                continue
+            if 없는:
+                # 지어낸 번호만 떼고 제안은 살린다. 값은 안 건드린다.
+                proposal = {**proposal, "evidenceIds": 남는}
+        passed.append(proposal)
+    return passed, rejected
 
 
 def filter_proposals(proposals: list[dict], concept: dict) -> tuple[list[dict], list[dict]]:

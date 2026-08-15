@@ -41,7 +41,7 @@ class ConceptPortfolioBuildHandoffMaterializationTests {
         ConceptRefinementApplyService refinementApply = mock(ConceptRefinementApplyService.class);
         var refinement = mock(com.aivle.backend.pipeline.refinement.ConceptRefinementService.class);
         var service = new ConceptPortfolioSelectionMaterializationService(selections, hypotheses, deltas,
-            reports, marketSeeds, selectionService, hasher, taskRuns, rounds, refinementApply, refinement,
+            reports, marketSeeds, selectionService, hasher, taskRuns, rounds, refinement,
             mapper, clock);
 
         ConceptPortfolioSelection selection = ConceptPortfolioSelection.create(42L, "run", "concept-1",

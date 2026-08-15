@@ -29,6 +29,23 @@ export function createMarketApi(client, projectId) {
       return (await client.get(
         `${root}/concept-refinement?selectionId=${encodeURIComponent(selectionId)}`)).data;
     },
+    // **실패한 다듬기 라운드를 다시 건다.** 사용자가 눌러야만 돈다 — 자동 재시도는 없다.
+    // 돌고 있거나·이미 됐거나·시도 상한(3)을 다 썼으면 서버가 409 로 거절한다.
+    // ⚠ 위 currentRefinement 와 같은 이유로 selectionId 는 **쿼리 문자열**이다.
+    async retryRefinement(selectionId) {
+      return (await client.post(
+        `${root}/concept-refinement/retry?selectionId=${encodeURIComponent(selectionId)}`,
+        {}, { timeoutMs: 30000 })).data;
+    },
+    // **사람이 고른 것만 반영한다.** 이 단계의 정의 그 자체다 — 이 문이 생기기 전에는
+    // AI 제안이 «전량 자동» 적용됐다(실측: 근거 0건 제안이 가격을 8,900 → 9,500원으로).
+    // ⚠ `fieldKeys` 가 빈 배열이면 **「전부 넘김」**이다. 컨셉은 그대로 두고 루프가 끝난다.
+    // ⚠ 한 라운드는 **한 번만** 받는다 — 두 번째는 서버가 거절한다.
+    async decideRefinement(selectionId, round, fieldKeys, idempotencyKey) {
+      return (await client.post(
+        `${root}/concept-refinement/decide?selectionId=${encodeURIComponent(selectionId)}`,
+        { round, fieldKeys, idempotencyKey }, { timeoutMs: 30000 })).data;
+    },
     // 시장 검증 후 **최종 확정**. 법률보고서 재확정 → 시드 재발급을 순서대로 태운다.
     async finalizeRefinedConcept(selectionId, idempotencyKey) {
       return (await client.post(`${root}/concept-refinement/finalize?selectionId=${encodeURIComponent(selectionId)}`,

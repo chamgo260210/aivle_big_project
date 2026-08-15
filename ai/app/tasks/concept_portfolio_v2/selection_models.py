@@ -102,6 +102,12 @@ class RefinementMaterial(StrictModel):
     refinableFields: dict[str, str] = Field(default_factory=dict, max_length=40)
     driftRejections: list[dict[str, Any]] = Field(default_factory=list, max_length=40)
     legalRejections: list[dict[str, Any]] = Field(default_factory=list, max_length=40)
+    #: 직전 라운드에서 **사람이 읽어 보고 넘긴** 제안 — `{fieldKey, title, afterText, rationale}`.
+    #: ⚠ 위 둘과 **다른 종류**다. 저 둘은 「규칙이 막았다」이고 이것은 「사람이 원하지 않았다」다.
+    #: 되돌려 주지 않으면 「다른 제안 받기」를 눌러도 모델이 **같은 것을 다시 낸다** —
+    #: 라운드 상한 3을 태우고 아무것도 못 고친 채 끝난다(2026-08-15 에 이 칸을 만든 이유).
+    #: ⚠ **왜 넘겼는지는 담기지 않는다.** 화면이 묻지 않기 때문이다 — 지어내면 안 된다.
+    userDeclined: list[dict[str, Any]] = Field(default_factory=list, max_length=40)
     #: 법률 검토가 낸 소견 — `{lawName, articleReference, findingType, topic, text}`.
     #: 이것이 없으면 「법이 막은 표현」을 고칠 길이 없어 다듬기가 시장 근거만 본다.
     legalFindings: list[dict[str, Any]] = Field(default_factory=list, max_length=40)

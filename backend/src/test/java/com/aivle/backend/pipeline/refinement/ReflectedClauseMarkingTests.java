@@ -35,7 +35,7 @@ class ReflectedClauseMarkingTests {
     private ConceptRefinementController.Change legalChange(String legalRef) {
         return new ConceptRefinementController.Change(1, "differentiators", "표현을 법에 맞게 고쳤어요",
             "저나트륨 건강식", "기존 대안보다 나트륨을 30% 낮춘", "기준에 못 미쳐요.",
-            List.of(), "LEGAL", legalRef);
+            List.of(), "LEGAL", legalRef, null, null, "기존 대안보다 나트륨을 30% 낮춘");
     }
 
     private String statusAt(ConceptRefinementController.DeltaLegalView view, int index) {
@@ -58,7 +58,7 @@ class ReflectedClauseMarkingTests {
     void marketDrivenChangesNeverMarkClauses() {
         var view = view();
         var market = new ConceptRefinementController.Change(1, "price", "가격을 옮겼어요",
-            "15,000원", "9,500원대", "밴드 밖이에요.", List.of("C-F001"), "MARKET", null);
+            "15,000원", "9,500원대", "밴드 밖이에요.", List.of("C-F001"), "MARKET", null, null, null, "9,500원대");
         ConceptRefinementController.markReflectedClauses(view, List.of(market));
         assertThat(statusAt(view, 0)).isEqualTo("OK");
     }

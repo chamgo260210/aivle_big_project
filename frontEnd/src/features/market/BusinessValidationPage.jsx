@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useApiClient } from '../../shared/api/ApiClientProvider.jsx';
 import { getUserErrorMessage } from '../../shared/api/apiError.js';
 import { createMarketApi } from './marketApi.js';
@@ -35,6 +35,7 @@ import './market.css';
  */
 export default function BusinessValidationPage() {
   const { projectId } = useParams();
+  const navigate = useNavigate();
   const client = useApiClient();
   const api = useMemo(() => createMarketApi(client, projectId), [client, projectId]);
 
@@ -52,7 +53,6 @@ export default function BusinessValidationPage() {
   const legacyFull = useMarketPolling(loadLegacyFull, null);
   const legacyBm = useMarketPolling(loadLegacyBm, null);
 
-  const seedNames = useCompetitorSeedNames(api);
 
   // KPI → 과목 줄 착지. 캔버스 칸은 착지할 자리가 없다(「칸별 세부」를 안 그린다).
   const sectionFocus = useCellFocus('sec-');
@@ -112,10 +112,21 @@ export default function BusinessValidationPage() {
             result={revision.refinement}
             concept={revision.concept}
             evidenceSubjects={evidenceSubjects}
+            /* ⚠ **근거 원문은 다듬기 응답에 없다.** 제안은 근거 «번호»만 돌려주고
+               (`RefinementProposal.evidenceIds`), 백엔드 `Change` 레코드에도 인용문 칸이 없다.
+               원문은 시장조사 봉투에만 있고 그것은 이 화면 «앞»에서 이미 정규화돼 있다 —
+               그래서 계약을 하나도 안 고치고 이 한 줄로 이어진다. */
+            evidenceById={marketResult?.evidenceById ?? null}
             onJumpSubject={jumpToSubject}
             onBack={() => setScreen('validation')}
+            /* 다음 걸음(기술·운영)으로. 확정과 다른 일이라 버튼도 따로다. */
+            onNext={() => navigate(`/app/projects/${projectId}/tech-ops`)}
             onFinalize={revision.selectionId ? revision.finalize : null}
             finalizing={revision.finalizing}
+            onRetry={revision.selectionId ? revision.retry : null}
+            retrying={revision.retrying}
+            onDecide={revision.selectionId ? revision.decide : null}
+            deciding={revision.deciding}
             error={revision.error}
           />
         )}
@@ -156,13 +167,12 @@ export default function BusinessValidationPage() {
         <IdleCard api={api} busy={validation.busy} onStart={startRun} />
       ) : (
         <>
-          <div className="bv-sec">
+          {/* 판 ㊻ — 조사 날짜와 「반영된 경쟁사: …」 줄을 뺐다(2026-08-16 사용자 지시).
+              조사 종료일은 아래 보고서 머리가 이미 말하고, 반영된 경쟁사는 3절 표에
+              발행사로 그대로 선다. 여기서는 **버튼 한 줄만** 남긴다. */}
+          <div className="bv-sec bv-sec--acts">
             <h3>시장 분석</h3>
-            <span>
-              {marketResult.asOf ? `${marketResult.asOf} 에 조사를 마쳤어요` : '조사를 마쳤어요'}
-              {seedNames.length > 0 ? ` · 반영된 경쟁사: ${seedNames.join(' · ')}` : ''}
-            </span>
-            <Button variant="ghost" onClick={() => setReseeding(true)} disabled={validation.busy}>
+            <Button onClick={() => setReseeding(true)} disabled={validation.busy}>
               다시 조사
             </Button>
           </div>
@@ -173,6 +183,13 @@ export default function BusinessValidationPage() {
               자리가 없어 「고칠 수 있다」는 잘못된 신호만 준다. 고치려면 「다시 조사」로
               돌아가 조사 전 화면에서 적는다. */}
 
+          {/* ⚠ **되돌림(2026-08-16 · 사용자 지시).** 판 ㊻ 에서 첫 화면의 주인공을
+              「봉투가 실어 준 보고서 글」(`MarketReportView`)로 바꿨다가 **원래 화면으로
+              되돌렸다.** 글이 표를 통째로 쏟아 내고 정보량이 감당되지 않는다는 판정이다.
+
+              `MarketReportView.jsx` 와 그 짝(`markdown.jsx`·`markdownBlocks.js`·
+              `marketReport.css`)은 **지우지 않고 남겨 뒀다** — 글이 쓸 만해지면
+              이 한 줄만 되돌리면 된다. 지금은 **어디서도 부르지 않는다.** */}
           <MarketResultBody result={marketResult} activeId={sectionFocus.active} onJump={sectionFocus.jump} />
 
           <div className="bv-sec">
@@ -236,6 +253,8 @@ function useRevision(client, marketApi, projectId, enabled) {
   const portfolio = useMemo(() => createConceptPortfolioApi(client), [client]);
   const [state, setState] = useState({ loading: true, selectionId: null, refinement: null, concept: null, error: null });
   const [finalizing, setFinalizing] = useState(false);
+  const [retrying, setRetrying] = useState(false);
+  const [deciding, setDeciding] = useState(false);
 
   // ⚠ **전체 법률보고서(`portfolio.report`)를 더는 읽지 않는다.** 이 화면의 법률 칸은
   //    다듬기가 «바꾼 것»에 걸리는 법만 보인다 — 그 델타는 `/concept-refinement` 응답의
@@ -270,6 +289,31 @@ function useRevision(client, marketApi, projectId, enabled) {
   }, [enabled, load]);
 
   /**
+   * <b>돌고 있을 때만 다시 읽는다.</b>
+   *
+   * <p>⚠ 사람이 고르는 문이 생기며 <b>이 화면이 왕복 대화가 됐다</b>. 자동 적용 시절에는
+   * 결과 열람이라 한 번 읽으면 끝이었는데, 이제 사용자가 「반영하기」를 누르면 서버가
+   * 법률 델타를 걸고 화면은 「법률 검토를 기다리고 있어요」가 된다 — 그 상태로 <b>영영
+   * 안 바뀌었다.</b> 법률이 끝나도, 다음 라운드 제안이 와도 사용자는 모르고, 나갔다
+   * 들어오라는 안내조차 없었다.
+   *
+   * <p>⚠ <b>돌 때만 돈다.</b> 결말이 난 화면에서 계속 두드리면 아무것도 안 바뀌는 조회로
+   * 서버를 때린다. 유료 호출을 «만드는» 것이 아니라 이미 도는 것을 «보는» 것뿐이다.
+   */
+  // ⚠ `DECISION_NOT_APPLIED` 는 «기다리는 상태가 아니다» — 워커가 그 라운드에서 다음을
+  //    자동으로 걸지 않으므로(유료 호출이라 일부러 막았다) 사용자가 누르기 전엔 안 바뀐다.
+  //    거기서 폴링하면 아무것도 안 바뀌는 조회로 서버만 두드린다.
+  const 도는중 = state.refinement?.outcome === 'RUNNING';
+  useEffect(() => {
+    if (!enabled || !도는중) return undefined;
+    let alive = true;
+    const timer = setInterval(() => {
+      load().then((next) => { if (alive) setState(next); }).catch(() => {});
+    }, 5000);
+    return () => { alive = false; clearInterval(timer); };
+  }, [enabled, 도는중, load]);
+
+  /**
    * <b>시장 검증 후 최종 확정.</b> 확정하고 나면 다시 읽는다 — 서버가 법률보고서 재확정과
    * 시드 재발급을 순서대로 태우므로 화면의 값이 바뀐다.
    */
@@ -286,7 +330,47 @@ function useRevision(client, marketApi, projectId, enabled) {
     }
   }, [marketApi, state.selectionId, load]);
 
-  return { ...state, finalizing, finalize };
+  /**
+   * <b>실패한 다듬기 라운드를 다시 건다.</b>
+   *
+   * <p>걸고 나면 다시 읽는다 — 새 실행이 서면 화면의 판정이 FAILED 에서 RUNNING 으로 바뀐다.
+   * 서버가 거절하면(돌고 있음·이미 됨·시도 상한) 그 사유를 그대로 띄운다. <b>조용히 넘기지
+   * 않는다</b> — 아무 일도 안 일어나면 사용자는 버튼이 고장 났다고 읽는다.
+   */
+  const retry = useCallback(async () => {
+    if (!state.selectionId) return;
+    setRetrying(true);
+    try {
+      await marketApi.retryRefinement(state.selectionId);
+      setState(await load());
+    } catch (failure) {
+      setState((value) => ({ ...value, error: getUserErrorMessage(failure) }));
+    } finally {
+      setRetrying(false);
+    }
+  }, [marketApi, state.selectionId, load]);
+
+  /**
+   * <b>사람이 고른 것만 반영한다.</b> 이 화면이 존재하는 이유다.
+   *
+   * <p>빈 목록이면 「전부 넘김」이고, 그때도 서버는 그것을 <b>답으로 기록</b>한다 —
+   * 「아직 안 골랐다」와 「전부 넘겼다」는 다른 사실이라 뭉개면 안 된다.
+   */
+  const decide = useCallback(async (round, fieldKeys) => {
+    if (!state.selectionId) return;
+    setDeciding(true);
+    try {
+      await marketApi.decideRefinement(state.selectionId, round, fieldKeys,
+        `refine-decide-${state.selectionId}-${round}`);
+      setState(await load());
+    } catch (failure) {
+      setState((value) => ({ ...value, error: getUserErrorMessage(failure) }));
+    } finally {
+      setDeciding(false);
+    }
+  }, [marketApi, state.selectionId, load]);
+
+  return { ...state, finalizing, finalize, retrying, retry, deciding, decide };
 }
 
 /**
@@ -333,22 +417,6 @@ function RunningCard({ elapsed }) {
  * <p>「무엇을 넣고 돌렸는지」가 결과 옆에 없으면 사용자가 자기 입력이 먹혔는지 알 방법이
  * 없다. 실패는 조용히 넘긴다 — 적은 적이 없는 것도 정상이다.
  */
-function useCompetitorSeedNames(api) {
-  const [names, setNames] = useState([]);
-
-  useEffect(() => {
-    let alive = true;
-    api.currentCompetitorSeeds()
-      .then((view) => {
-        if (!alive) return;
-        setNames((view?.seeds ?? []).map((seed) => seed?.name).filter(Boolean));
-      })
-      .catch(() => { /* 적은 적이 없으면 되비출 것도 없다 */ });
-    return () => { alive = false; };
-  }, [api]);
-
-  return names;
-}
 
 /** 초 → 「N분 N초」. 20분짜리 작업에 「1,247초」는 읽히지 않는다. */
 function formatElapsed(seconds) {
