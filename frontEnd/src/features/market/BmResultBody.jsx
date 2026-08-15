@@ -109,8 +109,12 @@ function GateReasons({ reasons }) {
               {reason.cell ? ` · ${CANVAS_CELL_LABEL[reason.cell] ?? reason.cell}` : ''}
               {' — '}
               {reason.message}
+              {/* ⚠ **원장 ID 를 나열하지 않는다.** 「수요 근거 인용 0건」 뒤에
+                  `(근거 C-F015, … C-F034)` 19개가 붙어 **한 문장이 0과 19를 동시에**
+                  말했다(실측 2026-08-15). ID 는 개발자 것이고, 사업가에게 필요한 것은
+                  「그 칸이 무엇을 인용했나」인데 그 답은 위 과목별 근거표에 있다. */}
               {reason.evidenceIds.length
-                ? ` (근거 ${reason.evidenceIds.join(', ')})`
+                ? ` (이 칸이 인용한 근거 ${reason.evidenceIds.length}건은 위 과목별 표에 있어요)`
                 : ''}
               {' '}
               <Badge tone={cause.tone}>{cause.label}</Badge>
@@ -128,9 +132,12 @@ function SwrBox({ title, items, tone }) {
     <div>
       <h4 style={{ color: tone }}>{title}</h4>
       <ul>
+        {/* ⚠ **「없음」이라고 쓰지 않는다.** 판정이 「수정 필요」인 화면에서 「위험 — 없음」은
+            틀린 안심이다. *없다* 와 *적지 못했다* 는 다른 말이고, 이 칸이 비는 것은
+            대부분 뒤쪽이다(실측 2026-08-15: 강점·약점·위험이 전부 빈 채로 REVISION_REQUIRED). */}
         {items.length > 0
           ? items.map((line) => <li key={line}>{line}</li>)
-          : <li className="bm-swr__none">없음</li>}
+          : <li className="bm-swr__none">이번 실행은 이 칸을 <b>적지 못했어요</b> — 없다는 뜻이 아니에요</li>}
       </ul>
     </div>
   );

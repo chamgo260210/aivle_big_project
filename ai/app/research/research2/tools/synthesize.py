@@ -187,6 +187,16 @@ def _고른다(spec: dict, 실린: list, 컨셉: dict, 판단: dict) -> list:
     for it in 실린:
         if g.get("절") and it["_절"] not in g["절"]:
             continue
+        # ⚠ **게재 갈래를 본다.** 엔진이 이미 「이 수를 어떻게 읽어야 하나」를 판정해
+        #    뒀는데(우리 시장 / 상위 범주 / 대체 수단 / 경쟁사) 9절이 그것을 무시했다.
+        #    실측(2026-08-15): 「시장이 자란다」의 근거가 **상위 범주**인 온라인쇼핑 전체
+        #    20.1% 와 **가전·전자·통신기기 41.6%** 였다. 같은 시스템이 그 수에
+        #    「⚠ 상한으로만 읽어야 한다」는 경계를 붙여 놓고, 9절에서는 그것으로 성장을
+        #    단언했다 — **자기 판정을 자기가 어긴 것**이다.
+        #    이 잣대는 업종을 타지 않는다: 어느 사업이든 상위 범주가 자라는 것이
+        #    내 세그먼트가 자란다는 뜻은 아니다.
+        if g.get("갈래") and (it.get("게재") or "") not in g["갈래"]:
+            continue
         if g.get("단위") and str(it.get("unit_raw") or "").strip() not in g["단위"]:
             continue
         t = " ".join(str(it.get(k) or "") for k in ("subject", "table_context"))

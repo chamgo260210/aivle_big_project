@@ -113,8 +113,16 @@ def _merge_scorecard(full: Any, bm: Any) -> Any:
     out = []
     for row in bm:
         old = 앞.get(row.get("subject")) if isinstance(row, dict) else None
-        # BM 이 비었고 FULL 이 채웠으면 **FULL 이 이긴다.** 그 반대는 원래 규칙대로.
-        if old and row.get("state") == "MISSING" and old.get("state") != "MISSING":
+        # **BM 의 `MISSING` 은 정보가 아니다.** BM 은 절 체인을 안 돌기 때문에 구조적으로
+        # 그렇게 나온다. FULL 의 줄이 있으면 언제나 FULL 이 이긴다.
+        #
+        # ⚠ 예전에는 `old.state != "MISSING"` 을 같이 요구해서 **둘 다 `MISSING` 이면
+        #   BM 이 이겼다.** 그 줄의 사유가 「이 실행은 절 조사를 돌리지 않았다 — 0건이
+        #   아니라 «안 쟀다»다」라, 절 체인이 `OK` 로 돌아 **재고 0건이었던** 실행이
+        #   화면에서 **「안 쟀다」로 뒤집혔다**(VALIDATION 실측 2026-08-15).
+        #   재서 없는 것과 안 잰 것을 가르려고 만든 문장이 정반대로 쓰인 것이다.
+        #   같은 이유로 FULL 이 붙인 「정황 근거 n건은 아래에 있다」도 통째로 사라졌다.
+        if old and row.get("state") == "MISSING":
             out.append(old)
         else:
             out.append(row)

@@ -59,6 +59,10 @@ describe('MarketResultBody — 판 ㊸ 배선', () => {
     const card = screen.getByText(/이 사업안을 미는 것과 흔드는 것/).closest('section, div');
     expect(within(card).getByRole('heading', { level: 4, name: /흔드는 것/ })).toBeTruthy();
     expect(within(card).getByText(/값만으로는 고를 이유가 없어요|경쟁 구독료/)).toBeTruthy();
+    // ⚠ **빈 갈래를 지우지 않는다.** 픽스처의 9절은 「흔듦」뿐이라 「미는 것」이 비는데,
+    //    그 자리를 지우면 「미는 사실이 0건이었다」와 「안 쟀다」가 같아 보인다 —
+    //    성적표 수요 줄에서 고친 것과 같은 병이고, 9절은 사업가가 돈을 내는 자리다.
+    expect(within(card).getByText(/한 건도 없었어요/)).toBeTruthy();
   });
 
   it('2·8·9절이 **안 온 실행**에서는 그 자리가 아예 없다 — 빈 카드를 세우지 않는다', () => {
@@ -84,6 +88,15 @@ describe('MarketResultBody — 판 ㊸ 배선', () => {
     expect(screen.getByText(/이 조사가 다 돌지 못했어요/)).toBeTruthy();
     expect(screen.getByText(/문서를 다 읽지 못했어요/)).toBeTruthy();
     expect(screen.queryByText(/저장된 수집 위에서 돈다/)).toBeNull();
+  });
+
+  it('강조 별표가 **글자로** 남아 있지 않다', () => {
+    // ⚠ 이 검사는 **골든 픽스처 위**에 있어야 한다. 실측 봉투 검사
+    // (`MarketResultBody.live.test.jsx`)에도 같은 그물이 있지만 그 봉투는 git 이
+    // 추적하지 않아 **다른 기계·CI 에서는 통째로 건너뛴다** — 그물이 이 기계에만
+    // 걸려 있으면 게이트가 아니다.
+    const { container } = draw();
+    expect((container.textContent || '').match(/\*\*[^*\n]{1,40}\*\*/g) || []).toEqual([]);
   });
 
   it('요약이 죽은 실행은 **죽었다고 말한다** — 카드가 사라지면 사용자는 있었는지도 모른다', () => {

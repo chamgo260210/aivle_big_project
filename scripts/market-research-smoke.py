@@ -97,8 +97,23 @@ if MODE == "BM":
         }
         task_input["executionConstraints"] = {"budget_krw": 7000000, "months": 6, "team": 3}
 
+if MODE == "VALIDATION":
+    # **사용자가 실제로 누르는 것.** 「사업 검증」 버튼은 시장조사(FULL)와 BM 을 한 실행으로
+    # 잇는다(`MarketResearchService.startValidation` → `TaskType.BUSINESS_VALIDATION`).
+    # ⚠ 봉투를 합치는 `ai/app/validation/runner.py::_merge` 는 **테스트 0 · 실행 0** 이라,
+    #   FULL 봉투가 통과한다는 사실이 VALIDATION 봉투가 통과한다는 뜻이 아니다.
+    task_input["llmBudget"] = LLM_BUDGET
+    if os.environ.get("SMOKE_PLAN", "1") != "0":
+        task_input["planMaterial"] = {
+            "key_partners": ["스모크 — 냉장 물류 위탁"],
+            "customer_relationship": "스모크 — 정기 배송 알림으로 접점 유지",
+        }
+        task_input["executionConstraints"] = {"budget_krw": 7000000, "months": 6, "team": 3}
+
 correlation = "smoke-" + uuid.uuid4().hex[:8]
-body = {"contractVersion": "1.0", "taskType": "MARKET_RESEARCH", "taskSchemaVersion": "1.0",
+body = {"contractVersion": "1.0",
+        "taskType": "BUSINESS_VALIDATION" if MODE == "VALIDATION" else "MARKET_RESEARCH",
+        "taskSchemaVersion": "1.0",
         "taskRunId": correlation, "taskAttemptId": "smoke-" + uuid.uuid4().hex[:12],
         "correlationId": correlation,
         "deadlineAt": (datetime.now(timezone.utc) + timedelta(seconds=TIMEOUT))
@@ -153,7 +168,10 @@ print(f"stages  : {[(s['name'], s['status']) for s in stages]}")
 print(f"llm     : {llm}회   degradations: {len(result.get('degradations') or [])}")
 print(f"evidence: {len(result.get('evidence') or [])}건")
 
-if result.get("mode") == "FULL":
+# ⚠ VALIDATION 은 **둘 다** 본다 — FULL 봉투와 BM 봉투를 합친 것이라
+#   성적표·절 체인도, 캔버스도 같이 서야 한다. 여기서 FULL 만 보면 사용자가 받는
+#   모드의 절반이 검사 밖에 남는다.
+if result.get("mode") in ("FULL", "VALIDATION"):
     subjects = {row["subject"] for row in (result.get("scorecard") or [])}
     print("scorecard: " + " · ".join(
         f"{row['subject']}={row['state']}" for row in (result.get("scorecard") or [])))
@@ -162,7 +180,8 @@ if result.get("mode") == "FULL":
                         f"남음 {sorted(subjects - SUBJECTS)}")
     if not (result.get("market") or {}).get("notFound"):
         problems.append("⑦행(못 찾은 것)이 비었다 — 절대 빼지 않는 칸이다")
-    if result.get("canvas") is not None or result.get("bm") is not None:
+    if result.get("mode") == "FULL" and (result.get("canvas") is not None
+                                         or result.get("bm") is not None):
         problems.append("FULL 인데 canvas·bm 이 null 이 아니다")
 
     # ── 요인 원장 — 계산식의 항이 «값으로» 나왔는지 ─────────────────────
@@ -238,14 +257,21 @@ if result.get("mode") == "FULL":
         problems.append("UNIT_ECONOMICS 가 「확인됨」인데 원가에 닿는 사실이 0건이다 "
                         "— 거짓 확신. 출시 차단(§34-3)")
 
-    # ④ 9절이 연도를 들고 오는가 (화면 표기의 원천).
+    # ④ 9절이 연도를 **나를 수 있는가**(화면 표기의 원천).
+    #
+    # ⚠ **「연도가 있어야 한다」로 재지 않는다.** 연도가 있는지는 **자료가 정하는 것**이지
+    #   배선이 정하는 것이 아니다. 실측(2026-08-15): 규칙을 고쳐 상위 범주 근거가 빠지자
+    #   살아남은 근거(배달비 설문)에 원래 연도가 없어 이 검사가 빨개졌다 — **고친 것이
+    #   맞는데 검사가 틀렸다.** 화면은 그때 「연도 없음」이라고 적는다(`MarketResultBody`).
+    #   그러니 재야 하는 것은 **칸이 붙어 오는가**이지 값이 찼는가가 아니다.
     if isinstance(result.get("synthesis"), list):
-        해 = sum(1 for line in result["synthesis"]
-                 for s in (line.get("sources") or []) if s.get("period"))
-        print(f"9절 연도: 출처 {해}개에 연도가 있다")
-        if not 해:
-            problems.append("9절 출처에 연도가 하나도 없다 — 화면이 연도를 못 쓴다")
-else:
+        출처 = [s for line in result["synthesis"] for s in (line.get("sources") or [])]
+        해 = sum(1 for s in 출처 if s.get("period"))
+        print(f"9절 연도: 출처 {len(출처)}개 중 {해}개에 연도가 있다"
+              f"{' (없는 것은 화면이 「연도 없음」으로 적는다)' if 해 < len(출처) else ''}")
+        if 출처 and not all("period" in s for s in 출처):
+            problems.append("9절 출처에 `period` 칸 자체가 없다 — 화면이 연도를 못 쓴다")
+if result.get("mode") in ("BM", "VALIDATION"):
     cells = ((result.get("canvas") or {}).get("cells")) or []
     print(f"canvas  : {len(cells)}칸   decision={(result.get('bm') or {}).get('decision')}")
     if len(cells) != 9:

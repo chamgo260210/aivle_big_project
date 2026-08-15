@@ -294,7 +294,10 @@ export function PrescriptionCard({ rows }) {
                 <div className="mr-rx__kind">{row.kindLabel}</div>
               </td>
               <td><Emphasis text={row.what} /></td>
-              <td>{row.why}</td>
+              {/* ⚠ 셋 중 이 칸만 `Emphasis` 를 안 거쳐 **별표가 글자로 찍혔다**(화면 실측
+                  2026-08-15): 「**어디를 볼지 적는다**」. 3층 테스트는 문자열을 그대로
+                  비교하므로 이 부류를 **구조적으로 못 잡는다** — 눈으로만 잡힌다. */}
+              <td><Emphasis text={row.why} /></td>
               <td><Emphasis text={row.where} /></td>
             </tr>
           ))}
@@ -313,7 +316,20 @@ export function SynthesisCard({ rows }) {
   if (!rows || rows.length === 0) return null;
   const 지지 = rows.filter((row) => row.stance === '지지');
   const 흔듦 = rows.filter((row) => row.stance !== '지지');
-  const 무리 = (title, mine, tone) => (mine.length === 0 ? null : (
+  // ⚠ **빈 갈래를 지우지 않는다.** 지우면 「흔드는 사실이 0건이었다」와 「흔듦을 아예
+  //    안 쟀다」가 화면에서 같아 보인다 — 성적표 수요 줄에서 방금 고친 것과 **같은 병**이고,
+  //    9절은 사업가가 돈을 내는 자리라 더 나쁘다. 실측(2026-08-15): 이 실행의 9절은
+  //    「미는 것 3 · 흔드는 것 0」인데 화면에는 미는 것만 서서 **한쪽 말만 들렸다.**
+  const 빈무리 = (title, tone) => (
+    <div className={`mr-synth__g mr-synth__g--${tone}`}>
+      <h4>{title} <span className="num">0</span></h4>
+      <p className="mr-synth__none">
+        이번 조사에서 <b>{title}</b>에 해당하는 사실은 <b>한 건도 없었어요.</b>
+        {' '}못 찾은 것이지 없다는 뜻은 아니에요 — 위 과목별 「미확보」를 같이 보세요.
+      </p>
+    </div>
+  );
+  const 무리 = (title, mine, tone) => (mine.length === 0 ? 빈무리(title, tone) : (
     <div className={`mr-synth__g mr-synth__g--${tone}`}>
       <h4>{title} <span className="num">{mine.length}</span></h4>
       <ul>

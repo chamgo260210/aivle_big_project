@@ -117,6 +117,18 @@ function SummaryCell({ cell }) {
       {cell.content.length > 0 ? (
         <span className="bm-cell__lead"><Emphasis text={cell.content[0]} /></span>
       ) : null}
+      {/* ⚠ **경계는 도장과 같은 칸에 선다.** 봉투가 칸마다 `caveats` 를 들고 오는데
+          화면이 통째로 버리고 있었다(2026-08-15 실측). 그래서 「가치 제안 — 일부 확인 ·
+          근거 3」 이 떴는데 그 근거 3장이 **경쟁사 전사 매출**이라는 말은 어디에도 없었고,
+          「고객 세그먼트 — 확인됨」의 근거가 **상위 범주 수**라는 말도 없었다.
+          사업가는 도장을 먼저 읽는다 — 경계가 봉투에만 있으면 지운 것과 같다.
+          여기는 한 줄 요약 칸이라 **첫 문장만** 세우고, 여러 개면 몇 개인지 적는다. */}
+      {cell.caveats?.length ? (
+        <span className="bm-cell__caveat">
+          <Emphasis text={cell.caveats[0]} />
+          {cell.caveats.length > 1 ? ` (경계 ${cell.caveats.length}건)` : ''}
+        </span>
+      ) : null}
       <span className="bm-cell__foot">
         <KindChip kind={cell.kind} />
         {statusOf(cell)}

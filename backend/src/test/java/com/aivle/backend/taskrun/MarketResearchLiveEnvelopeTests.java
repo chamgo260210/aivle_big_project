@@ -31,31 +31,44 @@ class MarketResearchLiveEnvelopeTests {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
-    /** 유료 스모크의 기본 산출 위치. {@code -Dlive.envelope=…} 로 갈아 끼운다. */
-    private static final String DEFAULT =
-        "ai/app/research/research2/runs-generated/p43-smoke-01-envelope.json";
+    private static final String DIR = "ai/app/research/research2/runs-generated/";
 
-    private static Path locate() {
+    /**
+     * ⚠ <b>두 모드를 다 본다.</b> {@code FULL} 봉투가 통과한다는 사실이 {@code VALIDATION}
+     * 봉투가 통과한다는 뜻이 아니다 — 뒤엣것은 두 봉투를 {@code runner._merge} 로 합친
+     * 것이고, <b>사용자가 실제로 받는 것은 그쪽</b>이다.
+     */
+    private static Path locate(String name) {
         String override = System.getProperty("live.envelope");
         if (override != null && !override.isBlank()) return Paths.get(override);
         Path root = Paths.get("").toAbsolutePath();
         for (int depth = 0; depth < 4; depth++) {
-            Path candidate = root.resolve(DEFAULT);
+            Path candidate = root.resolve(DIR + name);
             if (Files.exists(candidate)) return candidate;
             root = root.getParent();
             if (root == null) break;
         }
-        return Paths.get(DEFAULT);
+        return Paths.get(DIR + name);
     }
 
-    @Test
-    @DisplayName("유료 실행이 실제로 낸 봉투가 계약을 통과한다")
-    void liveEnvelopePassesTheContract() throws Exception {
-        Path path = locate();
+    private static void 통과해야_한다(String name) throws Exception {
+        Path path = locate(name);
         Assumptions.assumeTrue(Files.exists(path),
             "실측 봉투가 없다 — 유료 스모크를 돌린 뒤에만 재는 검사다: " + path);
 
         JsonNode envelope = MAPPER.readTree(Files.readString(path));
         assertThatCode(() -> MarketResearchContract.validate(envelope)).doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("유료 FULL 실행이 실제로 낸 봉투가 계약을 통과한다")
+    void liveFullEnvelopePassesTheContract() throws Exception {
+        통과해야_한다("p43-smoke-01-envelope.json");
+    }
+
+    @Test
+    @DisplayName("사용자가 받는 VALIDATION 봉투(FULL+BM 합침)가 계약을 통과한다")
+    void liveValidationEnvelopePassesTheContract() throws Exception {
+        통과해야_한다("p43-smoke-01-validation.json");
     }
 }
