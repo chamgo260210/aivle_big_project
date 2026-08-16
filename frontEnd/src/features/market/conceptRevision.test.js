@@ -1,5 +1,38 @@
 import { describe, expect, it } from 'vitest';
-import { highlightChanges, narrativeParts, normalizeDeltaLegal } from './conceptRevision.js';
+import { conceptDocument, highlightChanges, narrativeParts, normalizeDeltaLegal } from './conceptRevision.js';
+
+/**
+ * 원문 카드는 <b>서술문 일곱 칸 + 확정 가설 다섯 칸</b>이다.
+ *
+ * 가설을 안 그리면 다듬기가 실제로 고치는 값(가격·채널·지역)이 화면 어디에도 없어서,
+ * 반영을 마쳐도 <b>초록 표시가 붙을 자리가 없다</b> — 2026-08-16 에 그렇게 잡혔다.
+ */
+describe('conceptDocument', () => {
+  const 스냅샷 = {
+    selectedConcept: { identity: { conceptName: '예약 비서', conceptDefinition: '한 줄' } },
+    finalHypotheses: {
+      price: { value: '월 14,900원' },
+      channels: { value: ['네이버 예약', '인스타그램 DM'] },
+      preMarketSom: { value: { amount: 1000, currency: 'KRW' } },
+    },
+  };
+
+  it('확정 가설을 서술문 뒤에 이어 붙인다', () => {
+    const blocks = conceptDocument(스냅샷);
+    expect(blocks.map((block) => block.label))
+      .toEqual(['사업안 이름', '한 줄 정의', '가격', '판매·제공 채널']);
+    expect(blocks.at(-1).text).toBe('네이버 예약 · 인스타그램 DM');
+  });
+
+  it('SOM 은 원문이 아니라 계량이라 안 싣는다', () => {
+    expect(conceptDocument(스냅샷).some((block) => block.key.includes('Som'))).toBe(false);
+  });
+
+  it('가설이 없으면 그 칸을 안 그린다 — 빈 문단을 세우지 않는다', () => {
+    expect(conceptDocument({ selectedConcept: { identity: { conceptDefinition: '한 줄' } } }))
+      .toEqual([{ key: 'conceptDefinition', label: '한 줄 정의', text: '한 줄' }]);
+  });
+});
 
 /**
  * 초록 표시는 <b>찾았을 때만</b> 붙는다.
@@ -24,6 +57,40 @@ describe('highlightChanges', () => {
     const text = '바쁜 직장인에게 냉동식을 드려요.';
     expect(highlightChanges(text, [{ after: '9,500원대' }, { after: '가' }, { after: null }]))
       .toEqual([{ text, ref: null }]);
+  });
+
+  // ★ 2026-08-16 실측 회귀. `after` 는 모델이 사람에게 쓴 «설명»이라 원문에 그 글자가
+  //    없다 — 네 칸 중 셋이 그랬고, 그래서 초록이 하나만 붙었다. 값은 `afterValue` 다.
+  it('설명이 아니라 값(afterValue)으로 찾는다', () => {
+    const parts = highlightChanges('시술자가 본인 1명인 미용실 원장', [
+      { after: '대상 고객을 1인 원장으로 좁혔어요', afterValue: '시술자가 본인 1명인 미용실 원장' },
+    ]);
+    expect(parts).toEqual([{ text: '시술자가 본인 1명인 미용실 원장', ref: 1 }]);
+  });
+
+  it('목록 칸은 통짜로 못 찾으면 조각마다 찾는다 — 한 변경이 두 군데를 칠할 수 있다', () => {
+    const parts = highlightChanges('네이버 예약 · 인스타그램 · 지역 카페', [
+      { afterValue: '네이버 예약 · 지역 카페' },
+    ]);
+    expect(parts).toEqual([
+      { text: '네이버 예약', ref: 1 },
+      { text: ' · 인스타그램 · ', ref: null },
+      { text: '지역 카페', ref: 1 },
+    ]);
+  });
+
+  // ★ 2026-08-16 실측 회귀. 사람이 «넘긴» 제안의 값이 원문에 우연히 들어 있었다
+  //    (「채널을 네이버 예약만 남긴다」를 넘겼는데 원래 채널에 그 글자가 있었다).
+  //    칠하면 반영 안 한 제안이 반영된 것으로 보인다. 번호는 그대로 세어야 한다.
+  it('넘긴 제안은 칠하지 않되 번호는 그대로 센다', () => {
+    const parts = highlightChanges('네이버 예약 · 인스타그램 DM', [
+      { afterValue: '네이버 예약', accepted: false },
+      { afterValue: '인스타그램 DM', accepted: true },
+    ]);
+    expect(parts).toEqual([
+      { text: '네이버 예약 · ', ref: null },
+      { text: '인스타그램 DM', ref: 2 },
+    ]);
   });
 
   it('겹치는 자리는 앞선 것만 남고 번호는 변경 목록의 순서를 따른다', () => {

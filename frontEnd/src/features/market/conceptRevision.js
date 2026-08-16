@@ -49,6 +49,49 @@ const CONCEPT_DOC_FIELDS = [
   ['solution', 'featureSet', '핵심 기능'],
 ];
 
+/**
+ * 원문에 <b>이어서</b> 그릴 확정 가설 칸 — `marketSeed.snapshot.finalHypotheses` 다.
+ *
+ * <p>★ <b>왜 이어 붙이나</b>(2026-08-16 실측). 다듬기가 실제로 고치는 것은 가격·채널·지역
+ * 같은 <b>가설</b>인데, 원문 카드는 {@code selectedConcept} 일곱 칸만 그렸다. 그래서
+ * 「가격을 14,900원으로 바꿨어요」를 <b>반영까지 마쳐도 원문에 칠할 자리가 없어</b>
+ * 초록 표시가 하나도 안 붙었다 — 사용자가 「하이라이트가 하나만 나온다」로 잡은 것이 이것이다.
+ *
+ * <p>⚠ <b>SOM 둘은 뺀다.</b> 시장 점유 가정·초기 확보 규모는 사업안 «원문»이 아니라
+ * 계량이고, 조사가 다시 재는 값이라 여기 세우면 「내가 쓴 말」과 「기계가 잰 수」가 섞인다.
+ * 남기는 다섯은 다듬기가 건드리는 상업 차원 그대로다.
+ */
+const HYPOTHESIS_DOC_FIELDS = [
+  ['targetRegion', '목표 지역'],
+  ['revenueModel', '수익 모델'],
+  ['price', '가격'],
+  ['channels', '판매·제공 채널'],
+  ['differentiators', '차별점'],
+];
+
+/**
+ * 확정 가설 값을 <b>한 줄 글자</b>로. 목록은 ` · ` 로 잇고, 구조값은 핵심만 편다.
+ *
+ * <p>⚠ <b>이것이 정본이다.</b> 「이 값으로 조사해요」 카드({@code ResearchBasisCard})도
+ * 이 함수를 쓴다 — 두 벌로 적으면 같은 값이 두 화면에서 다른 글자가 되고, 그러면
+ * 원문에서 찾는 초록 표시가 조용히 어긋난다.
+ */
+export function hypothesisText(value) {
+  if (value == null || value === '') return '';
+  if (Array.isArray(value)) return value.filter(Boolean).map(String).join(' · ');
+  if (typeof value === 'object') {
+    if (value.targetSharePercent != null) {
+      return `${value.targetSharePercent}%${value.horizonYears ? ` · ${value.horizonYears}년` : ''}`;
+    }
+    if (value.amount != null) {
+      const amount = Number(value.amount).toLocaleString('ko-KR');
+      return `${amount}${value.currency === 'KRW' ? '원' : ` ${value.currency ?? ''}`}${value.period ? ` / ${value.period}` : ''}`;
+    }
+    return '';
+  }
+  return String(value);
+}
+
 const list = (value) => (Array.isArray(value) ? value : []);
 
 /** 목록은 ` · ` 로 잇는다. 값을 바꾸지 않는 표기일 뿐이다. */
@@ -65,10 +108,40 @@ export function conceptDocument(snapshot) {
   const selected = snapshot?.selectedConcept;
   if (!selected || typeof selected !== 'object') return [];
   const name = selected.identity?.conceptName;
-  const blocks = CONCEPT_DOC_FIELDS
-    .map(([group, key, label]) => ({ key, label, text: paragraph(selected[group]?.[key]) }))
-    .filter((block) => block.text);
+  const hypotheses = snapshot?.finalHypotheses;
+  const blocks = [
+    ...CONCEPT_DOC_FIELDS
+      .map(([group, key, label]) => ({ key, label, text: paragraph(selected[group]?.[key]) })),
+    // 확정 가설은 서술문 «뒤»에 선다 — 앞에 두면 사업안을 수치부터 읽게 된다.
+    ...HYPOTHESIS_DOC_FIELDS
+      .map(([key, label]) => ({ key: `h-${key}`, label, text: hypothesisText(hypotheses?.[key]?.value) })),
+  ].filter((block) => block.text);
   return typeof name === 'string' && name ? [{ key: 'conceptName', label: '사업안 이름', text: name }, ...blocks] : blocks;
+}
+
+/**
+ * 원문에서 찾아 볼 <b>글자 후보</b>. 순서가 곧 우선순위다.
+ *
+ * <p>★ <b>`after` 가 아니라 `afterValue` 를 먼저 본다</b>(2026-08-16 실측 수정).
+ * {@code after} 는 모델이 사람에게 쓴 <b>설명</b>이라 「소형 마트 입점을 추가했어요」처럼
+ * 온다 — 컨셉 원문에 그런 문장은 없으니 {@code indexOf} 가 영영 -1 이다. 값 자체는
+ * {@code afterValue} 에 따로 실려 오고, 대조표는 이미 그쪽을 쓰고 있었다
+ * ({@code ConceptRefinementController.Change}). <b>네 칸 중 셋이 설명</b>이라
+ * 초록 표시가 하나만 붙던 것이 이것이다.
+ *
+ * <p>목록 칸은 원문에서 {@code ' · '} 로 이어 붙는데, 다듬기는 그중 <b>한 항목만</b>
+ * 더하거나 뺀다. 그래서 통짜로 못 찾으면 <b>조각마다</b> 찾는다 — 같은 번호로 여러
+ * 구간이 칠해지는 것이 맞는 그림이다(한 변경이 두 군데를 건드린 것이니까).
+ *
+ * <p>두 글자 미만은 버린다 — 아무 데나 걸린다.
+ */
+function needlesOf(change) {
+  const source = typeof change?.afterValue === 'string' && change.afterValue.trim()
+    ? change.afterValue : change?.after;
+  const whole = typeof source === 'string' ? source.trim() : '';
+  if (whole.length < 2) return [];
+  const pieces = whole.split('·').map((piece) => piece.trim()).filter((piece) => piece.length >= 2);
+  return pieces.length > 1 ? [whole, ...pieces] : [whole];
 }
 
 /**
@@ -86,11 +159,20 @@ export function highlightChanges(text, changes) {
   if (typeof text !== 'string' || !text) return [];
   const marks = [];
   list(changes).forEach((change, index) => {
-    const needle = typeof change?.after === 'string' ? change.after.trim() : '';
-    if (needle.length < 2) return;
-    const at = text.indexOf(needle);
-    if (at < 0) return;
-    marks.push({ at, end: at + needle.length, ref: index + 1 });
+    // ⚠ **넘긴 제안은 칠하지 않는다**(2026-08-16). 사람이 거절한 값이 원문에 «우연히»
+    //   들어 있을 수 있다 — 실측: 「채널을 네이버 예약만 남긴다」를 넘겼는데 원래 채널
+    //   목록에 이미 「네이버 예약」이 있었다. 그것을 칠하면 반영 안 한 제안이 반영된 것으로
+    //   보인다. 번호(`index`)는 그대로 세어 변경표의 순번과 어긋나지 않게 한다.
+    if (change?.accepted === false) return;
+    const needles = needlesOf(change);
+    for (let n = 0; n < needles.length; n += 1) {
+      const at = text.indexOf(needles[n]);
+      if (at < 0) continue;
+      marks.push({ at, end: at + needles[n].length, ref: index + 1 });
+      // 통짜(0번)로 찾았으면 조각은 안 본다 — 같은 구간을 두 번 세면 사이의 ` · ` 만
+      // 초록에서 빠져 한 값이 두 값처럼 보인다.
+      if (n === 0) break;
+    }
   });
 
   marks.sort((left, right) => left.at - right.at);

@@ -274,9 +274,8 @@ export default function RefinementSummary({
           <Change key={`${change.round}-${change.field}-${index}`} change={change} no={index + 1}
             landed={landed === `cr-why-${index + 1}`
               || (change.narrativeRef != null && landed === `cr-nref-${change.narrativeRef}`)}
-            legal={legal}
             evidenceSubjects={evidenceSubjects} evidenceById={evidenceById}
-            onJumpSubject={onJumpSubject} onJumpClause={jump}
+            onJumpSubject={onJumpSubject}
             /* 체크는 «제안 단위»다 — 아직 답 안 한, 열린 라운드의 제안만 살아난다. */
             selectable={awaiting && change.accepted == null && change.round === openRound}
             checked={picked.has(change.field)} onToggle={toggle} />
@@ -334,27 +333,17 @@ export default function RefinementSummary({
       ) : null}
 
 
-      {/* 판 ㊻ — **고르기 «전»에는 법률 카드를 안 낸다**(2026-08-16 사용자 지시).
-          법을 다시 보는 일은 «고른 뒤»에 일어난다. 아직 아무것도 안 골랐는데 빈 법률 상자를
-          세우면 사용자가 거기서 할 일이 없다. 고르고 나면 결과가 있으면 결과를,
-          없으면 한 줄을 낸다. */}
-      {awaiting ? null : (
-      <Card title="법률 검토">
-        {/* ⚠⚠ **「법률 자문이 아니에요 — 판매 전에 직접 확인하세요」를 뺐다**
-            (2026-08-16 사용자 지시 두 번, 두 번째는 코드 줄을 그대로 지목).
-            **잃는 것을 적어 둔다** — 프로젝트 규칙(CLAUDE.md §8)은 이 문장을 「경계 표시」로
-            분류하고 제거를 금지한다. 이 카드는 법령 이름과 조항 번호를 그대로 인용하는데
-            이 제품에는 자문 자격이 없다. 그 한 줄이 없으면 사용자가 **인용을 자문으로**
-            읽을 수 있다. 되살릴 자리는 바로 여기, 조항을 펴기 직전이다. */}
-        {legal ? (
-          <LegalBody legal={legal} landed={landed} />
-        ) : (
-          // 없으면 «다시 볼 법이 없었다»는 뜻이다 — 조회 실패가 아니다. 전체 보고서로
-          // 대신 채우지 않는다. 그러면 부분 검사가 전체 검사로 보인다.
-          <p className="bm-cell__none">새롭게 추가할 법률 검토가 없어요.</p>
-        )}
-      </Card>
-      )}
+      {/* ⚠⚠ **「법률 검토」 카드를 통째로 뺐다**(2026-08-16 사용자 지시: 「애매하다」).
+          법령 이름과 조항 번호를 그대로 인용하던 자리인데, 사업가가 그것으로 정할 것이
+          없었다 — 자문 자격이 없는 제품이 조항을 펴 놓으면 읽는 쪽만 애매해진다.
+
+          **잃는 것을 적어 둔다.**
+          ① 다듬기가 반영한 값이 «어떤 법에 걸리는지»가 화면에서 사라진다. 값은 봉투
+             (`result.deltaLegal`)에 그대로 실려 오고, 파이프라인의 델타 법률 검토도
+             **그대로 돈다** — 안 그리는 것뿐이다.
+          ② 「법이 막았어요」(`LEGAL_BLOCKED`) 배지는 위에 그대로 남아 있어, 막혔다는
+             **사실 자체**는 화면에서 사라지지 않는다. 사유는 그 배지 옆 문구가 말한다.
+          되살릴 자리는 정확히 여기다. */}
 
       {/* ⚠ **경계 표시 — 빼지 마라.** 다듬기가 컨셉을 고쳐도 검증 결과(판정·게이트·성적표)는
           **고치기 전 컨셉으로 잰 값** 그대로다. 그 사실을 안 적으면 바로 아래 확정 버튼이
@@ -385,7 +374,10 @@ export default function RefinementSummary({
       {/* ⚠ **수렴 못 했어도 막지 않는다.** 못 푼 것을 위에 보인 채로 확정할 수 있어야
           사용자가 자기 사업안을 앞으로 끌고 갈 수 있다. 막으면 길이 끊긴다. */}
       <div className="bv-foot">
-        <Button variant="ghost" onClick={onBack}>← 검증 결과로</Button>
+        {/* ⚠ 옛 컨테이너에서는 이 부품이 «따로 선 화면»이라 돌아갈 자리가 필요했다. 지금은
+            사업 모델 탭 «안»의 구획이라 돌아갈 곳이 없다 — 그때 `onBack` 이 없는데도 그리면
+            **눌러도 아무 일이 없는 버튼**이 선다(2026-08-16 화면에서 실측). */}
+        {onBack ? <Button variant="ghost" onClick={onBack}>← 검증 결과로</Button> : null}
         {/* ⚠ 조건이 `!== 'RUNNING'` 하나였을 때는 **고르는 중에도 확정 버튼이 떴다** —
             아직 답하지 않은 제안을 두고 「이 컨셉으로 확정」을 누를 수 있었다.
             ⚠ `DECISION_NOT_APPLIED` 도 뺀다. 그 상태의 사업안은 가설이 확정 전으로
@@ -430,16 +422,15 @@ export default function RefinementSummary({
  * 검토의 그 조항으로 간다. 어느 쪽도 없으면 배지로 그렇게 말한다 — 근거 없는 변경을
  * 이유만으로 그리면 「조사가 시킨 일」처럼 읽힌다.
  */
-function Change({ change, no, landed, legal, evidenceSubjects, evidenceById, onJumpSubject,
-    onJumpClause, selectable = false, checked = false, onToggle = () => {} }) {
+function Change({ change, no, landed, evidenceSubjects, evidenceById, onJumpSubject,
+    selectable = false, checked = false, onToggle = () => {} }) {
   const ids = change.evidenceIds ?? [];
   const subject = ids.map((id) => evidenceSubjects?.get(id)).find(Boolean) ?? null;
   const number = subject ? subjectNumber(subject) : null;
-  // 법률이 시킨 변경은 조항을 가리킨다. 번호는 아래 법률 카드의 순서와 **같은 번호**여야
-  // 한다 — 다르면 「법률 검토 1」이 어느 줄인지 알 수 없다.
-  const clauseAt = change.source === 'LEGAL' && change.legalRef
-    ? (legal?.clauses ?? []).findIndex((clause) => change.legalRef.includes(clause.lawName))
-    : -1;
+  // ⚠ 법률 카드를 뺐으므로 «그 조항으로 건너뛰는 자리»도 없다(2026-08-16). 그래도
+  //   법률이 시킨 변경을 「근거 없음」으로 떨어뜨리지는 않는다 — 근거가 없는 것이
+  //   아니라 그 근거를 이 화면이 안 펴는 것이다.
+  const fromLegal = change.source === 'LEGAL';
 
   return (
     <div id={`cr-why-${no}`} className={`cr-why${landed ? ' is-on' : ''}`}>
@@ -469,11 +460,8 @@ function Change({ change, no, landed, legal, evidenceSubjects, evidenceById, onJ
         {' → '}<b><Emphasis text={평문(change.after)} /></b>
       </p>
       <p className="cr-why__r"><Emphasis text={평문(change.reason)} /></p>
-      {clauseAt >= 0 ? (
-        <button type="button" className="cr-from"
-          onClick={() => onJumpClause(`cr-law-${legal.clauses[clauseAt].key}`)}>
-          근거 보기 — 법률 검토 {clauseAt + 1}
-        </button>
+      {fromLegal ? (
+        <Badge tone="neutral">법률 검토가 시킨 변경</Badge>
       ) : ids.length === 0 ? (
         <Badge tone="warning">근거 없음</Badge>
       ) : subject ? (
@@ -553,51 +541,3 @@ function EvidenceLine({ id, item }) {
   );
 }
 
-/**
- * 델타 법률 검토 본문 — <b>바뀐 것에 걸리는 법만</b>.
- *
- * <p>⚠ <b>법 조문 해설을 싣지 않는다.</b> 「기준·규격이 정하여지지 아니한 화학적 합성품
- * 등의 판매 금지에 대한 의무」는 제6조의 제목이지 이 컨셉의 이야기가 아니다. 싣는 것은
- * 검토가 조항마다 이어 둔 <b>소견</b>(`findings`)이다 — 그것이 「이 컨셉이 왜 걸리는가」다.
- *
- * <p>⚠ 조항마다 상태 배지를 <b>지어내지 않는다</b> — 없는 판정을 그리면 그것이 곧 근거 없는
- * 「확인됨」이다. 서버가 준 값이 없으면 배지 없이 그린다.
- */
-function LegalBody({ legal, landed }) {
-  return (
-    <>
-      <p className="cr-law__sum">
-        {legal.status ? <Badge tone={legal.status.tone}>{legal.status.label}</Badge> : null}
-        {/* 이것이 «부분 검사»임을 말하는 유일한 자리다. 안 적으면 전체를 다시 본 것으로 읽힌다. */}
-        {legal.changed.length > 0 ? (
-          <span> 이번에 바뀐 <b>{legal.changed.join(' · ')}</b>에 걸리는 법만 다시 봤어요.</span>
-        ) : null}
-      </p>
-
-      {legal.clauses.map((clause, index) => (
-        <div key={clause.key} id={`cr-law-${clause.key}`}
-          className={`cr-law${landed === `cr-law-${clause.key}` ? ' is-on' : ''}`}>
-          <p className="cr-law__h">
-            <b>{index + 1}. {clause.lawName}</b>
-            {clause.status ? <Badge tone={clause.status.tone}>{clause.status.label}</Badge> : null}
-            {/* 주제는 검토가 이 컨셉의 말로 적은 것이다. 없으면 조문 번호로 떨어진다 —
-                조문 «제목»으로 대신 채우지 않는다. 그건 법 설명이다. */}
-            {clause.findings[0]?.topic
-              ? <span className="cr-topic">{clause.findings[0].topic}</span>
-              : clause.article ? <code className="cr-clause">{clause.article}</code> : null}
-            {clause.url ? (
-              <a href={clause.url} target="_blank" rel="noreferrer">법령 원문</a>
-            ) : null}
-          </p>
-          {clause.findings.map((finding, at) => (
-            <p key={`${clause.key}-f${at}`} className="cr-law__r">{finding.text}</p>
-          ))}
-        </div>
-      ))}
-
-      {legal.clauses.length === 0 ? (
-        <p className="bm-cell__none">이번에 새로 걸린 법이 없어요.</p>
-      ) : null}
-    </>
-  );
-}

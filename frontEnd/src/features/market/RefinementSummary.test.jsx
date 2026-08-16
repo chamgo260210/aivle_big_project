@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import RefinementSummary from './RefinementSummary.jsx';
 
 /**
@@ -118,16 +118,18 @@ describe('계산대 — 고른 것만 반영된다', () => {
     expect(container.querySelector('.cr-cmp__b').textContent).toContain('6,900');
   });
 
-  it('고를 차례에는 법률 카드를 안 낸다 — 법은 고른 뒤에 본다', () => {
+  // ★ **법률 카드를 통째로 뺐다**(2026-08-16 사용자 지시: 「애매하다」). 앞서 이 자리에는
+  //   ① 고를 차례에는 안 낸다 ② 볼 법이 없으면 한 줄만 낸다 — 두 검사가 있었다.
+  //   카드가 아예 없으니 둘을 하나로 합쳐 **어느 국면에서도 안 선다**를 못 박는다.
+  //   ⚠ 되살릴 때 되살릴 것은 카드와 «이 두 국면 구분»이 같이다.
+  it('법률 카드는 어느 국면에도 안 선다 — 조항 인용은 화면에서 뺐다', () => {
     그린다(고를차례(), { onDecide: () => {} });
     expect(screen.queryByText('법률 검토')).toBeNull();
-  });
 
-  it('볼 법이 없으면 면책 문구 대신 한 줄만 낸다', () => {
-    // 할 말이 없는 자리에 면책만 서면 그것이 곧 잡음이다.
+    cleanup();
     그린다(결말('CONVERGED', { changes: [제안({ accepted: true })] }));
-    expect(screen.getByText('새롭게 추가할 법률 검토가 없어요.')).toBeTruthy();
-    expect(screen.queryByText(/법률 자문이 아니에요/)).toBeNull();
+    expect(screen.queryByText('법률 검토')).toBeNull();
+    expect(screen.queryByText('새롭게 추가할 법률 검토가 없어요.')).toBeNull();
   });
 
   // ⚠⚠ **「법률 자문이 아니에요」를 뺐다**(2026-08-16 사용자 지시 두 번).
@@ -147,11 +149,6 @@ describe('계산대 — 고른 것만 반영된다', () => {
       { onFinalize: () => {}, onNext: () => {} });
     expect(screen.getByText('컨셉 확정')).toBeTruthy();
     expect(screen.queryByText('다음 →')).toBeNull();
-  });
-
-  it('법률 카드 안에는 면책 문구를 안 낸다', () => {
-    그린다(결말('CONVERGED', { changes: [제안({ accepted: true })] }));
-    expect(screen.queryByText(/법률 자문이 아니에요/)).toBeNull();
   });
 
   it('★ 확정 직전에는 「법률 자문 아님」이 선다 — 여기가 그 경계의 자리다', () => {

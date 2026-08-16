@@ -638,3 +638,12 @@
 .mr-sub { color: var(--color-text-secondary); font-weight: 400; }
 /* 등급이 다 같을 때 표 위에 한 번 */
 .mr-tablenote { margin: 0 0 .4rem; font-size: .78rem; color: var(--color-text-secondary); }
+
+/* 판정은 제목 옆 배지 한 줄이다 — 큰 카드로 세우면 바로 아래 캔버스가 같은 사실을 다시 말한다. */
+.bm-verdict__badges { display: inline-flex; gap: .4rem; align-items: center; }
+
+/* 「이 값으로 조사해요」 — 확정 가설을 이름·값 두 칸으로 편다. */
+.mr-basis__list { display: grid; gap: .4rem; margin: .5rem 0 .75rem; }
+.mr-basis__list > div { display: grid; grid-template-columns: minmax(7rem, 9rem) 1fr; gap: .75rem; }
+.mr-basis__list dt { color: var(--color-text-secondary); font-size: .82rem; font-weight: 700; }
+.mr-basis__list dd { margin: 0; font-size: .86rem; line-height: 1.6; }

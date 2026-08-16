@@ -8,7 +8,7 @@ import { traceDetailForDisplay, useJobEvents } from '../../shared/async-events/i
 import { Accordion, Alert, Button, Card, LoadingState, ProjectStageHeader, ProjectWorkspace } from '../../shared/ui';
 import useMarketLiveState from './useMarketPolling.js';
 import useCellFocus from './useCellFocus.js';
-import CompetitorSeedForm from './CompetitorSeedForm.jsx';
+import ResearchBasisCard from './ResearchBasisCard.jsx';
 // 결과 렌더는 이 파일이 갖지 않는다 — 10과목 + 2·8·9절을 그리는 정본은 저쪽이다.
 // 이 파일이 갖는 것은 셸뿐이다: 제목 · 실행 버튼 · recollect · stale · 진행 표시.
 import { MarketResultBody } from './MarketResultBody.jsx';
@@ -59,7 +59,7 @@ export default function MarketResearchPage() {
 
   return (
     <ProjectWorkspace as="section" mode="analyze" className="market-page">
-      <ProjectStageHeader step={3} eyebrow="사업 검증" title="시장 상황과 경쟁 환경을 확인하세요"
+      <ProjectStageHeader step={1} eyebrow="사업 검증" title="시장 상황과 경쟁 환경을 확인하세요"
         description="공개 통계, 공시, 언론에서 확인된 근거를 시장 규모·경쟁·고객 관점으로 정리합니다." />
 
       <div className="market-page__actions">
@@ -79,14 +79,12 @@ export default function MarketResearchPage() {
           <ConceptPicker conceptKey={conceptKey} setConceptKey={setConceptKey} disabled={busy || active} />
         </Card>
       ))}
-      {!DEMO_MODE ? <Card title="조사 기준">
-        <p><strong>{source?.conceptName || source?.conceptId || '현재 선택한 사업안'}</strong>의
-          확정 가설과 최종 법률 결과, 저장된 시장 입력을 사용합니다.</p>
-        {source ? <p>선택한 사업안과 저장된 시장 입력을 사용합니다.</p> : null}
-      </Card> : null}
-      {!DEMO_MODE ? <Accordion title="경쟁·현재 대안 씨앗">
-        <CompetitorSeedForm api={api} disabled={busy || active} />
-      </Accordion> : null}
+      {/* 무엇으로 조사하는지를 **값으로** 보인다 — 한 줄 설명만으로는 자기가 고른 값이
+          실렸는지 확인할 길이 없다. */}
+      {!DEMO_MODE ? <ResearchBasisCard client={client} api={api} projectId={projectId}
+        conceptName={source?.conceptName} /> : null}
+      {/* ⚠ 「경쟁·현재 대안 씨앗」은 **여기서 뺐다**(2026-08-16 사용자 지시).
+          `CompetitorSeedForm` 과 그 API 는 지우지 않았다 — 되살릴 자리가 생기면 한 줄이다. */}
       {result && version && !stale ? <Accordion title="기존 원장에서 근거 다시 수집">
         <p>현재 Market version의 검증된 원장을 복원해 전체 또는 지정 슬롯만 다시 수집합니다.</p>
         <div className="project-form-layout">
@@ -114,20 +112,21 @@ export default function MarketResearchPage() {
       </Accordion> : null}
 
       {error ? <Alert tone="danger">{error}</Alert> : null}
-      {stale ? <Alert tone="warning">선택한 사업안 또는 시장 입력이 바뀌었습니다. 최신 내용으로 다시 분석해 주세요.</Alert> : null}
+      {/* ⚠ 「바뀌었습니다」 경고는 **안 세운다**(2026-08-16 사용자 지시). 조사 결과가 이미
+          화면에 있는데 그 위에 경고가 서면, 읽는 내내 「이걸 믿어도 되나」가 걸린다.
+          ⚠ **잃는 것을 적어 둔다**: 사업안을 고친 뒤 옛 결과를 보고 있다는 사실이 화면에서
+          사라진다. 되살릴 자리는 이 배너가 아니라 「다시 조사」 버튼 옆이다. */}
       {active ? <Alert tone="info">조사 중이다 — <strong>{elapsed}초</strong> 경과.
         <MarketProgress events={jobEvents.events} />
       </Alert> : null}
+      {/* 실패는 **한 줄로만** 말한다. 오류 코드(「기술 정보」)와 「입력을 확인해야 한다」는
+          사용자가 할 수 있는 일을 알려 주지 않으면서 화면만 무겁게 했다. */}
       {run?.state === 'FAILED' ? (
-        <Alert tone="danger">
-          {marketRunFailureMessage(run.errorCode)}.
-          {run.errorCode && <details><summary>기술 정보</summary><p>{run.errorCode}</p></details>}
-          {run.retryable ? ' 다시 시도할 수 있다.' : ' 입력을 확인해야 한다.'}
-        </Alert>
+        <Alert tone="danger">{marketRunFailureMessage(run.errorCode)}. 다시 조사해 주세요.</Alert>
       ) : null}
 
       {!result ? (
-        !active ? <Card><p>아직 조사한 적이 없다. 「시장조사 실행」을 눌러라.</p></Card> : null
+        !active ? <Card><p>아직 조사한 적이 없어요. 위의 「시장조사 실행」을 누르면 시작돼요.</p></Card> : null
       ) : (
         <>
           <MarketResultBody result={result} activeId={focus.active} />
