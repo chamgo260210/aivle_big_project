@@ -20,6 +20,8 @@ export const JOB_TASK_LABELS = Object.freeze({
   MARKET_INTERVIEW: '시장 인터뷰',
   FINANCE_ESTIMATE: '재무 입력값 준비',
   FINANCE_ANALYSIS_REPORT: '재무 분석 보고서',
+  LAUNCH_TECHNOLOGY_READINESS: '기술 출시 준비 분석',
+  LAUNCH_OPERATIONS_READINESS: '운영 출시 준비 분석',
   MARKETING_CONTENT_GENERATION: '마케팅 콘텐츠 준비',
   MARKETING_VISUAL_GENERATION: '마케팅 이미지 생성',
 });
@@ -35,7 +37,8 @@ export function jobModuleLabel(module) {
   return ({
     IDEA: '사업 기획', CONCEPT_PORTFOLIO: '사업 기획', CONCEPT_FACTORY: '사업 기획',
     CONCEPT_SELECTION: '사업 기획', MARKET: '사업 검증', BUSINESS_MODEL: '사업 검증',
-    TECH_OPS: '출시 준비', FINANCE: '출시 준비', TWIN: '시장 인터뷰',
-    MARKET_INTERVIEW: '시장 인터뷰', MARKETING: '마케팅 전략',
+    TECH_OPS: '출시 준비', FINANCE: '출시 준비', LAUNCH_READINESS: '출시 준비',
+    // 여정 4는 시장 인터뷰다. TWIN 은 백엔드가 아직 보내는 옛 이름이라 같은 말로 받는다.
+    TWIN: '시장 인터뷰', MARKET_INTERVIEW: '시장 인터뷰', MARKETING: '마케팅 전략',
   })[module] ?? '프로젝트';
 }

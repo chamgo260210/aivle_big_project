@@ -168,3 +168,44 @@ export function portfolioRunPresentation(run) {
 }
 
 export function selectedConceptId(selection) { return selection?.conceptId ?? null; }
+
+/* ── 아래 넷은 **팀원 판(#49)의 법률 보고서 부품**이 쓰는 것이다. (2026-08-16 병합)
+ *
+ * 이 파일은 사업안 화면의 정본이라 그쪽 판을 통째로 받으면 화면 동작이 바뀐다
+ * (실측: 입력 칸 라벨과 처리 기록 버튼이 사라졌다). 그래서 **동작은 이 판을 지키고,
+ * 저쪽 부품이 부르는 함수만 그대로 옮겨 왔다** — 한쪽만 살리면 빌드가 깨진다.
+ * ⚠ `LegalRegulatoryReportDocument.jsx` 가 이 넷을 부른다. 지우기 전에 그쪽을 본다. */
+
+const LEGAL_STATUS_LABELS = Object.freeze({
+  IMPLEMENTABLE: '현재 조건으로 진행 가능',
+  IMPLEMENTABLE_WITH_CONTROLS: '필요한 조치를 반영하면 진행 가능',
+  NEEDS_FACTS: '추가 정보 확인 필요',
+  REDESIGNABLE: '일부 구조 조정 후 진행 가능',
+  REJECTED: '현재 형태로 진행하기 어려움',
+  CONDITIONAL: '필요한 조치를 반영하면 진행 가능',
+  ACCEPT: '검토 결과 확인 완료',
+});
+
+const normalizeLawName = (value) => {
+  const name = String(value ?? '').trim().replace(/^["'“”‘’]+|["'“”‘’]+$/g, '').trim();
+  return name || '기타 법률 근거';
+};
+
+export function groupLegalEvidence(evidence) {
+  const groups = new Map();
+  for (const item of Array.isArray(evidence) ? evidence : []) {
+    const lawName = normalizeLawName(item?.lawName ?? item?.title);
+    if (!groups.has(lawName)) groups.set(lawName, { lawName, articles: [], keys: new Set() });
+    const group = groups.get(lawName);
+    const dedupeKey = [lawName, item?.articleReference, item?.officialSourceUri, item?.contentHash, item?.title, item?.boundedProvisionSummary].join('|');
+    if (!group.keys.has(dedupeKey)) {
+      group.keys.add(dedupeKey);
+      group.articles.push({ ...item, lawName });
+    }
+  }
+  return [...groups.values()].map((group) => ({ lawName: group.lawName, articles: group.articles }));
+}
+
+export function legalStatusLabel(status) {
+  return LEGAL_STATUS_LABELS[status] ?? '검토 결과 확인 필요';
+}

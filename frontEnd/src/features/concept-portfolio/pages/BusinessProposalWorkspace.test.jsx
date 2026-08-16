@@ -122,7 +122,7 @@ describe('Portfolio status summary', () => {
       onRestart={vi.fn()} onDetail={vi.fn()} />);
     expect(screen.getByText('5개의 사업안 후보를 검토했지만 최종 결과를 확정하지 못했습니다.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '다시 시도' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '전체 처리 기록 보기' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '작업센터에서 상세 기록 보기' })).toBeInTheDocument();
   });
   it('explains actionable zero-accepted NEEDS_INPUT', () => {
     render(<PortfolioStatus run={{ productStatus: 'NEEDS_INPUT', producedConceptCount: 0, openInputCount: 1 }}

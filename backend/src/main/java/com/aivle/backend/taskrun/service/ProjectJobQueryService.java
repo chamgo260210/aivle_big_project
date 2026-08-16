@@ -149,6 +149,7 @@ public class ProjectJobQueryService {
             case CONCEPT_HYPOTHESIS_ALTERNATIVE, CONCEPT_DELTA_LEGAL_REVIEW -> JobModule.CONCEPT_SELECTION;
             case TECH_OPS_PROPOSAL, TECH_OPS_ADVISORY -> JobModule.TECH_OPS;
             case FINANCE_ESTIMATE, FINANCE_ANALYSIS_REPORT -> JobModule.FINANCE;
+            case LAUNCH_TECHNOLOGY_READINESS, LAUNCH_OPERATIONS_READINESS -> JobModule.LAUNCH_READINESS;
             case MARKETING_CONTENT_GENERATION, MARKETING_VISUAL_GENERATION -> JobModule.MARKETING;
             case MARKET_RESEARCH -> "MARKET_RESEARCH_BM".equals(run.getSubjectType())
                 ? JobModule.BUSINESS_MODEL : JobModule.MARKET;
@@ -164,10 +165,9 @@ public class ProjectJobQueryService {
     private enum JobModule {
         IDEA("/idea"), CONCEPT_PORTFOLIO("/concepts"), CONCEPT_FACTORY("/concepts"), CONCEPT_SELECTION("/concepts/compare"),
         MARKET("/market"), BUSINESS_MODEL("/business-model"), TWIN("/twin-survey"),
-        // ⚠ 프론트 라우트는 **3판에서 생긴다.** 지금 이 경로로 보내면 404 다 —
-        //    다만 `MARKET_INTERVIEW` 실행을 만드는 화면이 아직 없어 도달하지 않는다.
         MARKET_INTERVIEW("/market-interview"),
-        TECH_OPS("/tech-ops"), FINANCE("/finance"), MARKETING("/marketing");
+        TECH_OPS("/tech-ops"), FINANCE("/finance"), LAUNCH_READINESS("/launch-readiness"),
+        MARKETING("/marketing");
         private final String route;
         JobModule(String route) { this.route = route; }
     }

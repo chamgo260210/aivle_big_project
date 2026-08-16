@@ -26,7 +26,8 @@ export const PROJECT_JOURNEYS = Object.freeze([
   { id: 'validation', label: '2. 사업 검증', shortLabel: '사업 검증',
     // 세 걸음이다: 무엇이 관측됐나 → 그 사업이 서나 → 그래서 사업안을 어떻게 고칠까.
     moduleIds: ['market', 'businessModel', 'conceptRefinement'] },
-  { id: 'launch', label: '3. 출시 준비', shortLabel: '출시 준비', moduleIds: ['techOps', 'finance'] },
+  // 출시 준비는 팀원 판(#49)을 그대로 받는다 — 기술·운영과 재무가 한 칸으로 합쳐졌다.
+  { id: 'launch', label: '3. 출시 준비', shortLabel: '출시 준비', moduleIds: ['launchReadiness'] },
   { id: 'interview', label: '4. 시장 인터뷰', shortLabel: '시장 인터뷰', moduleIds: ['marketInterview'] },
   { id: 'marketingStrategy', label: '5. 마케팅 전략', shortLabel: '마케팅 전략', moduleIds: ['marketing'] },
   { id: 'finalReport', label: '6. 최종 보고서', shortLabel: '최종 보고서', moduleIds: [] },
@@ -35,6 +36,8 @@ export const PROJECT_JOURNEYS = Object.freeze([
 const PATH_TO_JOURNEY = Object.freeze({
   overview: 'overview', idea: 'planning', concepts: 'planning', market: 'validation',
   'business-model': 'validation', 'concept-refinement': 'validation',
+  // 옛 경로(tech-ops·finance)도 계속 여정 3으로 보낸다 — 라우트가 아직 살아 있다.
+  'launch-readiness': 'launch', technology: 'launch', operations: 'launch',
   'tech-ops': 'launch', finance: 'launch',
   'market-interview': 'interview', marketing: 'marketingStrategy', 'final-report': 'finalReport',
 });
@@ -71,7 +74,8 @@ export function aggregateJourneyStatus(moduleStatuses = []) {
 
 export function getJourneyByPath(pathname) {
   const segments = pathname.replace(/\/+$/, '').split('/');
-  const routeSegment = segments.at(-1) === 'compare' ? 'concepts' : segments.at(-1);
+  const routeSegment = segments.includes('launch-readiness') ? 'launch-readiness'
+    : ['compare', 'legal-report'].includes(segments.at(-1)) ? 'concepts' : segments.at(-1);
   const id = PATH_TO_JOURNEY[routeSegment] ?? 'overview';
   return id === 'overview' ? { id: 'overview', label: '프로젝트 개요', shortLabel: '프로젝트 개요', moduleIds: [] }
     : PROJECT_JOURNEYS.find((journey) => journey.id === id);

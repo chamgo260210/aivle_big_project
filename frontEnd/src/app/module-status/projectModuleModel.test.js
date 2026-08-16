@@ -6,10 +6,21 @@ describe('project module model', () => {
     // 사업 검증은 세 걸음이다 — market → businessModel → conceptRefinement.
     expect(PROJECT_MODULES.map((item) => item.id)).toEqual([
       'overview', 'idea', 'concepts', 'market', 'businessModel', 'conceptRefinement',
-      'techOps', 'finance', 'marketInterview', 'marketing', 'settings',
+      'launchReadiness', 'marketInterview', 'marketing', 'settings',
     ]);
     expect(getProjectModules('41').filter((item) => item.id === 'concepts')).toHaveLength(1);
     expect(getProjectModuleByPath('41', '/app/projects/41/concepts/compare').id).toBe('concepts');
+    expect(getProjectModuleByPath('41', '/app/projects/41/concepts/legal-report').id).toBe('concepts');
+  });
+
+  it('기술·운영과 재무 상태를 하나의 출시 준비 상태로 보수적으로 집계한다', () => {
+    const statuses = normalizeProjectModuleStatuses([
+      { module: 'TECH_OPS', status: 'COMPLETED', requiredInputs: [] },
+      { module: 'FINANCE', status: 'RUNNING', activeTaskRunId: 'finance-run' },
+    ]);
+    expect(statuses.launchReadiness.status).toBe('RUNNING');
+    expect(getProjectModuleByPath('41', '/app/projects/41/technology').id).toBe('launchReadiness');
+    expect(getProjectModuleByPath('41', '/app/projects/41/finance').id).toBe('launchReadiness');
   });
 
   it('maps canonical module status identifiers', () => {

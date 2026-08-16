@@ -191,7 +191,9 @@ public class InternalAiExecutionClient {
             return marketResearchClient;
         }
         if (taskType == TaskType.MARKETING_CONTENT_GENERATION
-            || taskType == TaskType.TECH_OPS_ADVISORY) {
+            || taskType == TaskType.TECH_OPS_ADVISORY
+            || taskType == TaskType.LAUNCH_TECHNOLOGY_READINESS
+            || taskType == TaskType.LAUNCH_OPERATIONS_READINESS) {
             return longRunningClient;
         }
         // 트윈 조사는 n=300·4쌍이면 셀이 7,200개다. 시장 인터뷰는 셀 수는 적지만 뒤에
