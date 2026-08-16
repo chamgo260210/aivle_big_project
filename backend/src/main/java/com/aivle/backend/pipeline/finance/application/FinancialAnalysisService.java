@@ -2,9 +2,13 @@ package com.aivle.backend.pipeline.finance.application;
 
 import static com.aivle.backend.pipeline.finance.api.FinancialApiModels.*;
 
+import com.aivle.backend.common.exception.BusinessException;
+import com.aivle.backend.common.exception.ErrorCode;
 import com.aivle.backend.finance.service.FinancialSnapshotAnalysisService;
 import com.aivle.backend.jobevent.JobEvent;
 import com.aivle.backend.jobevent.JobEventPublisher;
+import com.aivle.backend.pipeline.artifact.domain.ProjectEvidenceArtifact;
+import com.aivle.backend.pipeline.artifact.repository.ProjectEvidenceArtifactRepository;
 import com.aivle.backend.taskrun.domain.TaskResult;
 import com.aivle.backend.taskrun.domain.TaskRun;
 import com.aivle.backend.taskrun.domain.TaskType;
@@ -15,6 +19,7 @@ import com.aivle.backend.taskrun.service.CanonicalInputHasher;
 import com.aivle.backend.taskrun.service.TaskRunService;
 import com.aivle.backend.taskrun.service.TaskRunWorkerContext;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,6 +30,7 @@ import tools.jackson.databind.node.ObjectNode;
 @Service
 public class FinancialAnalysisService {
     private static final String SUBJECT = "FINANCIAL_ANALYSIS_REPORT";
+    private static final String USER_DOCUMENT_SUBJECT = "USER_DOCUMENT_INPUT";
     private static final Set<String> REPORT_FIELDS = Set.of("headline", "findings", "cautions",
         "recommendedActions", "disclaimer", "source", "providerStatus", "safeFailureReason");
     private final FinancialService finance;
@@ -34,14 +40,16 @@ public class FinancialAnalysisService {
     private final TaskResultRepository resultRepository;
     private final CanonicalInputHasher hasher;
     private final JobEventPublisher events;
+    private final ProjectEvidenceArtifactRepository artifacts;
     private final ObjectMapper mapper;
 
     public FinancialAnalysisService(FinancialService finance, FinancialSnapshotAnalysisService calculation,
             TaskRunService taskRuns, TaskRunRepository runRepository, TaskResultRepository resultRepository,
-            CanonicalInputHasher hasher, JobEventPublisher events, ObjectMapper mapper) {
+            CanonicalInputHasher hasher, JobEventPublisher events,
+            ProjectEvidenceArtifactRepository artifacts, ObjectMapper mapper) {
         this.finance = finance; this.calculation = calculation; this.taskRuns = taskRuns;
         this.runRepository = runRepository; this.resultRepository = resultRepository;
-        this.hasher = hasher; this.events = events; this.mapper = mapper;
+        this.hasher = hasher; this.events = events; this.artifacts = artifacts; this.mapper = mapper;
     }
 
     @Transactional
@@ -56,8 +64,10 @@ public class FinancialAnalysisService {
         input.set("deterministicResult", deterministic);
         String json = mapper.writeValueAsString(input);
         String hash = hasher.hash(TaskType.FINANCE_ANALYSIS_REPORT, "1.0", "ko-KR", json);
+        String subjectId = USER_DOCUMENT_SUBJECT.equals(snapshot.snapshot().path("sourceMode").asText())
+            ? USER_DOCUMENT_SUBJECT : snapshot.snapshotId();
         var created = taskRuns.createWithDisposition(ownerId, projectId, TaskType.FINANCE_ANALYSIS_REPORT,
-            SUBJECT, snapshot.snapshotId(), json, hash, requiredKey(idempotencyKey),
+            SUBJECT, subjectId, json, hash, requiredKey(idempotencyKey),
             correlationId == null || correlationId.isBlank() ? requiredKey(idempotencyKey) : correlationId, 2);
         if (created.createdNew()) publish(projectId, created.taskRun().getId(), "QUEUED",
             "job.finance.analysis.queued", JobEvent.Status.QUEUED, null);
@@ -69,17 +79,51 @@ public class FinancialAnalysisService {
     @Transactional(readOnly = true)
     public AnalysisView current(Long ownerId, Long projectId) {
         SnapshotView snapshot = finance.currentSnapshot(ownerId, projectId);
+        String sourceDocumentName = resolveSourceDocumentName(projectId, snapshot);
+        String subjectId = USER_DOCUMENT_SUBJECT.equals(snapshot.snapshot().path("sourceMode").asText())
+            ? USER_DOCUMENT_SUBJECT : snapshot.snapshotId();
         TaskRun task = runRepository
             .findFirstByProjectIdAndSubjectTypeAndSubjectIdAndDeletedAtIsNullOrderByCreatedAtDescIdDesc(
-                projectId, SUBJECT, snapshot.snapshotId()).orElse(null);
+                projectId, SUBJECT, subjectId)
+            .filter(value -> snapshot.snapshotId().equals(
+                mapper.readTree(value.getInputSnapshot()).path("snapshotId").asText())).orElse(null);
         if (task == null) return new AnalysisView(null, null, "NOT_STARTED", false, null,
-            snapshot.snapshotId(), snapshot.snapshotHash(), null, false, snapshot.stale());
+            snapshot.snapshotId(), snapshot.snapshotHash(), null, false, snapshot.stale(),
+            null, sourceDocumentName);
         JsonNode result = task.getFinalResultId() == null ? null : resultRepository.findById(task.getFinalResultId())
             .map(TaskResult::getResultJson).map(mapper::readTree).orElse(null);
         boolean fallback = result != null && "SYSTEM_CALCULATION_FALLBACK".equals(
             result.path("report").path("source").asText());
         return new AnalysisView(task.getId(), task.getId(), task.getState().name(), task.isRetryable(),
-            task.getLastErrorCode(), snapshot.snapshotId(), snapshot.snapshotHash(), result, fallback, snapshot.stale());
+            task.getLastErrorCode(), snapshot.snapshotId(), snapshot.snapshotHash(), result, fallback,
+            snapshot.stale(), task.getFinishedAt(), sourceDocumentName);
+    }
+
+    private String resolveSourceDocumentName(Long projectId, SnapshotView snapshot) {
+        String artifactId = snapshot.snapshot().path("sourceDocumentArtifactId").asText(null);
+        if (artifactId == null || artifactId.isBlank()) return null;
+        return artifacts.findByIdAndProjectIdAndDeletedAtIsNull(artifactId, projectId)
+            .map(ProjectEvidenceArtifact::getOriginalFilename)
+            .orElse(null);
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<ImportReplay> replayImport(Long ownerId, Long projectId,
+            String idempotencyKey, String sourceDocumentHash) {
+        String key = requiredKey(idempotencyKey);
+        String scope = TaskType.FINANCE_ANALYSIS_REPORT.name() + ":" + SUBJECT + ":" + USER_DOCUMENT_SUBJECT;
+        TaskRun task = runRepository.findByProjectIdAndIdempotencyScopeAndIdempotencyKey(
+            projectId, scope, key).orElse(null);
+        if (task == null) return Optional.empty();
+        taskRuns.getOwned(ownerId, projectId, task.getId());
+        String snapshotId = mapper.readTree(task.getInputSnapshot()).path("snapshotId").asText();
+        SnapshotView snapshot = finance.snapshot(ownerId, projectId, snapshotId);
+        if (!sourceDocumentHash.equals(snapshot.snapshot().path("sourceDocumentHash").asText())) {
+            throw new BusinessException(ErrorCode.IDEMPOTENCY_CONFLICT);
+        }
+        AnalysisActionResponse action = new AnalysisActionResponse(task.getId(), task.getId(),
+            task.getState().name(), snapshot.snapshotId(), snapshot.snapshotHash());
+        return Optional.of(new ImportReplay(snapshot, action));
     }
 
     @Transactional
@@ -132,4 +176,6 @@ public class FinancialAnalysisService {
         events.publish(new JobEventPublisher.Command(projectId, taskRunId, taskRunId, stage, key,
             status, key, Map.of(), code));
     }
+
+    public record ImportReplay(SnapshotView snapshot, AnalysisActionResponse action) {}
 }
