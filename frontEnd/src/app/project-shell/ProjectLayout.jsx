@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, Outlet, useLocation, useParams } from 'react-router-dom';
 
-import { AppIcon, ErrorState, LoadingState } from '../../shared/ui/index.js';
+import { AppIcon, ErrorState, LoadingState, ScrollToTopButton } from '../../shared/ui/index.js';
 import { getUserErrorMessage } from '../../shared/api/apiError.js';
 import { useApiClient } from '../../shared/api/ApiClientProvider.jsx';
 import { useProjectEvents } from '../../shared/async-events/index.js';
@@ -28,13 +28,27 @@ export function JourneySubsteps({ journey, currentModule }) {
   </nav>;
 }
 
+export function ProjectLocationRow({ projectId, currentJourney }) {
+  const isOverview = currentJourney?.id === 'overview';
+  return <div className="pipeline-shell__location-row">
+    <nav className="pipeline-shell__breadcrumb" aria-label="현재 위치">
+      <Link to={projectRoutes.overview(projectId)}>프로젝트 개요</Link>
+      {!isOverview && <><span aria-hidden="true">/</span><span aria-current="page">{currentJourney?.shortLabel}</span></>}
+    </nav>
+    {!isOverview && <Link className="pipeline-shell__overview-return" to={projectRoutes.overview(projectId)}
+      aria-label="프로젝트 개요로 돌아가기" title="프로젝트 개요로 돌아가기">
+      <AppIcon name="chevronLeft" size={18} />
+    </Link>}
+  </div>;
+}
+
 function ProjectLayoutContent() {
   const { projectId } = useParams();
   const location = useLocation();
   const apiClient = useApiClient();
   const portfolioApi = useMemo(() => createConceptPortfolioApi(apiClient), [apiClient]);
   const finalReportApi = useMemo(() => createFinalReportApi(apiClient), [apiClient]);
-  const { register } = useProjectChrome();
+  const { register, toolActions } = useProjectChrome();
   const { status, project, retry } = useProjectContext();
   const live = useProjectEvents(projectId);
   const moduleState = useProjectModuleStatuses(projectId, live.revision);
@@ -60,7 +74,9 @@ function ProjectLayoutContent() {
   const currentModule = useMemo(() => {
     if (currentJourney.id === 'finalReport') return { id: 'finalReport', label: '최종 보고서', shortLabel: '최종 보고서', href: projectRoutes.finalReport(projectId), status: MODULE_STATUS.NOT_READY };
     const normalized = location.pathname.replace(/\/+$/, '');
-    if (normalized.endsWith('/concepts/compare')) return modules.find(({ id }) => id === 'concepts');
+    if (normalized.endsWith('/concepts/compare') || normalized.endsWith('/concepts/legal-report')) return modules.find(({ id }) => id === 'concepts');
+    if (/\/(launch-readiness|technology|operations|tech-ops|finance)$/.test(normalized)
+        || normalized.includes('/launch-readiness/reports/')) return modules.find(({ id }) => id === 'launchReadiness');
     return modules.find(({ href }) => href === normalized) ?? modules[0];
   }, [currentJourney.id, location.pathname, modules, projectId]);
   const currentStatus = useMemo(() => moduleState.status === 'error' ? { label: '상태 확인 필요', tone: 'danger' }
@@ -89,13 +105,14 @@ function ProjectLayoutContent() {
 
   return <div className="pipeline-shell">
     <header className="pipeline-shell__header">
-      <div className="pipeline-shell__project"><p>{project.industryCategory || '사업 분야 미입력'}</p><h1>{project.name}</h1><nav className="pipeline-shell__breadcrumb" aria-label="현재 위치"><Link to={projectRoutes.overview(projectId)}>프로젝트 개요</Link>{currentJourney.id !== 'overview' && <><span aria-hidden="true">/</span><span aria-current="page">{currentJourney.shortLabel}</span></>}</nav></div>
+      <div className="pipeline-shell__project"><p>{project.industryCategory || '사업 분야 미입력'}</p><h1>{project.name}</h1><ProjectLocationRow projectId={projectId} currentJourney={currentJourney} /></div>
       <div className="pipeline-shell__actions"><span className="pipeline-status" data-tone={projectPresentation.tone}>{projectPresentation.label}</span><Link to={projectRoutes.settings(projectId)} state={{ backgroundLocation: location, returnTo: location.pathname }}><AppIcon name="settings" size={16} />프로젝트 설정</Link></div>
     </header>
     <main className="pipeline-shell__main">
       <JourneySubsteps journey={currentJourney} currentModule={currentModule} />
       {moduleState.status === 'error' && <section className="pipeline-module-status-error" role="alert"><div><strong>업무 상태를 불러오지 못했습니다.</strong><span>{getUserErrorMessage(moduleState.error)} 작업 화면은 계속 사용할 수 있습니다.</span></div><button type="button" onClick={moduleState.retry}>다시 시도</button></section>}
-      <Outlet context={{ modules, journeys, moduleState, finalReportState, liveRevision: live.revision, projectEventTransport: live.transport }} />
+      <Outlet context={{ modules, journeys, moduleState, finalReportState, liveRevision: live.revision, projectEventTransport: live.transport, openWorkCenterJob: toolActions.openWorkCenterJob }} />
+      <ScrollToTopButton />
     </main>
   </div>;
 }
