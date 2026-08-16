@@ -81,6 +81,20 @@ public class MarketResearchWorker {
      */
     static final String REFINEMENT_TRIGGER_SUBJECT = "MARKET_RESEARCH_BM";
 
+    /**
+     * BM 을 <b>이 subjectType 일 때만</b> 이어 건다 — 즉 시장조사(FULL) 가 끝난 직후.
+     *
+     * <p>★ <b>버튼 하나로 세 걸음</b>(2026-08-16 사용자 결정). 사업 검증은
+     * 시장조사 → BM → 컨셉 다듬기 세 걸음인데, 예전에는 걸음마다 사람이 버튼을 눌러야
+     * 이어졌다. 재료는 앞 걸음이 다 만들어 주므로 <b>사람이 고를 것이 없는 자리</b>고,
+     * 40분짜리 조사가 끝난 화면에 다시 와서 눌러야 하는 것이 유일한 일이었다.
+     *
+     * <p>이제 고리는 이 워커 안에서 둘 다 닫힌다:
+     * <b>FULL 채택 → BM 큐 → BM 채택 → 다듬기 라운드 1</b>. 사람이 누르는 것은
+     * 시장조사 실행 하나뿐이다.
+     */
+    static final String BUSINESS_MODEL_TRIGGER_SUBJECT = "MARKET_RESEARCH_FULL";
+
     private static final org.slf4j.Logger log =
         org.slf4j.LoggerFactory.getLogger(MarketResearchWorker.class);
 
@@ -135,6 +149,7 @@ public class MarketResearchWorker {
             }
             completion.complete(claim, response);
             publish(context, "COMPLETED", key(context, "completed"), JobEvent.Status.COMPLETED, null);
+            startBusinessModel(context);
             startRefinement(context);
         } catch (ExecutionFailure failure) {
             if ("RESULT_SCHEMA_INVALID".equals(failure.code()))
@@ -155,6 +170,34 @@ public class MarketResearchWorker {
             publish(context, "FAILED", key(context, "failed"), JobEvent.Status.FAILED, "AI_SERVICE_UNAVAILABLE");
         }
         return true;
+    }
+
+    /**
+     * <b>시장조사가 끝나면 BM 을 이어 건다.</b> (2026-08-16)
+     *
+     * <p>왜 채택 <b>뒤</b>인가. {@code startBm} 이 «가장 최근 FULL 판»을 근거로 삼는데
+     * 그 판을 만드는 것이 바로 위의 {@code completion.complete} 다. 그 앞에서 부르면
+     * 직전 판을 근거로 삼거나 {@code RESOURCE_NOT_FOUND} 로 죽는다.
+     *
+     * <p><b>멱등키를 FULL 의 taskRunId 로 못 박는다.</b> 워커가 같은 실행을 두 번 지나가도
+     * ({@code createWithDisposition} 의 재생 경로) BM 은 한 번만 큐에 든다 —
+     * 여기서 틀리면 <b>두 번 태운다</b>.
+     *
+     * <p>⚠ 예외를 <b>삼킨다.</b> 시장조사 채택은 이미 커밋됐고, 여기서 던지면 성공한
+     * 40분짜리 실행이 실패로 뒤집혀 재시도 대상이 된다 — 지불한 수집을 통째로 잃는다.
+     * 못 걸렸을 때의 문은 BM 화면의 「캔버스 만들기」 버튼으로 열려 있다.
+     */
+    private void startBusinessModel(com.aivle.backend.taskrun.service.TaskRunWorkerContext context) {
+        if (!BUSINESS_MODEL_TRIGGER_SUBJECT.equals(context.subjectType())) return;
+        String key = "auto-bm-" + context.taskRunId();
+        try {
+            var queued = completion.startBm(context.ownerId(), context.projectId(), key, key);
+            log.info("Business model queued projectId={} marketTaskRunId={} bmTaskRunId={}",
+                context.projectId(), context.taskRunId(), queued.taskRunId());
+        } catch (RuntimeException failure) {
+            log.warn("Business model chain failed projectId={} marketTaskRunId={}",
+                context.projectId(), context.taskRunId(), failure);
+        }
     }
 
     /**

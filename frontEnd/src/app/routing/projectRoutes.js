@@ -16,6 +16,7 @@ export const projectRoutes = Object.freeze({
   conceptCompare: (projectId) => `${projectBase(projectId)}/concepts/compare`,
   market: (projectId) => `${projectBase(projectId)}/market`,
   businessModel: (projectId) => `${projectBase(projectId)}/business-model`,
+  conceptRefinement: (projectId) => `${projectBase(projectId)}/concept-refinement`,
   marketInterview: (projectId) => `${projectBase(projectId)}/market-interview`,
   techOps: (projectId) => `${projectBase(projectId)}/tech-ops`,
   finance: (projectId) => `${projectBase(projectId)}/finance`,

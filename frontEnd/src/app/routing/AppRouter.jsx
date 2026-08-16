@@ -12,6 +12,7 @@ import { IdeaIntakePage } from '../../features/idea-intake/index.js';
 import { BusinessProposalWorkspace } from '../../features/concept-portfolio/index.js';
 import MarketResearchPage from '../../features/market/MarketResearchPage.jsx';
 import BmCanvasPage from '../../features/market/BmCanvasPage.jsx';
+import ConceptRefinementPage from '../../features/market/ConceptRefinementPage.jsx';
 import MarketInterviewPage from '../../features/market-interview/MarketInterviewPage.jsx';
 import { MarketingContentPage } from '../../features/marketing-content/index.js';
 import { TechOpsPage } from '../../features/tech-ops/index.js';
@@ -77,6 +78,7 @@ export default function AppRouter() {
             <Route path="concepts/compare" element={<BusinessProposalWorkspace initialMode="compare" />} />
             <Route path="market" element={<MarketResearchPage />} />
             <Route path="business-model" element={<BmCanvasPage />} />
+            <Route path="concept-refinement" element={<ConceptRefinementPage />} />
             <Route path="market-interview" element={<MarketInterviewPage />} />
             <Route path="tech-ops" element={<TechOpsPage />} />
             <Route path="finance" element={<FinancePage />} />

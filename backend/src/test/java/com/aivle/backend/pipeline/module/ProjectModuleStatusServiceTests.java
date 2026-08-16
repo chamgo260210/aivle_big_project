@@ -32,6 +32,9 @@ import com.aivle.backend.pipeline.market.MarketResearchRunRepository;
 import com.aivle.backend.pipeline.market.MarketResearchVersionRepository;
 import com.aivle.backend.pipeline.market.MarketInterviewRunRepository;
 import com.aivle.backend.pipeline.market.TwinSurveyVersionRepository;
+import com.aivle.backend.pipeline.refinement.ConceptRefinementFinalRepository;
+import com.aivle.backend.pipeline.refinement.ConceptRefinementRound;
+import com.aivle.backend.pipeline.refinement.ConceptRefinementService;
 import com.aivle.backend.pipeline.selection.repository.ConceptSelectionRepository;
 import com.aivle.backend.pipeline.selection.domain.ConceptSelection;
 import com.aivle.backend.pipeline.techops.domain.TechOpsInputPreparation;
@@ -72,10 +75,13 @@ class ProjectModuleStatusServiceTests {
     private final FinancialInputPreparationRepository financialPreparations = mock(FinancialInputPreparationRepository.class);
     private final FinancialInputSnapshotRepository financialSnapshots = mock(FinancialInputSnapshotRepository.class);
     private final TaskRunRepository taskRuns = mock(TaskRunRepository.class);
+    private final ConceptRefinementService refinement = mock(ConceptRefinementService.class);
+    private final ConceptRefinementFinalRepository refinementFinals = mock(ConceptRefinementFinalRepository.class);
     private final ProjectModuleStatusService service = new ProjectModuleStatusService(
         projects, briefs, conceptRuns, portfolioSelections, selections, snapshots, runs,
         marketRuns, marketVersions, interviewRuns, twinVersions, marketing, marketingSources,
-        techOpsPreparations, techOpsSnapshots, techOpsAdvisories, financialPreparations, financialSnapshots, taskRuns);
+        techOpsPreparations, techOpsSnapshots, techOpsAdvisories, financialPreparations, financialSnapshots, taskRuns,
+        refinement, refinementFinals);
 
     @Test
     void derivesIdeaAndConceptFromCanonicalDomainsWithoutProjectDescription() {
@@ -100,7 +106,8 @@ class ProjectModuleStatusServiceTests {
 
         assertThat(modules).extracting(ProjectModuleStatusResponse::module).containsExactly(
             PipelineModuleType.IDEA, PipelineModuleType.CONCEPT_PORTFOLIO,
-            PipelineModuleType.MARKET_ANALYSIS, PipelineModuleType.BUSINESS_MODEL, PipelineModuleType.TECH_OPS,
+            PipelineModuleType.MARKET_ANALYSIS, PipelineModuleType.BUSINESS_MODEL,
+            PipelineModuleType.CONCEPT_REFINEMENT, PipelineModuleType.TECH_OPS,
             PipelineModuleType.FINANCE, PipelineModuleType.TWIN_SURVEY, PipelineModuleType.MARKETING);
         assertThat(modules.get(0).status()).isEqualTo(PipelineModuleStatus.COMPLETED);
         assertThat(modules.get(0).confirmedSnapshotId()).isEqualTo("brief-snapshot");
@@ -122,6 +129,7 @@ class ProjectModuleStatusServiceTests {
         assertThat(modules.get(5).status()).isEqualTo(PipelineModuleStatus.NOT_READY);
         assertThat(modules.get(6).status()).isEqualTo(PipelineModuleStatus.NOT_READY);
         assertThat(modules.get(7).status()).isEqualTo(PipelineModuleStatus.NOT_READY);
+        assertThat(modules.get(8).status()).isEqualTo(PipelineModuleStatus.NOT_READY);
     }
 
     @Test
@@ -330,6 +338,96 @@ class ProjectModuleStatusServiceTests {
 
         assertThat(slot.status()).isEqualTo(PipelineModuleStatus.READY);
         verifyNoInteractions(twinVersions);
+    }
+
+    /**
+     * <b>다듬기는 사용자가 시작하는 칸이 아니다.</b> 라운드를 거는 것은 BM 채택뿐이라
+     * ({@code MarketResearchWorker.REFINEMENT_TRIGGER_SUBJECT}) 라운드가 0개면
+     * {@code READY} 가 아니라 {@code NOT_READY} 다 — 「시작하기」를 세워도 누를 문이 없다.
+     */
+    @Test
+    void keepsRefinementNotReadyUntilBusinessModelAdoptionQueuesTheFirstRound() {
+        currentSelection();
+
+        var slot = refinementSlot();
+
+        assertThat(slot.status()).isEqualTo(PipelineModuleStatus.NOT_READY);
+        assertThat(slot.requiredInputs()).containsExactly("conceptRefinementRound");
+        assertThat(slot.nextAction().label()).isEqualTo("컨셉 다듬기");
+        assertThat(slot.nextAction().route()).isEqualTo("/concept-refinement");
+        assertThat(slot.sourceSnapshotId()).isEqualTo("17");
+    }
+
+    /** 라운드가 제안을 들고 <b>열린 채</b> 서 있으면 사람 차례다 — 「진행 중」이 아니다. */
+    @Test
+    void marksRefinementNeedsInputWhileTheOpenRoundWaitsForTheUsersChoice() {
+        currentSelection();
+        ConceptRefinementRound round = mock(ConceptRefinementRound.class);
+        when(round.getId()).thenReturn(5L);
+        when(round.getCreatedAt()).thenReturn(LocalDateTime.of(2026, 8, 16, 9, 0));
+        when(round.getLegalOutcome()).thenReturn(null);
+        when(round.getAcceptedFieldsJson()).thenReturn(null);
+        when(refinement.history(17L)).thenReturn(List.of(round));
+        when(refinement.proposalsOf(round)).thenReturn(proposals());
+
+        var slot = refinementSlot();
+
+        assertThat(slot.status()).isEqualTo(PipelineModuleStatus.NEEDS_INPUT);
+        assertThat(slot.requiredInputs()).isEmpty();
+        assertThat(slot.activeRunId()).isEqualTo("5");
+    }
+
+    /**
+     * <b>전부 거절도 끝난 것이다.</b> {@code decide()} 는 거절만 있으면 라운드를 닫지 않으므로
+     * ({@code legalOutcome == null}) 이것을 「진행 중」으로 읽으면 여정 2번이 영영 안 끝난다.
+     */
+    @Test
+    void completesRefinementWhenTheUserDeclinedEveryProposal() {
+        currentSelection();
+        ConceptRefinementRound round = mock(ConceptRefinementRound.class);
+        when(round.getLegalOutcome()).thenReturn(null);
+        when(round.getAcceptedFieldsJson()).thenReturn("[]");
+        when(refinement.history(17L)).thenReturn(List.of(round));
+        when(refinement.acceptedOf(round)).thenReturn(java.util.Set.of());
+
+        assertThat(refinementSlot().status()).isEqualTo(PipelineModuleStatus.COMPLETED);
+    }
+
+    /** 닫힌 라운드인데 더 돌 수 없으면 끝이다 — 판정은 {@code canRunAnotherRound} 것을 그대로 쓴다. */
+    @Test
+    void completesRefinementWhenTheClosedRoundCannotRunAgain() {
+        currentSelection();
+        ConceptRefinementRound round = mock(ConceptRefinementRound.class);
+        when(round.getLegalOutcome()).thenReturn(ConceptRefinementRound.LegalOutcome.PASSED);
+        when(refinement.history(17L)).thenReturn(List.of(round));
+        when(refinement.canRunAnotherRound(17L)).thenReturn(false);
+
+        assertThat(refinementSlot().status()).isEqualTo(PipelineModuleStatus.COMPLETED);
+
+        when(refinement.canRunAnotherRound(17L)).thenReturn(true);
+        assertThat(refinementSlot().status()).isEqualTo(PipelineModuleStatus.RUNNING);
+    }
+
+    private ConceptPortfolioSelection currentSelection() {
+        when(projects.findByIdAndOwnerIdAndDeletedAtIsNull(41L, 7L))
+            .thenReturn(Optional.of(mock(Project.class)));
+        ConceptPortfolioSelection selection = mock(ConceptPortfolioSelection.class);
+        when(selection.getId()).thenReturn(17L);
+        when(portfolioSelections.findByProjectIdAndIsCurrentTrueAndDeletedAtIsNull(41L))
+            .thenReturn(Optional.of(selection));
+        return selection;
+    }
+
+    private ProjectModuleStatusResponse refinementSlot() {
+        return service.findAll(7L, 41L).stream()
+            .filter(item -> item.module() == PipelineModuleType.CONCEPT_REFINEMENT)
+            .findFirst().orElseThrow();
+    }
+
+    private tools.jackson.databind.JsonNode proposals() {
+        var array = tools.jackson.databind.node.JsonNodeFactory.instance.arrayNode();
+        array.addObject().put("fieldKey", "priceBand");
+        return array;
     }
 
     @Test
