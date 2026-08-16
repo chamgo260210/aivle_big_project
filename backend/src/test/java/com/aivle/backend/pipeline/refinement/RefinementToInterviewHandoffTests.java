@@ -8,7 +8,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.aivle.backend.common.exception.BusinessException;
-import com.aivle.backend.journey.MarketInterviewBoardService;
+import com.aivle.backend.pipeline.market.MarketInterviewBoardService;
 import com.aivle.backend.pipeline.marketseed.application.MarketAnalysisSeedLookup;
 import com.aivle.backend.pipeline.marketseed.domain.MarketAnalysisSeedSnapshot;
 import com.aivle.backend.project.entity.Project;

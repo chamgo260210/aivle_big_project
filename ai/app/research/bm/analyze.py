@@ -12,6 +12,7 @@ import os
 from typing import Any
 
 from openai import AsyncOpenAI
+from pydantic import ValidationError
 
 from .contracts import (
     BMAnalysisResult,
@@ -214,6 +215,7 @@ async def run_bm_analysis(
     resolved: ResolvedBMInput,
     client: AsyncOpenAI | None = None,
     model: str | None = None,
+    diagnostic_context: dict[str, str] | None = None,
 ) -> BMAnalysisResult:
     api = client or get_client()
     payload = resolved.model_dump(mode="json")
@@ -224,7 +226,14 @@ async def run_bm_analysis(
     except Exception:                               # noqa: BLE001 — 9칸 미충족이 여기로 온다
         # **한 번만** 더 묻는다. 이것도 실패하면 원래 예외가 아니라 두 번째 것이 올라가는데,
         # 같은 종류의 사유라 진단이 흐려지지 않는다.
-        parsed = await _parse_once(api, name, payload, reask=_REASK_ONCE)
+        try:
+            parsed = await _parse_once(api, name, payload, reask=_REASK_ONCE)
+        except ValidationError as failure:
+            # 재요청까지 9칸을 못 맞췄다 — 비밀 없는 진단을 남긴다(main 에서 옴).
+            from .diagnostics import log_bm_validation_failure   # noqa: PLC0415
+
+            log_bm_validation_failure(failure, diagnostic_context)
+            raise
 
     # ⚠ 여기서는 **다시 묻지 않는다.** `None` 은 「스키마를 못 맞췄다」가 아니라
     #   「구조화 응답 자체가 안 왔다」이고, 그건 재요청으로 고쳐지는 종류가 아니다.

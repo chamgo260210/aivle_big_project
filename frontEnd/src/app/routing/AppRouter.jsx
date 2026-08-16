@@ -10,19 +10,19 @@ import PublicOnlyRoute from '../../features/auth/PublicOnlyRoute.jsx';
 import { ProjectCreatePage, ProjectListPage } from '../../features/projects/ProjectPages.jsx';
 import { IdeaIntakePage } from '../../features/idea-intake/index.js';
 import { BusinessProposalWorkspace } from '../../features/concept-portfolio/index.js';
-import BusinessValidationPage from '../../features/market/BusinessValidationPage.jsx';
+import MarketResearchPage from '../../features/market/MarketResearchPage.jsx';
+import BmCanvasPage from '../../features/market/BmCanvasPage.jsx';
+import MarketInterviewPage from '../../features/market-interview/MarketInterviewPage.jsx';
 import { MarketingContentPage } from '../../features/marketing-content/index.js';
 import { TechOpsPage } from '../../features/tech-ops/index.js';
 import { FinancePage } from '../../features/finance/index.js';
-import MarketInterviewPage from '../../features/market-interview/MarketInterviewPage.jsx';
+import FinalReportPage from '../../features/final-report/FinalReportPage.jsx';
 import WorkspaceHomePage from '../../features/projects/WorkspaceHomePage.jsx';
 import { AccountSettingsLayout, AccountSettingsRedirect, ProfileSettingsPage, SecuritySettingsPage } from '../../features/settings/AccountSettingsPages.jsx';
 import ProjectSettingsSheet from '../../features/projects/ProjectSettingsSheet.jsx';
 import { ProjectProvider } from '../../features/projects/ProjectContext.jsx';
 import { AuthPlaceholderPage, NotFoundPage } from '../../pages/FoundationPages.jsx';
 import LandingPage from '../../features/landing/LandingPage.jsx';
-import FinancialModulePage from '../../features/financial/module/FinancialModulePage.jsx';
-import '../../features/financial/module/financialModule.css';
 import AdminShell from '../layouts/AdminShell.jsx';
 import AdminOverviewPage from '../../features/admin/pages/AdminOverviewPage.jsx';
 import AdminOperationsPage from '../../features/admin/pages/AdminOperationsPage.jsx';
@@ -51,7 +51,6 @@ export default function AppRouter() {
     <Routes location={backgroundLocation || location}>
       <Route element={<PublicLayout />}>
         <Route index element={<LandingPage />} />
-        <Route path="module" element={<FinancialModulePage />} />
         <Route element={<PublicOnlyRoute />}>
           <Route path="auth/login" element={<LoginPage />} />
           <Route path="auth/signup" element={<SignupPage />} />
@@ -76,12 +75,13 @@ export default function AppRouter() {
             <Route path="idea" element={<IdeaIntakePage />} />
             <Route path="concepts" element={<BusinessProposalWorkspace />} />
             <Route path="concepts/compare" element={<BusinessProposalWorkspace initialMode="compare" />} />
-            {/* 여정 3번. 시장조사와 BM 캔버스가 이 한 화면으로 접혔다. */}
-            <Route path="business-validation" element={<BusinessValidationPage />} />
+            <Route path="market" element={<MarketResearchPage />} />
+            <Route path="business-model" element={<BmCanvasPage />} />
+            <Route path="market-interview" element={<MarketInterviewPage />} />
             <Route path="tech-ops" element={<TechOpsPage />} />
             <Route path="finance" element={<FinancePage />} />
-            <Route path="market-interview" element={<MarketInterviewPage />} />
             <Route path="marketing" element={<MarketingContentPage />} />
+            <Route path="final-report" element={<FinalReportPage />} />
             <Route path="settings" element={<ProjectSettingsSheet />} />
             <Route path="*" element={<ProjectRedirect />} />
           </Route>

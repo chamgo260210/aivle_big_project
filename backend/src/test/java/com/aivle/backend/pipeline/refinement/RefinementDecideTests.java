@@ -6,7 +6,7 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 import com.aivle.backend.common.exception.BusinessException;
-import com.aivle.backend.journey.MarketResearchVersionRepository;
+import com.aivle.backend.pipeline.market.MarketResearchVersionRepository;
 import com.aivle.backend.pipeline.conceptportfolio.selection.application.ConceptPortfolioSelectionService;
 import com.aivle.backend.pipeline.conceptportfolio.selection.application.ConceptPortfolioSelectionTaskFactory;
 import com.aivle.backend.pipeline.conceptportfolio.selection.repository.*;

@@ -1,6 +1,6 @@
 package com.aivle.backend.pipeline.refinement;
 
-import com.aivle.backend.journey.BmPlanPreparationService;
+import com.aivle.backend.pipeline.market.BmPlanPreparationService;
 import com.aivle.backend.pipeline.conceptportfolio.selection.api.ConceptPortfolioSelectionApiModels;
 import com.aivle.backend.pipeline.conceptportfolio.selection.application.ConceptPortfolioSelectionService;
 import java.util.LinkedHashMap;

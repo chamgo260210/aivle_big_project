@@ -13,24 +13,20 @@ export const heroSlides = [
   { title: '마케팅 콘텐츠를 제작하세요', description: '확정 입력과 분석 결과를 바탕으로 콘텐츠를 생성하고 결과를 저장합니다.', kind: 'summary' },
 ];
 
-// 여정 7단계. **정본은 `app/module-status/projectModuleModel.js` 의 PROJECT_MODULES 다** —
-// 그 목록이 바뀌면 여기도 바꾼다. 랜딩은 그 여정을 밖에서 설명하는 글이라 자동으로
-// 따라가지 않는다(2026-08-13 에 실제로 갈라져 있었다: 컨셉 두 칸·시장분석과 BM 두 칸).
 export const workflowSteps = [
-  { number: '01', title: '아이디어를 정리하고 확정합니다.', description: '핵심 문제, 대상 사용자, 아이디어 개요를 확인하고 현재 Idea Brief를 확정합니다.', kind: 'project' },
-  { number: '02', title: '사업안을 만들고 하나를 고릅니다.', description: '법률 근거가 붙은 사업안을 만들어 비교하고, 검증 가설을 확정해 Market Seed를 고정합니다.', kind: 'structure' },
-  { number: '03', title: '사업안을 시장 근거로 검증합니다.', description: '공개 통계·공시에서 관측된 것만 모아 시장을 조사하고, 그 근거로 BM 캔버스 9칸을 채웁니다.', kind: 'review' },
-  { number: '04', title: '기술·운영 입력을 확정합니다.', description: '필수 사실과 결정을 보완해 기술·운영 입력 스냅샷을 만듭니다.', kind: 'summary' },
-  { number: '05', title: '재무 입력을 확정합니다.', description: '검증된 기술·운영 입력을 바탕으로 재무 분석용 스냅샷을 만듭니다.', kind: 'project' },
-  { number: '06', title: '시장 인터뷰로 반응을 듣습니다.', description: '확정된 사업안을 합성 응답자에게 보이고 고정 9문항으로 반응을 모읍니다. 언급 수만 셉니다.', kind: 'structure' },
-  { number: '07', title: '마케팅 콘텐츠를 제작합니다.', description: '확정된 소스 스냅샷으로 콘텐츠를 생성하고 현재 결과를 저장합니다.', kind: 'review' },
+  { number: '01', title: '사업 기획', description: '아이디어를 정리하고 법률 검토가 포함된 사업안을 확정합니다.', kind: 'project' },
+  { number: '02', title: '사업 검증', description: '시장 근거를 수집하고 실행 가능한 사업 모델을 검증합니다.', kind: 'structure' },
+  { number: '03', title: '출시 준비', description: '기술·운영 구성과 재무 전망을 확정해 출시를 준비합니다.', kind: 'review' },
+  { number: '04', title: '가상 인터뷰', description: '가상 패널의 반응과 사용·구매 의향을 확인합니다.', kind: 'summary' },
+  { number: '05', title: '마케팅 전략', description: '확정된 근거를 기반으로 메시지와 콘텐츠를 제작합니다.', kind: 'project' },
+  { number: '06', title: '최종 보고서', description: '각 업무 단계의 정본 결과와 출처를 실무 문서로 정리합니다.', kind: 'summary' },
 ];
 
 export const featureItems = [
   ['Idea Brief', '아이디어 개요, 문제, 대상 사용자를 중심으로 사실과 가정을 분리합니다.', 'wide'],
   ['콘셉트 생성·법률 검토', '법률 검토가 포함된 후보를 생성하고 적격 후보를 비교합니다.', 'wide'],
-  ['Market Seed', '선택과 가설 결정을 하류가 읽는 불변 입력으로 확정합니다.', ''],
-  ['사업 검증', '시장 조사와 BM 캔버스를 한 화면·한 실행으로 돌리고 근거를 칸 옆에 붙입니다.', ''],
+  ['Market Seed', '선택과 가설 결정을 외부 모듈용 불변 입력으로 확정합니다.', ''],
+  ['BM·기술·운영 분석', '외부 분석의 연결 여부, 현재 입력, 실행 상태를 명확히 표시합니다.', ''],
   ['재무 분석', '필수 입력을 사용자가 보완한 뒤 독립 스냅샷으로 확정합니다.', ''],
   ['마케팅 콘텐츠', '현재 소스 스냅샷을 기준으로 콘텐츠를 생성하고 저장합니다.', ''],
 ];

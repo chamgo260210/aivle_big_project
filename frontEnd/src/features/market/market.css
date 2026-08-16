@@ -14,6 +14,7 @@
 .market-page { display: grid; align-content: start; gap: .875rem; min-width: 0; max-width: 920px; }
 .market-page > .pipeline-page-heading { margin-bottom: .5rem; }
 .market-page__actions { display: flex; justify-content: flex-end; gap: .5rem; }
+.market-page__live-progress { display: block; margin-top: .35rem; }
 .market-note { color: var(--color-text-secondary); font-size: .85rem; margin: 0 0 .75rem; }
 .mr-actions { display: flex; justify-content: flex-end; gap: .5rem; }
 
@@ -58,6 +59,7 @@
 }
 
 /* 견본 컨셉 고르기 — 임시 다리. 컨셉이 DB 에서 오면 이 규칙도 같이 사라진다. */
+.market-concept-picker { display: flex; flex-wrap: wrap; gap: .5rem; }
 
 .market-summary { margin: 0; padding-left: 1.1rem; display: grid; gap: .4rem; font-size: .88rem; }
 .market-summary__cell { margin-right: .4rem; padding: .05rem .4rem; border-radius: 3px; background: var(--color-bg-subtle); font-size: .75rem; }
@@ -358,34 +360,14 @@
 .bm-det__m { margin-top: 1rem; color: var(--color-text-primary); font-size: .81rem; line-height: 1.7; }
 .bm-det__m b { margin-right: .4rem; color: var(--color-text-secondary); font-weight: 700; }
 
-
-/* 경쟁 씨앗 — 사용자가 조사 전에 적는 칸. 한 줄이 씨앗 하나다. */
-.competitor-seeds__why,
-.competitor-seeds__hint {
-  margin: 0 0 var(--space-3);
-  color: var(--color-text-secondary);
-  font-size: var(--font-size-small);
-  line-height: 1.6;
-}
-
-.competitor-seeds__row {
-  display: grid;
-  /* 「왜 경쟁인가」가 가장 넓다 — 프롬프트에서 슬롯의 뜻을 정하는 칸이라 짧게 쓰면
-     조사가 엉뚱한 것을 잰다. 칸 너비로 그 사실을 말한다. */
-  grid-template-columns: minmax(8rem, 1fr) minmax(14rem, 2fr) minmax(8rem, 1fr);
-  gap: var(--space-3);
-  margin-bottom: var(--space-3);
-}
-
-@media (max-width: 48rem) {
-  .competitor-seeds__row { grid-template-columns: 1fr; }
-}
-
-.competitor-seeds__actions {
-  display: flex;
-  gap: var(--space-2);
-  margin-bottom: var(--space-3);
-}
+/* 경쟁 씨앗 — main 판 격자(디자인 시스템 폭). 내 판과 겹쳐 한쪽만 남긴다. */
+.competitor-seeds__row { display: grid; grid-template-columns: 1fr 1.5fr 1fr; gap: 12px; margin: 12px 0; }
+.competitor-seeds__actions { display: flex; gap: 8px; margin-top: 12px; }
+.competitor-seeds__hint { color: var(--color-text-muted, #596579); font-size: .9rem; }
+@media (max-width: 760px) { .competitor-seeds__row { grid-template-columns: 1fr; } }
+/* 「왜 경쟁인가」가 가장 넓다 — 프롬프트에서 슬롯의 뜻을 정하는 칸이라 짧게 쓰면
+   조사가 엉뚱한 것을 잰다. 칸 너비로 그 사실을 말한다(main 격자의 1.5fr 가 그 자리다). */
+.competitor-seeds__why { margin: 0 0 12px; color: var(--color-text-secondary); font-size: .9rem; line-height: 1.6; }
 
 /* 옛 `.bv-progress`(두 걸음 알약)는 2026-08-13 에 걷어냈다 — 목업에 없고, 그 자리는
    조사 중 카드의 `.bv-runbar` 가 가져갔다. */
@@ -407,6 +389,11 @@
 .bv-steps__n { color: var(--color-border-strong); font-size: .72rem; font-weight: 800; }
 .bv-steps button.is-on .bv-steps__n { color: var(--color-mint-700); }
 
+/* 다듬기는 사업 모델 탭 «안»의 구획이다 — 페이지 제목이 아니라 구획 제목을 쓴다. */
+.cr-heading { display: grid; gap: .25rem; margin: 2rem 0 .5rem;
+  padding-top: 1.5rem; border-top: 1px solid var(--color-border, #e5e7eb); }
+.cr-heading h3 { margin: 0; }
+.cr-heading span { color: var(--color-text-muted, #6b7280); font-size: .9rem; }
 .cr-outcome { display: flex; align-items: baseline; gap: .5rem; margin: 0; }
 .cr-outcome .market-note { margin: 0; }
 .cr-foot-note { margin: .25rem 0 0; text-align: right; }

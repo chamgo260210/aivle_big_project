@@ -4,7 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
-import com.aivle.backend.journey.MarketResearchVersionRepository;
+import com.aivle.backend.pipeline.market.MarketResearchVersionRepository;
 import com.aivle.backend.pipeline.conceptportfolio.selection.application.ConceptPortfolioSelectionService;
 import com.aivle.backend.pipeline.conceptportfolio.selection.application.ConceptPortfolioSelectionTaskFactory;
 import com.aivle.backend.pipeline.conceptportfolio.selection.domain.ConceptPortfolioSelection;

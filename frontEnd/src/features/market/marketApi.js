@@ -1,16 +1,35 @@
-const base = (projectId) => `/api/v2/projects/${encodeURIComponent(projectId)}`;
+const base = (projectId) => `/api/v3/projects/${encodeURIComponent(projectId)}`;
+// ⚠ **컨셉 다듬기만 v2 다.** `ConceptRefinementController:24` 가 `/api/v2` 에 매핑돼 있고,
+//    전역 prefix 설정은 없다(실측). 여기가 v3 이던 동안 이 넷은 **전부 404 였다** —
+//    부르는 화면이 라우트에 안 붙어 있어서 아무도 못 봤다. 서버 계약을 바꾸는 대신
+//    부르는 쪽을 맞춘다. 이 넷을 부르는 곳은 프론트 한 군데뿐이다.
+const refinementBase = (projectId) => `/api/v2/projects/${encodeURIComponent(projectId)}`;
+const key = () => globalThis.crypto?.randomUUID?.() ?? `market-${Date.now()}-${Math.random()}`;
 
 export function createMarketApi(client, projectId) {
   const root = base(projectId);
+  const refineRoot = refinementBase(projectId);
   return {
-    // 시장조사(1단계) · BM 캔버스(2단계) 둘 다 **202 로 즉시 돌아오고** 화면이 current 를 폴링한다.
+    // 시장조사(1단계) · BM 캔버스(2단계) 둘 다 **202 로 즉시 돌아오고**
+    // Project SSE가 canonical current 재조회를 유도한다.
     // 1단계는 90~266초라 동기로 받을 방법이 없다. timeoutMs 는 **enqueue 응답**에만 걸린다.
-    async startMarketResearch(conceptId, asOf, concept) {
-      return (await client.post(`${root}/market-research`, { conceptId, asOf, concept }, { timeoutMs: 30000 })).data;
+    async startMarketResearch(asOf) {
+      return (await client.post(`${root}/market-research`, { asOf },
+        { timeoutMs: 30000, headers: { 'Idempotency-Key': key() } })).data;
     },
     async currentMarketResearch() { return (await client.get(`${root}/market-research/current`)).data; },
-    async startBusinessModel(conceptId, asOf) {
-      return (await client.post(`${root}/business-model`, { conceptId, asOf }, { timeoutMs: 30000 })).data;
+    async recollectMarketResearch(sourceMarketResearchVersionId, options = {}) {
+      return (await client.post(`${root}/market-research/recollect`, {
+        sourceMarketResearchVersionId, asOf: options.asOf,
+        slots: options.slots ?? '', from: options.from ?? 'a4',
+        slotsFrom: options.slotsFrom ?? 'source',
+      }, { timeoutMs: 30000, headers: { 'Idempotency-Key': key() } })).data;
+    },
+    async currentCompetitorSeeds() { return (await client.get(`${root}/market-research/competitor-seeds`)).data; },
+    async saveCompetitorSeeds(seeds) { return (await client.put(`${root}/market-research/competitor-seeds`, seeds)).data; },
+    async startBusinessModel() {
+      return (await client.post(`${root}/business-model`, {},
+        { timeoutMs: 30000, headers: { 'Idempotency-Key': key() } })).data;
     },
     async currentBusinessModel() { return (await client.get(`${root}/business-model/current`)).data; },
 
@@ -27,14 +46,14 @@ export function createMarketApi(client, projectId) {
     //    `MissingServletRequestParameterException: selectionId`). 아래 finalize 와 같은 모양이다.
     async currentRefinement(selectionId) {
       return (await client.get(
-        `${root}/concept-refinement?selectionId=${encodeURIComponent(selectionId)}`)).data;
+        `${refineRoot}/concept-refinement?selectionId=${encodeURIComponent(selectionId)}`)).data;
     },
     // **실패한 다듬기 라운드를 다시 건다.** 사용자가 눌러야만 돈다 — 자동 재시도는 없다.
     // 돌고 있거나·이미 됐거나·시도 상한(3)을 다 썼으면 서버가 409 로 거절한다.
     // ⚠ 위 currentRefinement 와 같은 이유로 selectionId 는 **쿼리 문자열**이다.
     async retryRefinement(selectionId) {
       return (await client.post(
-        `${root}/concept-refinement/retry?selectionId=${encodeURIComponent(selectionId)}`,
+        `${refineRoot}/concept-refinement/retry?selectionId=${encodeURIComponent(selectionId)}`,
         {}, { timeoutMs: 30000 })).data;
     },
     // **사람이 고른 것만 반영한다.** 이 단계의 정의 그 자체다 — 이 문이 생기기 전에는
@@ -43,12 +62,12 @@ export function createMarketApi(client, projectId) {
     // ⚠ 한 라운드는 **한 번만** 받는다 — 두 번째는 서버가 거절한다.
     async decideRefinement(selectionId, round, fieldKeys, idempotencyKey) {
       return (await client.post(
-        `${root}/concept-refinement/decide?selectionId=${encodeURIComponent(selectionId)}`,
+        `${refineRoot}/concept-refinement/decide?selectionId=${encodeURIComponent(selectionId)}`,
         { round, fieldKeys, idempotencyKey }, { timeoutMs: 30000 })).data;
     },
     // 시장 검증 후 **최종 확정**. 법률보고서 재확정 → 시드 재발급을 순서대로 태운다.
     async finalizeRefinedConcept(selectionId, idempotencyKey) {
-      return (await client.post(`${root}/concept-refinement/finalize?selectionId=${encodeURIComponent(selectionId)}`,
+      return (await client.post(`${refineRoot}/concept-refinement/finalize?selectionId=${encodeURIComponent(selectionId)}`,
         { idempotencyKey }, { timeoutMs: 30000 })).data;
     },
 
@@ -57,14 +76,6 @@ export function createMarketApi(client, projectId) {
     async currentBmPlan() { return (await client.get(`${root}/business-model/plan`)).data; },
     async saveBmPlan(plan, constraints) {
       return (await client.patch(`${root}/business-model/plan`, { plan, constraints })).data;
-    },
-
-    // 경쟁 씨앗 — 슬롯 하네스가 F_COMP 슬롯의 subject 를 여기서 가져온다.
-    // 비워 두면 모델이 실명을 지어내거나 자리표시자를 만든다(2026-08-08 실측).
-    // ⚠ **통째로 갈아 끼운다.** 순서가 값이라 한 줄씩 고치는 길을 만들지 않는다.
-    async currentCompetitorSeeds() { return (await client.get(`${root}/competitor-seeds`)).data; },
-    async saveCompetitorSeeds(seeds) {
-      return (await client.put(`${root}/competitor-seeds`, seeds)).data;
     },
   };
 }

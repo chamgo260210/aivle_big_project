@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.aivle.backend.common.exception.BusinessException;
@@ -18,29 +19,38 @@ import com.aivle.backend.pipeline.conceptportfolio.selection.repository.ConceptP
 import com.aivle.backend.pipeline.idea.domain.IdeaBrief;
 import com.aivle.backend.pipeline.idea.domain.IdeaBriefStatus;
 import com.aivle.backend.pipeline.idea.repository.IdeaBriefRepository;
-import com.aivle.backend.journey.MarketResearchRun;
-import com.aivle.backend.journey.MarketResearchRunRepository;
-import com.aivle.backend.journey.MarketInterviewRunRepository;
 import com.aivle.backend.pipeline.integration.repository.ModuleRunRepository;
 import com.aivle.backend.pipeline.finance.repository.FinancialInputPreparationRepository;
 import com.aivle.backend.pipeline.finance.repository.FinancialInputSnapshotRepository;
-import com.aivle.backend.finance.repository.FinancialAnalysisReportRepository;
 import com.aivle.backend.pipeline.marketing.repository.MarketingContentRepository;
 import com.aivle.backend.pipeline.marketing.repository.MarketingSourceSnapshotRepository;
+import com.aivle.backend.pipeline.marketing.domain.MarketingContent;
+import com.aivle.backend.pipeline.marketing.domain.MarketingContentType;
 import com.aivle.backend.pipeline.marketseed.repository.MarketAnalysisSeedSnapshotRepository;
 import com.aivle.backend.pipeline.marketseed.domain.MarketAnalysisSeedSnapshot;
+import com.aivle.backend.pipeline.market.MarketResearchRunRepository;
+import com.aivle.backend.pipeline.market.MarketResearchVersionRepository;
+import com.aivle.backend.pipeline.market.MarketInterviewRunRepository;
+import com.aivle.backend.pipeline.market.TwinSurveyVersionRepository;
 import com.aivle.backend.pipeline.selection.repository.ConceptSelectionRepository;
 import com.aivle.backend.pipeline.selection.domain.ConceptSelection;
 import com.aivle.backend.pipeline.techops.domain.TechOpsInputPreparation;
+import com.aivle.backend.pipeline.techops.domain.TechOpsInputSnapshot;
 import com.aivle.backend.pipeline.finance.domain.FinancialInputPreparation;
 import com.aivle.backend.pipeline.techops.repository.TechOpsInputPreparationRepository;
 import com.aivle.backend.pipeline.techops.repository.TechOpsInputSnapshotRepository;
+import com.aivle.backend.pipeline.techops.repository.TechOpsAdvisoryReportRepository;
 import com.aivle.backend.project.entity.Project;
-import com.aivle.backend.taskrun.domain.TaskRun;
 import com.aivle.backend.project.repository.ProjectRepository;
+import com.aivle.backend.taskrun.repository.TaskRunRepository;
+import com.aivle.backend.taskrun.domain.TaskRun;
+import com.aivle.backend.taskrun.domain.TaskRunState;
+import com.aivle.backend.taskrun.domain.TaskType;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 
 class ProjectModuleStatusServiceTests {
     private final ProjectRepository projects = mock(ProjectRepository.class);
@@ -50,20 +60,22 @@ class ProjectModuleStatusServiceTests {
     private final ConceptSelectionRepository selections = mock(ConceptSelectionRepository.class);
     private final MarketAnalysisSeedSnapshotRepository snapshots = mock(MarketAnalysisSeedSnapshotRepository.class);
     private final ModuleRunRepository runs = mock(ModuleRunRepository.class);
+    private final MarketResearchRunRepository marketRuns = mock(MarketResearchRunRepository.class);
+    private final MarketResearchVersionRepository marketVersions = mock(MarketResearchVersionRepository.class);
+    private final MarketInterviewRunRepository interviewRuns = mock(MarketInterviewRunRepository.class);
+    private final TwinSurveyVersionRepository twinVersions = mock(TwinSurveyVersionRepository.class);
     private final MarketingContentRepository marketing = mock(MarketingContentRepository.class);
     private final MarketingSourceSnapshotRepository marketingSources = mock(MarketingSourceSnapshotRepository.class);
     private final TechOpsInputPreparationRepository techOpsPreparations = mock(TechOpsInputPreparationRepository.class);
     private final TechOpsInputSnapshotRepository techOpsSnapshots = mock(TechOpsInputSnapshotRepository.class);
+    private final TechOpsAdvisoryReportRepository techOpsAdvisories = mock(TechOpsAdvisoryReportRepository.class);
     private final FinancialInputPreparationRepository financialPreparations = mock(FinancialInputPreparationRepository.class);
     private final FinancialInputSnapshotRepository financialSnapshots = mock(FinancialInputSnapshotRepository.class);
-    private final FinancialAnalysisReportRepository financialAnalysisReports = mock(FinancialAnalysisReportRepository.class);
-    private final MarketResearchRunRepository marketResearchRuns = mock(MarketResearchRunRepository.class);
-    private final MarketInterviewRunRepository marketInterviewRuns = mock(MarketInterviewRunRepository.class);
+    private final TaskRunRepository taskRuns = mock(TaskRunRepository.class);
     private final ProjectModuleStatusService service = new ProjectModuleStatusService(
-        projects, briefs, conceptRuns, portfolioSelections, selections, snapshots, runs, marketing, marketingSources,
-        techOpsPreparations, techOpsSnapshots, financialPreparations, financialSnapshots,
-        financialAnalysisReports,
-        marketResearchRuns, marketInterviewRuns);
+        projects, briefs, conceptRuns, portfolioSelections, selections, snapshots, runs,
+        marketRuns, marketVersions, interviewRuns, twinVersions, marketing, marketingSources,
+        techOpsPreparations, techOpsSnapshots, techOpsAdvisories, financialPreparations, financialSnapshots, taskRuns);
 
     @Test
     void derivesIdeaAndConceptFromCanonicalDomainsWithoutProjectDescription() {
@@ -88,8 +100,8 @@ class ProjectModuleStatusServiceTests {
 
         assertThat(modules).extracting(ProjectModuleStatusResponse::module).containsExactly(
             PipelineModuleType.IDEA, PipelineModuleType.CONCEPT_PORTFOLIO,
-            PipelineModuleType.MARKET_ANALYSIS, PipelineModuleType.TECH_OPS,
-            PipelineModuleType.FINANCE, PipelineModuleType.PANEL_SURVEY, PipelineModuleType.MARKETING);
+            PipelineModuleType.MARKET_ANALYSIS, PipelineModuleType.BUSINESS_MODEL, PipelineModuleType.TECH_OPS,
+            PipelineModuleType.FINANCE, PipelineModuleType.TWIN_SURVEY, PipelineModuleType.MARKETING);
         assertThat(modules.get(0).status()).isEqualTo(PipelineModuleStatus.COMPLETED);
         assertThat(modules.get(0).confirmedSnapshotId()).isEqualTo("brief-snapshot");
         assertThat(modules.get(1).status()).isEqualTo(PipelineModuleStatus.RUNNING);
@@ -107,11 +119,9 @@ class ProjectModuleStatusServiceTests {
         assertThat(modules.get(1).status()).isEqualTo(PipelineModuleStatus.NOT_READY);
         assertThat(modules.get(3).status()).isEqualTo(PipelineModuleStatus.NOT_READY);
         assertThat(modules.get(4).status()).isEqualTo(PipelineModuleStatus.NOT_READY);
-        // 2=사업 검증, 3=기술·운영, 4=재무, 5=시장 인터뷰, 6=마케팅 — 시장분석과 BM 이
-        // 한 칸으로 접히면서 인덱스가 또 한 번 당겨졌다. 칸은 일곱이다.
-        assertThat(modules).hasSize(7);
         assertThat(modules.get(5).status()).isEqualTo(PipelineModuleStatus.NOT_READY);
         assertThat(modules.get(6).status()).isEqualTo(PipelineModuleStatus.NOT_READY);
+        assertThat(modules.get(7).status()).isEqualTo(PipelineModuleStatus.NOT_READY);
     }
 
     @Test
@@ -164,14 +174,40 @@ class ProjectModuleStatusServiceTests {
         assertThat(techOps.nextAction().route()).isEqualTo("/tech-ops");
     }
 
-    /** 재무는 「사업 검증」이 끝나야 열린다 — 게이트는 검증 실행(BM)이지 기술·운영 스냅샷이 아니다. */
     @Test
-    void exposesIndependentFinancialPreparationStatusAfterBusinessValidationSucceeds() {
+    void exposesFinancialPreparationStatusWithoutTechOpsSnapshot() {
         when(projects.findByIdAndOwnerIdAndDeletedAtIsNull(41L, 7L)).thenReturn(Optional.of(mock(Project.class)));
+        ConceptSelection selection = mock(ConceptSelection.class); MarketAnalysisSeedSnapshot seed = mock(MarketAnalysisSeedSnapshot.class);
         FinancialInputPreparation preparation = mock(FinancialInputPreparation.class);
-        succeededValidationRun(31L);
-        when(financialPreparations.findByProjectIdAndSourceMarketResearchRunIdAndDeletedAtIsNull(41L, 31L))
+        var marketRun = mock(com.aivle.backend.pipeline.market.MarketResearchRun.class);
+        var bmRun = mock(com.aivle.backend.pipeline.market.MarketResearchRun.class);
+        var marketVersion = mock(com.aivle.backend.pipeline.market.MarketResearchVersion.class);
+        var bmVersion = mock(com.aivle.backend.pipeline.market.MarketResearchVersion.class);
+        var marketTask = mock(com.aivle.backend.taskrun.domain.TaskRun.class);
+        var bmTask = mock(com.aivle.backend.taskrun.domain.TaskRun.class);
+        when(selection.getId()).thenReturn(13L); when(seed.getId()).thenReturn("market-seed-1");
+        when(selections.findByProjectIdAndCurrentSelectionTrueAndDeletedAtIsNull(41L)).thenReturn(Optional.of(selection));
+        when(snapshots.findBySelectionIdAndProjectIdAndDeletedAtIsNull(13L, 41L)).thenReturn(Optional.of(seed));
+        when(marketRun.getId()).thenReturn(300L);
+        when(marketRun.getSourceMarketSeedSnapshotId()).thenReturn("market-seed-1");
+        when(marketRun.getTaskRun()).thenReturn(marketTask); when(marketTask.getState()).thenReturn(com.aivle.backend.taskrun.domain.TaskRunState.SUCCEEDED);
+        when(marketTask.getId()).thenReturn("market-task");
+        when(marketVersion.getId()).thenReturn(101L); when(marketVersion.getSourceRun()).thenReturn(marketRun);
+        when(bmRun.getId()).thenReturn(301L); when(bmRun.getSourceMarketVersionId()).thenReturn(101L);
+        when(bmRun.getTaskRun()).thenReturn(bmTask); when(bmTask.getState()).thenReturn(com.aivle.backend.taskrun.domain.TaskRunState.SUCCEEDED);
+        when(bmTask.getId()).thenReturn("bm-task");
+        when(bmVersion.getId()).thenReturn(201L);
+        when(marketRuns.findTopByProjectIdAndKindAndDeletedAtIsNullOrderByCreatedAtDescIdDesc(
+            41L, com.aivle.backend.pipeline.market.MarketResearchRun.Kind.FULL)).thenReturn(Optional.of(marketRun));
+        when(marketRuns.findTopByProjectIdAndKindAndDeletedAtIsNullOrderByCreatedAtDescIdDesc(
+            41L, com.aivle.backend.pipeline.market.MarketResearchRun.Kind.BM)).thenReturn(Optional.of(bmRun));
+        when(marketVersions.findTopByProjectIdAndKindAndDeletedAtIsNullOrderByVersionNumberDesc(
+            41L, com.aivle.backend.pipeline.market.MarketResearchRun.Kind.FULL)).thenReturn(Optional.of(marketVersion));
+        when(marketVersions.findBySourceRunIdAndDeletedAtIsNull(301L)).thenReturn(Optional.of(bmVersion));
+        when(financialPreparations.findFirstByProjectIdAndSourceMarketResearchVersionIdAndSourceBusinessModelVersionIdAndDeletedAtIsNullOrderByCreatedAtAsc(
+            41L, 101L, 201L))
             .thenReturn(Optional.of(preparation));
+        when(preparation.getId()).thenReturn("finance-prep-1");
 
         var finance = service.findAll(7L, 41L).stream()
             .filter(item -> item.module() == PipelineModuleType.FINANCE).findFirst().orElseThrow();
@@ -179,137 +215,121 @@ class ProjectModuleStatusServiceTests {
         assertThat(finance.status()).isEqualTo(PipelineModuleStatus.NEEDS_INPUT);
         assertThat(finance.requiredInputs()).containsExactly("financialRequiredInputs");
         assertThat(finance.nextAction().route()).isEqualTo("/finance");
-    }
 
-    /** 검증이 끝나기 전에는 재무가 「사업 검증 결과」를 가리킨다 — 없어진 BM 칸이 아니라. */
-    @Test
-    void financeGateNamesTheBusinessValidationResultBeforeValidationSucceeds() {
-        when(projects.findByIdAndOwnerIdAndDeletedAtIsNull(41L, 7L)).thenReturn(Optional.of(mock(Project.class)));
-
-        var finance = service.findAll(7L, 41L).stream()
+        TaskRun estimate = mock(TaskRun.class);
+        when(estimate.getId()).thenReturn("finance-estimate-task");
+        when(estimate.getSubjectType()).thenReturn("FINANCIAL_PREPARATION");
+        when(estimate.getSubjectId()).thenReturn("finance-prep-1");
+        when(estimate.getState()).thenReturn(TaskRunState.RUNNING);
+        when(taskRuns.findFirstByProjectIdAndTaskTypeInAndDeletedAtIsNullOrderByCreatedAtDescIdDesc(
+            41L, List.of(TaskType.FINANCE_ESTIMATE))).thenReturn(Optional.of(estimate));
+        finance = service.findAll(7L, 41L).stream()
             .filter(item -> item.module() == PipelineModuleType.FINANCE).findFirst().orElseThrow();
+        assertThat(finance.status()).isEqualTo(PipelineModuleStatus.RUNNING);
+        assertThat(finance.activeTaskRunId()).isEqualTo("finance-estimate-task");
 
+        when(estimate.getState()).thenReturn(TaskRunState.FAILED);
+        finance = service.findAll(7L, 41L).stream()
+            .filter(item -> item.module() == PipelineModuleType.FINANCE).findFirst().orElseThrow();
+        assertThat(finance.status()).isEqualTo(PipelineModuleStatus.NEEDS_INPUT);
+        assertThat(finance.activeTaskRunId()).isNull();
+
+        var financialSnapshot = mock(com.aivle.backend.pipeline.finance.domain.FinancialInputSnapshot.class);
+        when(financialSnapshot.getId()).thenReturn("finance-snapshot-1");
+        when(financialSnapshots.findFirstByProjectIdAndSourceMarketResearchVersionIdAndSourceBusinessModelVersionIdAndDeletedAtIsNullOrderByFinalizedAtAsc(
+            41L, 101L, 201L)).thenReturn(Optional.of(financialSnapshot));
+        TaskRun report = mock(TaskRun.class);
+        when(report.getId()).thenReturn("finance-report-task");
+        when(report.getState()).thenReturn(TaskRunState.RUNNING);
+        when(taskRuns.findFirstByProjectIdAndSubjectTypeAndSubjectIdAndDeletedAtIsNullOrderByCreatedAtDescIdDesc(
+            41L, "FINANCIAL_ANALYSIS_REPORT", "finance-snapshot-1")).thenReturn(Optional.of(report));
+        finance = service.findAll(7L, 41L).stream()
+            .filter(item -> item.module() == PipelineModuleType.FINANCE).findFirst().orElseThrow();
+        assertThat(finance.status()).isEqualTo(PipelineModuleStatus.RUNNING);
+        assertThat(finance.activeTaskRunId()).isEqualTo("finance-report-task");
+
+        var previousMarketRun = mock(com.aivle.backend.pipeline.market.MarketResearchRun.class);
+        when(previousMarketRun.getId()).thenReturn(299L);
+        when(previousMarketRun.getSourceMarketSeedSnapshotId()).thenReturn("market-seed-1");
+        when(marketVersion.getSourceRun()).thenReturn(previousMarketRun);
+        finance = service.findAll(7L, 41L).stream()
+            .filter(item -> item.module() == PipelineModuleType.FINANCE).findFirst().orElseThrow();
         assertThat(finance.status()).isEqualTo(PipelineModuleStatus.NOT_READY);
-        assertThat(finance.requiredInputs()).containsExactly("businessValidationResult");
     }
 
     /**
-     * 트윈 게이트는 컨셉·재무 <b>둘 다</b> 본다. 재무 스냅샷은 구조상 컨셉 없이는 생기지 않으므로
-     * 상태는 어차피 NOT_READY 지만, 아무것도 없을 때 «재무 스냅샷» 하나만 가리키면
-     * 사용자는 갈 수 없는 문을 본다. 빠진 것을 여정 순서대로 다 센다.
+     * <b>여정 4번 칸은 시장 인터뷰를 본다.</b> (2026-08-16)
+     *
+     * <p>칸은 그대로인데 안에 든 것이 바뀌었다 — 트윈 패널 조사는 도달 불가로 남았고
+     * 실제로 도는 것은 {@code MarketInterviewRun} 이다. 이 칸이 계속 트윈을 보고 있으면
+     * 인터뷰를 돌려도 화면은 「시작 가능」에 머문다.
+     *
+     * <p>⚠ enum 값 이름 {@code TWIN_SURVEY} 는 <b>그대로다</b> — 값 이름이 상태 API 계약이다.
+     * 옮긴 것은 실행 원천과 라벨·경로뿐이다.
      */
     @Test
-    void panelSurveyGateNamesEveryMissingInputInJourneyOrder() {
-        when(projects.findByIdAndOwnerIdAndDeletedAtIsNull(41L, 7L)).thenReturn(Optional.of(mock(Project.class)));
-
-        var twin = panelSurvey();
-
-        assertThat(twin.status()).isEqualTo(PipelineModuleStatus.NOT_READY);
-        assertThat(twin.requiredInputs())
-            .containsExactly("marketAnalysisSeedSnapshotId", "financialSnapshotId");
-        assertThat(twin.nextAction().route()).isEqualTo("/market-interview");
-    }
-
-    @Test
-    void panelSurveyGateAsksOnlyForFinanceOnceTheRefinedConceptIsConfirmed() {
-        when(projects.findByIdAndOwnerIdAndDeletedAtIsNull(41L, 7L)).thenReturn(Optional.of(mock(Project.class)));
+    void readsJourneyInterviewSlotFromMarketInterviewRunAndPointsAtItsRoute() {
+        when(projects.findByIdAndOwnerIdAndDeletedAtIsNull(41L, 7L))
+            .thenReturn(Optional.of(mock(Project.class)));
         ConceptSelection selection = mock(ConceptSelection.class);
         MarketAnalysisSeedSnapshot seed = mock(MarketAnalysisSeedSnapshot.class);
-        when(selection.getId()).thenReturn(13L); when(seed.getId()).thenReturn("market-seed-1");
-        when(seed.isRefinementApplied()).thenReturn(true);
-        when(selections.findByProjectIdAndCurrentSelectionTrueAndDeletedAtIsNull(41L)).thenReturn(Optional.of(selection));
-        when(snapshots.findBySelectionIdAndProjectIdAndDeletedAtIsNull(13L, 41L)).thenReturn(Optional.of(seed));
+        when(selection.getId()).thenReturn(13L);
+        when(seed.getId()).thenReturn("market-seed-1");
+        when(selections.findByProjectIdAndCurrentSelectionTrueAndDeletedAtIsNull(41L))
+            .thenReturn(Optional.of(selection));
+        when(snapshots.findBySelectionIdAndProjectIdAndDeletedAtIsNull(13L, 41L))
+            .thenReturn(Optional.of(seed));
 
-        var twin = panelSurvey();
+        var slot = service.findAll(7L, 41L).stream()
+            .filter(item -> item.module() == PipelineModuleType.TWIN_SURVEY).findFirst().orElseThrow();
+        assertThat(slot.status()).isEqualTo(PipelineModuleStatus.READY);
+        assertThat(slot.activeTaskRunId()).isNull();
+        assertThat(slot.nextAction().label()).isEqualTo("시장 인터뷰");
+        assertThat(slot.nextAction().route()).isEqualTo("/market-interview");
 
-        assertThat(twin.status()).isEqualTo(PipelineModuleStatus.NOT_READY);
-        assertThat(twin.requiredInputs()).containsExactly("financialSnapshotId");
+        var interviewRun = mock(com.aivle.backend.pipeline.market.MarketInterviewRun.class);
+        TaskRun interviewTask = mock(TaskRun.class);
+        when(interviewRun.getId()).thenReturn(31L);
+        when(interviewRun.getTaskRun()).thenReturn(interviewTask);
+        when(interviewTask.getId()).thenReturn("market-interview-task");
+        when(interviewTask.getState()).thenReturn(TaskRunState.RUNNING);
+        when(interviewRuns.findTopByProjectIdAndDeletedAtIsNullOrderByCreatedAtDescIdDesc(41L))
+            .thenReturn(Optional.of(interviewRun));
+
+        slot = service.findAll(7L, 41L).stream()
+            .filter(item -> item.module() == PipelineModuleType.TWIN_SURVEY).findFirst().orElseThrow();
+        assertThat(slot.status()).isEqualTo(PipelineModuleStatus.RUNNING);
+        assertThat(slot.activeRunId()).isEqualTo("31");
+        assertThat(slot.activeTaskRunId()).isEqualTo("market-interview-task");
+
+        when(interviewTask.getState()).thenReturn(TaskRunState.SUCCEEDED);
+        slot = service.findAll(7L, 41L).stream()
+            .filter(item -> item.module() == PipelineModuleType.TWIN_SURVEY).findFirst().orElseThrow();
+        assertThat(slot.status()).isEqualTo(PipelineModuleStatus.COMPLETED);
+        assertThat(slot.activeTaskRunId())
+            .as("끝난 실행은 「지금 도는 것」이 아니다")
+            .isNull();
     }
 
-    /**
-     * <b>다듬기 확정을 안 지난 시드로는 인터뷰가 열리지 않는다.</b> (2026-08-15)
-     *
-     * <p>시드는 두 번 발급된다 — 사업안을 고른 직후 한 번, 다듬기 끝에 「이 컨셉으로 확정하기」로
-     * 한 번. 앞의 것으로 열어 주면 사용자는 <b>다듬기 전 사업안</b>을 소비자에게 물어보게 되고,
-     * 인터뷰는 출시 전 마지막 확인이라 그 답은 출시 판단에 쓸 수 없다.
-     *
-     * <p>빠진 것의 이름이 「시드가 없다」와 갈라져야 한다 — 갈 곳이 사업안 화면과 사업 검증
-     * 화면으로 서로 다르다.
-     */
+    /** 트윈 조사는 도달 불가로 남는다 — 이 칸이 그것을 보고 상태를 정하면 안 된다. */
     @Test
-    void panelSurveyGateBlocksASeedThatNeverPassedRefinement() {
-        when(projects.findByIdAndOwnerIdAndDeletedAtIsNull(41L, 7L)).thenReturn(Optional.of(mock(Project.class)));
+    void ignoresTwinSurveyRunsForTheJourneyInterviewSlot() {
+        when(projects.findByIdAndOwnerIdAndDeletedAtIsNull(41L, 7L))
+            .thenReturn(Optional.of(mock(Project.class)));
         ConceptSelection selection = mock(ConceptSelection.class);
         MarketAnalysisSeedSnapshot seed = mock(MarketAnalysisSeedSnapshot.class);
-        when(selection.getId()).thenReturn(13L); when(seed.getId()).thenReturn("market-seed-1");
-        when(seed.isRefinementApplied()).thenReturn(false);
-        when(selections.findByProjectIdAndCurrentSelectionTrueAndDeletedAtIsNull(41L)).thenReturn(Optional.of(selection));
-        when(snapshots.findBySelectionIdAndProjectIdAndDeletedAtIsNull(13L, 41L)).thenReturn(Optional.of(seed));
+        when(selection.getId()).thenReturn(13L);
+        when(seed.getId()).thenReturn("market-seed-1");
+        when(selections.findByProjectIdAndCurrentSelectionTrueAndDeletedAtIsNull(41L))
+            .thenReturn(Optional.of(selection));
+        when(snapshots.findBySelectionIdAndProjectIdAndDeletedAtIsNull(13L, 41L))
+            .thenReturn(Optional.of(seed));
 
-        var twin = panelSurvey();
+        var slot = service.findAll(7L, 41L).stream()
+            .filter(item -> item.module() == PipelineModuleType.TWIN_SURVEY).findFirst().orElseThrow();
 
-        assertThat(twin.status()).isEqualTo(PipelineModuleStatus.NOT_READY);
-        assertThat(twin.requiredInputs())
-            .containsExactly("refinedConceptConfirmation", "financialSnapshotId");
-    }
-
-    /**
-     * 시장조사만 끝난 상태는 「사업 검증」 전체로는 아직 안 끝난 것이다 — 다음 걸음(BM)이 남아 있다.
-     * COMPLETED 로 보이면 사용자는 끝나지도 않은 검증을 끝났다고 읽는다.
-     */
-    @Test
-    void businessValidationStaysReadyWhileOnlyTheMarketResearchLegSucceeded() {
-        when(projects.findByIdAndOwnerIdAndDeletedAtIsNull(41L, 7L)).thenReturn(Optional.of(mock(Project.class)));
-        MarketResearchRun marketRun = mock(MarketResearchRun.class);
-        TaskRun marketTaskRun = taskRun("task-market");
-        when(marketRun.getState()).thenReturn(MarketResearchRun.State.SUCCEEDED);
-        when(marketRun.getId()).thenReturn(29L);
-        when(marketRun.getTaskRun()).thenReturn(marketTaskRun);
-        when(marketResearchRuns.findTopByProjectIdAndKindAndDeletedAtIsNullOrderByCreatedAtDescIdDesc(
-            41L, MarketResearchRun.Kind.FULL)).thenReturn(Optional.of(marketRun));
-
-        var validation = businessValidation();
-
-        assertThat(validation.status()).isEqualTo(PipelineModuleStatus.READY);
-        assertThat(validation.nextAction().route()).isEqualTo("/business-validation");
-    }
-
-    /** BM 까지 끝나야 칸이 완료다. 그 실행이 칸의 얼굴이 된다. */
-    @Test
-    void businessValidationCompletesOnlyOnceTheBusinessModelLegSucceeded() {
-        when(projects.findByIdAndOwnerIdAndDeletedAtIsNull(41L, 7L)).thenReturn(Optional.of(mock(Project.class)));
-        succeededValidationRun(31L);
-
-        var validation = businessValidation();
-
-        assertThat(validation.status()).isEqualTo(PipelineModuleStatus.COMPLETED);
-        assertThat(validation.activeRunId()).isEqualTo("31");
-    }
-
-    private void succeededValidationRun(long runId) {
-        MarketResearchRun businessRun = mock(MarketResearchRun.class);
-        TaskRun businessTaskRun = taskRun("task-bm");
-        when(businessRun.getState()).thenReturn(MarketResearchRun.State.SUCCEEDED);
-        when(businessRun.getId()).thenReturn(runId);
-        when(businessRun.getTaskRun()).thenReturn(businessTaskRun);
-        when(marketResearchRuns.findTopByProjectIdAndKindAndDeletedAtIsNullOrderByCreatedAtDescIdDesc(
-            41L, MarketResearchRun.Kind.BM)).thenReturn(Optional.of(businessRun));
-    }
-
-    private TaskRun taskRun(String id) {
-        TaskRun taskRun = mock(TaskRun.class);
-        when(taskRun.getId()).thenReturn(id);
-        return taskRun;
-    }
-
-    private ProjectModuleStatusResponse businessValidation() {
-        return service.findAll(7L, 41L).stream()
-            .filter(item -> item.module() == PipelineModuleType.MARKET_ANALYSIS).findFirst().orElseThrow();
-    }
-
-    private ProjectModuleStatusResponse panelSurvey() {
-        return service.findAll(7L, 41L).stream()
-            .filter(item -> item.module() == PipelineModuleType.PANEL_SURVEY).findFirst().orElseThrow();
+        assertThat(slot.status()).isEqualTo(PipelineModuleStatus.READY);
+        verifyNoInteractions(twinVersions);
     }
 
     @Test
@@ -318,5 +338,20 @@ class ProjectModuleStatusServiceTests {
         assertThatThrownBy(() -> service.findAll(8L, 41L))
             .isInstanceOfSatisfying(BusinessException.class,
                 exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.PROJECT_NOT_FOUND));
+    }
+
+    @Test
+    void keepsCompletedMarketingContentCompleteWhenTheLatestVisualTaskFails() {
+        MarketingContent content = MarketingContent.queued("content-1", 41L, "source-1", "sha256:source",
+            "{}", "{}", MarketingContentType.SOCIAL_POST, "SOCIAL", "title", 7L);
+        content.start();
+        content.completeRevision();
+        TaskRun visualTask = mock(TaskRun.class);
+        when(visualTask.getState()).thenReturn(TaskRunState.FAILED);
+
+        PipelineModuleStatus status = ReflectionTestUtils.invokeMethod(
+            service, "marketingStatus", content, "source-1", visualTask);
+
+        assertThat(status).isEqualTo(PipelineModuleStatus.COMPLETED);
     }
 }

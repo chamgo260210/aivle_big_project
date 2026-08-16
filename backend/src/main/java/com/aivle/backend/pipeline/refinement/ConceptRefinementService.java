@@ -2,9 +2,9 @@ package com.aivle.backend.pipeline.refinement;
 
 import com.aivle.backend.common.exception.BusinessException;
 import com.aivle.backend.common.exception.ErrorCode;
-import com.aivle.backend.journey.MarketResearchRun;
-import com.aivle.backend.journey.MarketResearchVersion;
-import com.aivle.backend.journey.MarketResearchVersionRepository;
+import com.aivle.backend.pipeline.market.MarketResearchRun;
+import com.aivle.backend.pipeline.market.MarketResearchVersion;
+import com.aivle.backend.pipeline.market.MarketResearchVersionRepository;
 import com.aivle.backend.pipeline.conceptportfolio.selection.application.ConceptPortfolioSelectionTaskFactory;
 import com.aivle.backend.pipeline.conceptportfolio.selection.domain.ConceptPortfolioSelection;
 import com.aivle.backend.pipeline.conceptportfolio.selection.repository.ConceptPortfolioSelectionRepository;
@@ -219,8 +219,12 @@ public class ConceptRefinementService {
         boolean running = attempts.stream().anyMatch(run -> !isTerminal(run.getState()));
         boolean succeeded = attempts.stream().anyMatch(run -> run.getState() == TaskRunState.SUCCEEDED);
         boolean failed = !running && !succeeded;
+        // ⚠ 예전에는 `getLastErrorReason()`(사람이 읽는 사유)을 넘겼는데, main 병합에서
+        //   `task_runs.last_error_reason` 컬럼이 사라졌다(내 V12 가 main 마이그레이션 집합에
+        //   없다). 남은 것은 **코드**뿐이라 화면 문구가 그만큼 거칠어진다 —
+        //   사유를 되살리려면 컬럼부터 새 마이그레이션으로 다시 세워야 한다.
         return new RetryStatus(failed, failed && attempts.size() < MAX_ROUND_ATTEMPTS,
-            attempts.size(), MAX_ROUND_ATTEMPTS, failed ? last.getLastErrorReason() : null);
+            attempts.size(), MAX_ROUND_ATTEMPTS, failed ? last.getLastErrorCode() : null);
     }
 
     /**
@@ -348,6 +352,23 @@ public class ConceptRefinementService {
      *
      * @return 새로 건 라운드의 TaskRun. 걸 이유가 없었으면 비어 있다.
      */
+    /**
+     * <b>워커가 부르는 문.</b> {@link #startFirstRound} 를 <b>자기 트랜잭션 안에서</b> 돌린다.
+     *
+     * <p>왜 따로 두나. {@code startFirstRound} 는 애너테이션이 없어(위 주석 참고) 호출자의
+     * 트랜잭션에 얹히는 것을 전제로 쓰였다. 그런데 실제로 부르는 곳은
+     * {@code MarketResearchWorker} 이고 <b>거기는 트랜잭션 밖</b>이다(AI 호출 자리라 일부러 그렇다).
+     * 그대로 부르면 {@link #supersede} 가 로드한 라운드가 <b>준영속</b>이라 물러남이 저장되지
+     * 않는다 — 조용히 옛 주기가 남고 상한 3을 그쪽이 다 쓴다.
+     *
+     * <p>여기서 트랜잭션을 <b>새로 연다</b>는 것이 요점이다. 시장조사 채택은 이미 커밋된 뒤라,
+     * 이 안에서 무엇이 터져도 <b>이미 지불한 수집 결과는 그대로 남는다.</b>
+     */
+    @Transactional
+    public Optional<TaskRun> startFirstRoundAfterResearch(Long projectId) {
+        return startFirstRound(projectId);
+    }
+
     public Optional<TaskRun> startFirstRound(Long projectId) {
         ConceptPortfolioSelection selection = selections
             .findByProjectIdAndIsCurrentTrueAndDeletedAtIsNull(projectId).orElse(null);

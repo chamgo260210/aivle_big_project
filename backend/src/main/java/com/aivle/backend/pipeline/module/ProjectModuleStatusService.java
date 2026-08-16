@@ -2,11 +2,6 @@ package com.aivle.backend.pipeline.module;
 
 import com.aivle.backend.common.exception.BusinessException;
 import com.aivle.backend.common.exception.ErrorCode;
-import com.aivle.backend.finance.repository.FinancialAnalysisReportRepository;
-import com.aivle.backend.journey.MarketResearchRun;
-import com.aivle.backend.journey.MarketResearchRunRepository;
-import com.aivle.backend.journey.MarketInterviewRun;
-import com.aivle.backend.journey.MarketInterviewRunRepository;
 import com.aivle.backend.pipeline.conceptportfolio.domain.ConceptPortfolioRun;
 import com.aivle.backend.pipeline.conceptportfolio.repository.ConceptPortfolioRunRepository;
 import com.aivle.backend.pipeline.conceptportfolio.selection.domain.ConceptPortfolioSelection;
@@ -24,13 +19,24 @@ import com.aivle.backend.pipeline.marketing.repository.MarketingContentRepositor
 import com.aivle.backend.pipeline.marketing.repository.MarketingSourceSnapshotRepository;
 import com.aivle.backend.pipeline.marketseed.domain.MarketAnalysisSeedSnapshot;
 import com.aivle.backend.pipeline.marketseed.repository.MarketAnalysisSeedSnapshotRepository;
+import com.aivle.backend.pipeline.market.MarketResearchRun;
+import com.aivle.backend.pipeline.market.MarketResearchRunRepository;
+import com.aivle.backend.pipeline.market.MarketResearchVersion;
+import com.aivle.backend.pipeline.market.MarketResearchVersionRepository;
+import com.aivle.backend.pipeline.market.MarketInterviewRun;
+import com.aivle.backend.pipeline.market.MarketInterviewRunRepository;
+import com.aivle.backend.pipeline.market.TwinSurveyVersionRepository;
 import com.aivle.backend.pipeline.module.ProjectModuleStatusResponse.NextAction;
 import com.aivle.backend.pipeline.selection.repository.ConceptSelectionRepository;
 import com.aivle.backend.pipeline.techops.repository.TechOpsInputPreparationRepository;
 import com.aivle.backend.pipeline.techops.repository.TechOpsInputSnapshotRepository;
+import com.aivle.backend.pipeline.techops.repository.TechOpsAdvisoryReportRepository;
 import com.aivle.backend.project.repository.ProjectRepository;
+import com.aivle.backend.taskrun.domain.TaskRun;
+import com.aivle.backend.taskrun.domain.TaskRunState;
+import com.aivle.backend.taskrun.domain.TaskType;
+import com.aivle.backend.taskrun.repository.TaskRunRepository;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -47,15 +53,18 @@ public class ProjectModuleStatusService {
     private final ConceptSelectionRepository selectionRepository;
     private final MarketAnalysisSeedSnapshotRepository marketSeedSnapshotRepository;
     private final ModuleRunRepository moduleRunRepository;
+    private final MarketResearchRunRepository marketResearchRunRepository;
+    private final MarketResearchVersionRepository marketResearchVersionRepository;
+    private final MarketInterviewRunRepository marketInterviewRunRepository;
+    private final TwinSurveyVersionRepository twinSurveyVersionRepository;
     private final MarketingContentRepository marketingRepository;
     private final MarketingSourceSnapshotRepository marketingSourceRepository;
     private final TechOpsInputPreparationRepository techOpsPreparationRepository;
     private final TechOpsInputSnapshotRepository techOpsSnapshotRepository;
+    private final TechOpsAdvisoryReportRepository techOpsAdvisoryReportRepository;
     private final FinancialInputPreparationRepository financialPreparationRepository;
     private final FinancialInputSnapshotRepository financialSnapshotRepository;
-    private final FinancialAnalysisReportRepository financialAnalysisReportRepository;
-    private final MarketResearchRunRepository marketResearchRunRepository;
-    private final MarketInterviewRunRepository marketInterviewRunRepository;
+    private final TaskRunRepository taskRunRepository;
 
     public List<ProjectModuleStatusResponse> findAll(Long userId, Long projectId) {
         projectRepository.findByIdAndOwnerIdAndDeletedAtIsNull(projectId, userId)
@@ -75,22 +84,30 @@ public class ProjectModuleStatusService {
             : legacySelection == null ? null
                 : marketSeedSnapshotRepository.findBySelectionIdAndProjectIdAndDeletedAtIsNull(
                     legacySelection.getId(), projectId).orElse(null);
-        // 시장 인터뷰만 이것을 본다. 다른 칸은 「시드가 있나」로 충분하지만, 인터뷰는 그 시드의
-        // 여섯 칸을 **응답자에게 그대로 보여 주므로** 어느 판의 시드인지가 결과의 뜻을 바꾼다.
-        boolean refinedSeed = selectedSnapshot != null && selectedSnapshot.isRefinementApplied();
+        MarketResearchRun marketRun = marketResearchRunRepository
+            .findTopByProjectIdAndKindAndDeletedAtIsNullOrderByCreatedAtDescIdDesc(
+                projectId, MarketResearchRun.Kind.FULL).orElse(null);
+        MarketResearchRun businessRun = marketResearchRunRepository
+            .findTopByProjectIdAndKindAndDeletedAtIsNullOrderByCreatedAtDescIdDesc(
+                projectId, MarketResearchRun.Kind.BM).orElse(null);
+        MarketResearchVersion latestMarketVersion = marketResearchVersionRepository
+            .findTopByProjectIdAndKindAndDeletedAtIsNullOrderByVersionNumberDesc(
+                projectId, MarketResearchRun.Kind.FULL).orElse(null);
+        MarketResearchVersion currentMarketVersion = latestMarketVersion != null && marketRun != null
+            && java.util.Objects.equals(latestMarketVersion.getSourceRun().getId(), marketRun.getId())
+            && selectedSnapshot != null
+            && selectedSnapshot.getId().equals(latestMarketVersion.getSourceRun().getSourceMarketSeedSnapshotId())
+                ? latestMarketVersion : null;
+        MarketResearchVersion currentBusinessVersion = businessRun == null || currentMarketVersion == null
+            || !currentMarketVersion.getId().equals(businessRun.getSourceMarketVersionId()) ? null
+            : marketResearchVersionRepository.findBySourceRunIdAndDeletedAtIsNull(businessRun.getId()).orElse(null);
         MarketInterviewRun interviewRun = marketInterviewRunRepository
             .findTopByProjectIdAndDeletedAtIsNullOrderByCreatedAtDescIdDesc(projectId).orElse(null);
-        MarketResearchRun marketRun = latestResearchRun(projectId, MarketResearchRun.Kind.FULL);
-        MarketResearchRun businessRun = latestResearchRun(projectId, MarketResearchRun.Kind.BM);
-        // 2-4 부터는 한 실행(VALIDATION)이 두 걸음을 다 돈다. 옛 프로젝트에는 FULL·BM 이
-        // 따로 남아 있으므로 **셋 다 본다** — 새 실행이 있으면 그것이 칸의 얼굴이고,
-        // 없으면 뒤 걸음인 BM, 그것도 없으면 FULL 이다.
-        MarketResearchRun unifiedRun = latestResearchRun(projectId, MarketResearchRun.Kind.VALIDATION);
-        MarketResearchRun validationRun = unifiedRun != null ? unifiedRun
-            : businessRun != null ? businessRun : marketRun;
         ModuleRun techOpsRun = latestRun(projectId, ModuleType.TECH_OPS);
-        ModuleRun financialRun = latestRun(projectId, ModuleType.FINANCIAL_ANALYSIS);
         MarketingContent marketing = marketingRepository.findFirstByProjectIdAndDeletedAtIsNullOrderByCreatedAtDesc(projectId).orElse(null);
+        TaskRun marketingVisualTask = marketing == null ? null : taskRunRepository
+            .findFirstByProjectIdAndTaskTypeAndSubjectTypeAndSubjectIdAndDeletedAtIsNullOrderByCreatedAtDescIdDesc(
+                projectId, TaskType.MARKETING_VISUAL_GENERATION, "MARKETING_VISUAL", marketing.getId()).orElse(null);
         var marketingSource = selectedSnapshot == null ? null
             : marketingSourceRepository.findBySourceMarketSeedSnapshotIdAndProjectIdAndDeletedAtIsNull(
                 selectedSnapshot.getId(), projectId).orElse(null);
@@ -100,34 +117,67 @@ public class ProjectModuleStatusService {
         var techOpsSnapshot = selectedSnapshot == null ? null
             : techOpsSnapshotRepository.findBySourceMarketSeedSnapshotIdAndProjectIdAndDeletedAtIsNull(
                 selectedSnapshot.getId(), projectId).orElse(null);
-        // 재무는 「검증을 끝낸 실행」에 매달린다 — 새 실행이 있으면 그것, 없으면 옛 BM.
-        MarketResearchRun financeSourceRun = succeeded(unifiedRun) ? unifiedRun
-            : succeeded(businessRun) ? businessRun : null;
-        var financialPreparation = financeSourceRun == null ? null
-            : financialPreparationRepository.findByProjectIdAndSourceMarketResearchRunIdAndDeletedAtIsNull(
-                projectId, financeSourceRun.getId()).orElse(null);
-        var financialSnapshot = financeSourceRun == null ? null
-            : financialSnapshotRepository.findBySourceMarketResearchRunIdAndProjectIdAndDeletedAtIsNull(
-                financeSourceRun.getId(), projectId).orElse(null);
+        var techOpsAdvisory = techOpsAdvisoryReportRepository
+            .findFirstByProjectIdAndDeletedAtIsNullOrderByCreatedAtDescIdDesc(projectId).orElse(null);
+        TaskRun techOpsAdvisoryTask = taskRunRepository
+            .findFirstByProjectIdAndTaskTypeAndDeletedAtIsNullOrderByCreatedAtDescIdDesc(
+                projectId, TaskType.TECH_OPS_ADVISORY).orElse(null);
+        var financialPreparation = currentMarketVersion == null || currentBusinessVersion == null
+            ? null : financialPreparationRepository
+                .findFirstByProjectIdAndSourceMarketResearchVersionIdAndSourceBusinessModelVersionIdAndDeletedAtIsNullOrderByCreatedAtAsc(
+                    projectId, currentMarketVersion.getId(), currentBusinessVersion.getId())
+                .orElse(null);
+        var financialSnapshot = currentMarketVersion == null || currentBusinessVersion == null
+            ? null : financialSnapshotRepository
+                .findFirstByProjectIdAndSourceMarketResearchVersionIdAndSourceBusinessModelVersionIdAndDeletedAtIsNullOrderByFinalizedAtAsc(
+                    projectId, currentMarketVersion.getId(), currentBusinessVersion.getId())
+                .orElse(null);
+        TaskRun financialTask = financialSnapshot == null ? null : taskRunRepository
+            .findFirstByProjectIdAndSubjectTypeAndSubjectIdAndDeletedAtIsNullOrderByCreatedAtDescIdDesc(
+                projectId, "FINANCIAL_ANALYSIS_REPORT", financialSnapshot.getId()).orElse(null);
+        TaskRun financialEstimateTask = financialPreparation == null || financialSnapshot != null ? null
+            : latestTask(projectId, "FINANCIAL_PREPARATION", financialPreparation.getId(),
+                TaskType.FINANCE_ESTIMATE);
 
         String confirmedBriefId = brief == null ? null : brief.getConfirmedSnapshotId();
         PipelineModuleStatus conceptStatus = conceptStatus(conceptRun, portfolioSelection, confirmedBriefId);
-        // 시장조사·BM 은 외부 모듈 핸드오프가 아니라 자체 엔진(MARKET_RESEARCH TaskRun)이 돈다.
-        // ⚠ 실행이 있으면 **Seed 확정 여부와 무관하게** 그 실행 상태를 보여준다. 견본 컨셉으로도
-        //   돌 수 있어서, Seed 로 막아 두면 다 끝난 모듈이 「준비 전」으로 보이는 거짓말이 된다.
-        PipelineModuleStatus marketingStatus = marketingStatus(marketing, marketingSource == null ? null : marketingSource.getId());
+        PipelineModuleStatus marketStatus = selectedSnapshot == null ? PipelineModuleStatus.NOT_READY
+            : marketRun == null ? PipelineModuleStatus.READY
+            : analysisStatus(marketRun,
+                !selectedSnapshot.getId().equals(marketRun.getSourceMarketSeedSnapshotId()));
+        PipelineModuleStatus businessModelStatus = currentMarketVersion == null
+            ? PipelineModuleStatus.NOT_READY
+            : businessRun == null ? PipelineModuleStatus.READY
+            : analysisStatus(businessRun,
+                !currentMarketVersion.getId().equals(businessRun.getSourceMarketVersionId()));
+        PipelineModuleStatus interviewStatus = selectedSnapshot == null ? PipelineModuleStatus.NOT_READY
+            : interviewRun == null ? PipelineModuleStatus.READY : interviewStatus(interviewRun);
+        TaskRun activeInterviewTask = interviewRun == null ? null : activeTask(interviewRun.getTaskRun());
+        PipelineModuleStatus marketingStatus = marketingStatus(marketing,
+            marketingSource == null ? null : marketingSource.getId(), marketingVisualTask);
+        boolean techOpsAdvisoryStale = techOpsAdvisory != null && (techOpsSnapshot == null
+            || currentMarketVersion == null || currentBusinessVersion == null || portfolioSelection == null
+            || !techOpsSnapshot.getId().equals(techOpsAdvisory.getTechOpsInputSnapshotId())
+            || !currentMarketVersion.getId().equals(techOpsAdvisory.getSourceMarketResearchVersionId())
+            || !currentBusinessVersion.getId().equals(techOpsAdvisory.getSourceBusinessModelVersionId())
+            || !portfolioSelection.getId().equals(techOpsAdvisory.getSourcePortfolioSelectionId()));
         PipelineModuleStatus techOpsStatus = selectedSnapshot == null ? PipelineModuleStatus.NOT_READY
             : techOpsPreparation == null ? PipelineModuleStatus.READY
             : techOpsSnapshot == null ? PipelineModuleStatus.NEEDS_INPUT
-            : externalStatus(techOpsRun, techOpsSnapshot.getId());
-        boolean financialReportCompleted = financialSnapshot != null && financialAnalysisReportRepository
-            .findFirstByProjectIdAndInputSnapshotIdAndDeletedAtIsNullOrderByCompletedAtDesc(projectId, financialSnapshot.getId()).isPresent();
-        // 재무는 「사업 검증」이 끝나야 열린다.
-        boolean validationCompleted = financeSourceRun != null;
-        PipelineModuleStatus financialStatus = !validationCompleted ? PipelineModuleStatus.NOT_READY
+            : currentMarketVersion == null || currentBusinessVersion == null ? PipelineModuleStatus.NOT_READY
+            : techOpsAdvisoryStale ? PipelineModuleStatus.STALE
+            : techOpsAdvisoryTask == null ? PipelineModuleStatus.READY
+            : taskStatus(techOpsAdvisoryTask.getState());
+        PipelineModuleStatus financialBaseStatus = currentMarketVersion == null || currentBusinessVersion == null
+            ? PipelineModuleStatus.NOT_READY
             : financialPreparation == null ? PipelineModuleStatus.READY
             : financialSnapshot == null ? PipelineModuleStatus.NEEDS_INPUT
-            : financialReportCompleted ? PipelineModuleStatus.COMPLETED : externalStatus(financialRun, financialSnapshot.getId());
+            : financialTask == null ? PipelineModuleStatus.READY : taskStatus(financialTask.getState());
+        TaskRun activeFinancialReportTask = activeTask(financialTask);
+        TaskRun activeFinancialTask = activeFinancialReportTask != null
+            ? activeFinancialReportTask : activeTask(financialEstimateTask);
+        PipelineModuleStatus financialStatus = activeFinancialReportTask != null
+            ? financialBaseStatus : activeOverlay(financialBaseStatus, financialEstimateTask);
 
         return List.of(
             response(projectId, PipelineModuleType.IDEA, ideaStatus(brief),
@@ -144,57 +194,56 @@ public class ProjectModuleStatusService {
                     : conceptRun == null ? null : conceptRun.getActiveTaskRunId(),
                 conceptRun == null ? null : conceptRun.getSourceIdeaBrief().getId(), confirmedBriefId, eligibleCount,
                 conceptRun == null ? null : conceptRun.getUpdatedAt()),
-            // 「시장분석」과 「BM 캔버스」 두 칸은 「사업 검증」 한 칸으로 접혔다(2026-08-13).
-            // ⚠ enum 값 이름 MARKET_ANALYSIS 는 그대로 둔다 — 값 이름이 곧 상태 API 계약이다
-            //   (MARKET_INTERVIEW 선례: 여정 7번도 PANEL_SURVEY 이름을 남긴 채 라벨만 옮겼다).
-            //   BUSINESS_MODEL 은 enum 에 남되 여기서 더는 돌려주지 않는다.
-            response(projectId, PipelineModuleType.MARKET_ANALYSIS,
-                validationStatus(unifiedRun, marketRun, businessRun, selectedSnapshot),
+            response(projectId, PipelineModuleType.MARKET_ANALYSIS, marketStatus,
                 selectedSnapshot == null ? List.of("marketAnalysisSeedSnapshotId") : List.of(),
-                new NextAction("사업 검증 실행", "/business-validation"),
-                validationRun == null ? null : String.valueOf(validationRun.getId()),
-                validationRun == null ? null : validationRun.getTaskRun().getId(),
+                new NextAction("시장분석", "/market"), marketRun == null ? null : String.valueOf(marketRun.getId()),
+                marketRun == null ? null : marketRun.getTaskRun().getId(),
                 selectedSnapshot == null ? null : selectedSnapshot.getId(), null, null,
-                validationRun == null ? null : validationRun.getUpdatedAt()),
+                marketRun == null ? null : marketRun.getUpdatedAt()),
+            response(projectId, PipelineModuleType.BUSINESS_MODEL, businessModelStatus,
+                currentMarketVersion == null ? List.of("marketResearchVersionId") : List.of(),
+                new NextAction("Business Model", "/business-model"),
+                businessRun == null ? null : String.valueOf(businessRun.getId()),
+                businessRun == null ? null : businessRun.getTaskRun().getId(),
+                currentMarketVersion == null ? null : String.valueOf(currentMarketVersion.getId()), null, null,
+                businessRun == null ? null : businessRun.getUpdatedAt()),
             response(projectId, PipelineModuleType.TECH_OPS, techOpsStatus,
                 selectedSnapshot == null ? List.of("marketAnalysisSeedSnapshotId")
                     : techOpsSnapshot == null ? List.of("techOpsRequiredFacts", "techOpsRequiredDecisions")
-                    : techOpsRun == null ? List.of("techOpsModuleConnection") : List.of(),
-                new NextAction("기술·운영 입력 준비", "/tech-ops"), techOpsRun == null ? null : techOpsRun.getId(), null,
+                    : techOpsAdvisory == null ? List.of("techOpsAdvisoryReport") : List.of(),
+                new NextAction("기술·운영 상용화 자문", "/tech-ops"),
+                techOpsAdvisory == null ? null : techOpsAdvisory.getId(),
+                activeTask(techOpsAdvisoryTask) == null ? null : techOpsAdvisoryTask.getId(),
                 techOpsSnapshot == null ? null : techOpsSnapshot.getId(), null, null,
-                techOpsRun == null ? techOpsPreparation == null ? null : techOpsPreparation.getUpdatedAt() : techOpsRun.getUpdatedAt()),
+                techOpsAdvisoryTask == null ? techOpsPreparation == null ? null : techOpsPreparation.getUpdatedAt()
+                    : techOpsAdvisoryTask.getUpdatedAt()),
             response(projectId, PipelineModuleType.FINANCE, financialStatus,
-                !validationCompleted ? List.of("businessValidationResult")
+                currentMarketVersion == null ? List.of("marketResearchVersionId")
+                    : currentBusinessVersion == null ? List.of("businessModelVersionId")
                     : financialSnapshot == null ? List.of("financialRequiredInputs")
-                    : financialRun == null ? List.of("financialModuleConnection") : List.of(),
-                new NextAction("재무 입력 준비", "/finance"), financialRun == null ? null : financialRun.getId(), null,
+                    : financialTask == null ? List.of("financialAnalysisReport") : List.of(),
+                new NextAction("재무 입력 준비", "/finance"), activeFinancialTask == null
+                    ? financialTask == null ? null : financialTask.getId() : activeFinancialTask.getId(),
+                activeFinancialTask == null ? null : activeFinancialTask.getId(),
                 financialSnapshot == null ? null : financialSnapshot.getId(), null, null,
-                financialRun == null ? financialPreparation == null ? null : financialPreparation.getUpdatedAt() : financialRun.getUpdatedAt()),
-            // ⚠ 이 게이트는 **새로 만든 것**이다. 재무와 마케팅은 원래 데이터로 이어져 있지 않았다
-            //   (마케팅 게이트는 selectedSnapshot 기반). 트윈 조사는 재무 다음에 서므로
-            //   앞 단계의 확정물인 financialSnapshotId 를 요구한다.
-            //   ⚠ **컨셉도 같이 본다.** 컨셉보드가 마켓 시드 스냅샷에서 나오므로 재무만 있고
-            //   컨셉이 없으면 READY 라고 말해 놓고 자극을 만들지 못한다.
-            //   requiredInputs 는 **없는 것부터** 센다 — 앞 단계를 먼저 가리켜야 길이 된다.
-            //   시장조사와 같은 규칙으로, **실행이 있으면 게이트와 무관하게 그 상태를 보여준다** —
-            //   막아 두면 다 끝난 모듈이 「준비 전」으로 보이는 거짓말이 된다.
-            //   ⚠ **다듬기를 지난 시드만 받는다**(2026-08-15). 시드는 두 번 발급된다 — 사업안을
-            //   고른 직후 한 번, 다듬기 끝에 「이 컨셉으로 확정하기」로 한 번. 앞의 것으로 열어 주면
-            //   사용자는 **다듬기 전 사업안**을 소비자에게 물어보게 되고, 인터뷰는 출시 전 마지막
-            //   확인이라 그 답은 쓸 데가 없다. 확정을 지나야 열린다.
-            response(projectId, PipelineModuleType.PANEL_SURVEY,
-                interviewOrGate(interviewRun, refinedSeed && financialSnapshot != null),
-                interviewRequiredInputs(selectedSnapshot, financialSnapshot != null),
+                financialTask == null ? financialPreparation == null ? null : financialPreparation.getUpdatedAt() : financialTask.getUpdatedAt()),
+            // ⚠ enum 값 이름 TWIN_SURVEY 는 **그대로 둔다** — 값 이름이 상태 API 계약이고
+            //   프론트가 그 이름으로 칸을 찾는다. 옮기는 것은 **라벨과 경로뿐**이다.
+            response(projectId, PipelineModuleType.TWIN_SURVEY, interviewStatus,
+                selectedSnapshot == null ? List.of("marketAnalysisSeedSnapshotId") : List.of(),
                 new NextAction("시장 인터뷰", "/market-interview"),
                 interviewRun == null ? null : String.valueOf(interviewRun.getId()),
-                interviewRun == null ? null : interviewRun.getTaskRun().getId(),
-                financialSnapshot == null ? null : financialSnapshot.getId(), null, null,
+                activeInterviewTask == null ? null : activeInterviewTask.getId(),
+                selectedSnapshot == null ? null : selectedSnapshot.getId(), null, null,
                 interviewRun == null ? null : interviewRun.getUpdatedAt()),
             response(projectId, PipelineModuleType.MARKETING, marketingStatus,
                 marketingSource == null ? List.of("marketingSourceSnapshotId") : List.of(),
                 new NextAction("마케팅 콘텐츠", "/marketing"), marketing == null ? null : marketing.getId(),
-                marketing == null ? null : marketing.getTaskRunId(), marketingSource == null ? null : marketingSource.getId(),
-                null, null, marketing == null ? null : marketing.getUpdatedAt())
+                marketingVisualTask != null && !marketingVisualTask.terminal() ? marketingVisualTask.getId()
+                    : marketing == null ? null : marketing.getTaskRunId(),
+                marketingSource == null ? null : marketingSource.getId(), null, null,
+                marketingVisualTask == null ? marketing == null ? null : marketing.getUpdatedAt()
+                    : marketingVisualTask.getUpdatedAt())
         );
     }
 
@@ -202,67 +251,27 @@ public class ProjectModuleStatusService {
         return moduleRunRepository.findFirstByProjectIdAndModuleAndDeletedAtIsNullOrderByCreatedAtDesc(projectId, type).orElse(null);
     }
 
-    private MarketResearchRun latestResearchRun(Long projectId, MarketResearchRun.Kind kind) {
-        return marketResearchRunRepository
-            .findTopByProjectIdAndKindAndDeletedAtIsNullOrderByCreatedAtDescIdDesc(projectId, kind).orElse(null);
+    private TaskRun latestTask(Long projectId, String subjectType, String subjectId,
+            TaskType... taskTypes) {
+        TaskRun task = taskRunRepository
+            .findFirstByProjectIdAndTaskTypeInAndDeletedAtIsNullOrderByCreatedAtDescIdDesc(
+                projectId, List.of(taskTypes)).orElse(null);
+        return task != null && java.util.Objects.equals(subjectType, task.getSubjectType())
+            && java.util.Objects.equals(subjectId, task.getSubjectId()) ? task : null;
     }
 
-    /**
-     * 「사업 검증」 한 칸의 상태.
-     *
-     * <p>2-4 부터 실행은 하나(VALIDATION)다. 옛 프로젝트에는 FULL·BM 이 따로 남아 있어
-     * 그 갈래도 읽는다 — 안 읽으면 다 끝낸 프로젝트가 「준비 전」으로 보인다.
-     *
-     * <p><b>시장조사만 끝난 상태는 검증 전체로는 아직 안 끝난 것</b>이라 COMPLETED 가 아니라
-     * READY 로 내린다 — 다음 걸음이 남아 있다.
-     */
-    private static boolean succeeded(MarketResearchRun run) {
-        return run != null && run.getState() == MarketResearchRun.State.SUCCEEDED;
+    private TaskRun activeTask(TaskRun task) {
+        return task != null && (task.getState() == TaskRunState.QUEUED
+            || task.getState() == TaskRunState.READY
+            || task.getState() == TaskRunState.RUNNING) ? task : null;
     }
 
-    private PipelineModuleStatus validationStatus(MarketResearchRun unifiedRun,
-            MarketResearchRun marketRun, MarketResearchRun businessRun, MarketAnalysisSeedSnapshot seed) {
-        // 한 실행이 두 걸음을 다 돈다 — 그 상태가 곧 칸의 상태다.
-        if (unifiedRun != null) return researchStatus(unifiedRun);
-        if (businessRun != null) return researchStatus(businessRun);
-        if (marketRun != null) {
-            PipelineModuleStatus status = researchStatus(marketRun);
-            return status == PipelineModuleStatus.COMPLETED ? PipelineModuleStatus.READY : status;
-        }
-        return seed == null ? PipelineModuleStatus.NOT_READY : PipelineModuleStatus.READY;
-    }
-
-    private PipelineModuleStatus interviewOrGate(MarketInterviewRun run, boolean inputsReady) {
-        if (run != null) return switch (run.getState()) {
-            case QUEUED -> PipelineModuleStatus.QUEUED;
+    private PipelineModuleStatus activeOverlay(PipelineModuleStatus base, TaskRun subordinate) {
+        if (base == PipelineModuleStatus.NOT_READY || subordinate == null) return base;
+        return switch (subordinate.getState()) {
+            case QUEUED, READY -> PipelineModuleStatus.QUEUED;
             case RUNNING -> PipelineModuleStatus.RUNNING;
-            case SUCCEEDED -> PipelineModuleStatus.COMPLETED;
-            case FAILED -> PipelineModuleStatus.FAILED;
-        };
-        return inputsReady ? PipelineModuleStatus.READY : PipelineModuleStatus.NOT_READY;
-    }
-
-    /**
-     * 빠진 것을 여정 순서대로 센다 — 컨셉이 재무보다 앞이라 먼저 나온다.
-     *
-     * <p>컨셉 쪽은 <b>사유를 갈라 센다.</b> 「사업안을 아직 안 골랐다」와 「골랐지만 다듬기
-     * 확정을 안 지났다」는 사용자가 갈 곳이 완전히 다르다 — 앞은 사업안 화면, 뒤는 사업 검증
-     * 화면의 「이 컨셉으로 확정하기」다. 한 이름으로 묶으면 어디로 가라는 말인지 알 수 없다.
-     */
-    private List<String> interviewRequiredInputs(MarketAnalysisSeedSnapshot seed, boolean financialReady) {
-        List<String> missing = new ArrayList<>();
-        if (seed == null) missing.add("marketAnalysisSeedSnapshotId");
-        else if (!seed.isRefinementApplied()) missing.add("refinedConceptConfirmation");
-        if (!financialReady) missing.add("financialSnapshotId");
-        return missing;
-    }
-
-    private PipelineModuleStatus researchStatus(MarketResearchRun run) {
-        return switch (run.getState()) {
-            case QUEUED -> PipelineModuleStatus.QUEUED;
-            case RUNNING -> PipelineModuleStatus.RUNNING;
-            case SUCCEEDED -> PipelineModuleStatus.COMPLETED;
-            case FAILED -> PipelineModuleStatus.FAILED;
+            case NEEDS_INPUT, SUCCEEDED, FAILED, CANCELLED, TIMED_OUT -> base;
         };
     }
 
@@ -313,15 +322,61 @@ public class ProjectModuleStatusService {
         return PipelineModuleStatus.valueOf(run.getStatus().name());
     }
 
-    private PipelineModuleStatus marketingStatus(MarketingContent content, String marketingSourceSnapshotId) {
+    private PipelineModuleStatus analysisStatus(MarketResearchRun run, boolean stale) {
+        if (stale) return PipelineModuleStatus.STALE;
+        return switch (run.getTaskRun().getState()) {
+            case QUEUED, READY -> PipelineModuleStatus.QUEUED;
+            case RUNNING -> PipelineModuleStatus.RUNNING;
+            case NEEDS_INPUT -> PipelineModuleStatus.NEEDS_INPUT;
+            case SUCCEEDED -> PipelineModuleStatus.COMPLETED;
+            case FAILED, CANCELLED, TIMED_OUT -> PipelineModuleStatus.FAILED;
+        };
+    }
+
+    private PipelineModuleStatus taskStatus(TaskRunState state) {
+        return switch (state) {
+            case QUEUED, READY -> PipelineModuleStatus.QUEUED;
+            case RUNNING -> PipelineModuleStatus.RUNNING;
+            case NEEDS_INPUT -> PipelineModuleStatus.NEEDS_INPUT;
+            case SUCCEEDED -> PipelineModuleStatus.COMPLETED;
+            case FAILED, CANCELLED, TIMED_OUT -> PipelineModuleStatus.FAILED;
+        };
+    }
+
+    /**
+     * 시장 인터뷰 칸의 상태. <b>실행의 TaskRun 상태가 전부다.</b>
+     *
+     * <p>트윈 조사와 달리 STALE 갈래가 없다 — {@link MarketInterviewRun} 은 씨앗 스냅샷을
+     * 붙들지 않는다. 인터뷰가 응답자에게 보이는 것은 <b>화면이 그때 보낸 컨셉보드</b>이고
+     * (「누를 때마다 새로 실행」), 그것이 낡았는지는 시드가 아니라 그 보드가 정한다.
+     */
+    private PipelineModuleStatus interviewStatus(MarketInterviewRun run) {
+        return switch (run.getTaskRun().getState()) {
+            case QUEUED, READY -> PipelineModuleStatus.QUEUED;
+            case RUNNING -> PipelineModuleStatus.RUNNING;
+            case NEEDS_INPUT -> PipelineModuleStatus.NEEDS_INPUT;
+            case SUCCEEDED -> PipelineModuleStatus.COMPLETED;
+            case FAILED, CANCELLED, TIMED_OUT -> PipelineModuleStatus.FAILED;
+        };
+    }
+
+    private PipelineModuleStatus marketingStatus(MarketingContent content, String marketingSourceSnapshotId,
+            TaskRun visualTask) {
         if (marketingSourceSnapshotId == null) return PipelineModuleStatus.NOT_READY;
         if (content == null) return PipelineModuleStatus.READY;
         if (!marketingSourceSnapshotId.equals(content.getMarketingSourceSnapshotId())) return PipelineModuleStatus.STALE;
-        return switch (content.getStatus()) {
+        PipelineModuleStatus contentStatus = switch (content.getStatus()) {
             case QUEUED -> PipelineModuleStatus.QUEUED;
             case RUNNING -> PipelineModuleStatus.RUNNING;
             case COMPLETED, FINALIZED -> PipelineModuleStatus.COMPLETED;
             case FAILED -> PipelineModuleStatus.FAILED;
+        };
+        if (visualTask == null || contentStatus != PipelineModuleStatus.COMPLETED) return contentStatus;
+        return switch (visualTask.getState()) {
+            case QUEUED, READY -> PipelineModuleStatus.QUEUED;
+            case RUNNING -> PipelineModuleStatus.RUNNING;
+            case FAILED, CANCELLED, TIMED_OUT -> contentStatus;
+            case SUCCEEDED, NEEDS_INPUT -> contentStatus;
         };
     }
 

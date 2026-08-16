@@ -16,32 +16,32 @@ import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
 
-/**
- * 계약 검증기 — <b>AI 쪽과 같은 골든 픽스처</b>를 읽는다.
- *
- * <p>「AI 는 맞다는데 백엔드가 거부」 루프를 끊는 장치다. 파일이 하나이므로
- * 한쪽만 고치면 반대쪽 테스트가 즉시 빨개진다.
- */
 class MarketResearchContractTests {
-
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
-    private static JsonNode fixture(String name) throws Exception {
-        // backend/ 에서 저장소 루트로 올라가 ai/tests/fixtures 를 읽는다.
-        Path root = Paths.get("").toAbsolutePath();
-        for (int depth = 0; depth < 4; depth++) {
-            Path candidate = root.resolve("ai/tests/fixtures/market_research/" + name);
-            if (Files.exists(candidate)) return MAPPER.readTree(Files.readString(candidate));
-            root = root.getParent();
-        }
-        throw new IllegalStateException("골든 픽스처를 찾지 못했다: " + name);
+    @Test
+    void fullAndBmGoldenFixturesPass() throws Exception {
+        assertThatCode(() -> MarketResearchContract.validate(payload("full.json"))).doesNotThrowAnyException();
+        assertThatCode(() -> MarketResearchContract.validate(payload("bm.json"))).doesNotThrowAnyException();
     }
 
-    /** 픽스처의 `_` 주석 키는 계약 밖이다 — 검증 전에 벗긴다(AI 쪽도 같은 규칙). */
+    @Test
+    void unknownEnvelopeFieldIsRejected() throws Exception {
+        ObjectNode node = payload("full.json");
+        node.put("unexpected", true);
+        assertThatThrownBy(() -> MarketResearchContract.validate(node)).isInstanceOf(ExecutionFailure.class);
+    }
+
+    @Test
+    void incompleteBmcIsRejected() throws Exception {
+        ObjectNode node = payload("bm.json");
+        ((ArrayNode) node.path("canvas").path("cells")).remove(0);
+        assertThatThrownBy(() -> MarketResearchContract.validate(node)).isInstanceOf(ExecutionFailure.class);
+    }
+
     private static ObjectNode payload(String name) throws Exception {
-        ObjectNode node = (ObjectNode) fixture(name);
-        node.propertyNames().stream().filter(key -> key.startsWith("_")).toList()
-            .forEach(node::remove);
+        ObjectNode node = (ObjectNode) fixture("market_research/" + name);
+        node.propertyNames().stream().filter(key -> key.startsWith("_")).toList().forEach(node::remove);
         return node;
     }
 
@@ -464,5 +464,14 @@ class MarketResearchContractTests {
         node.set("canvas", payload("bm.json").get("canvas"));
         assertThatThrownBy(() -> MarketResearchContract.validate(node))
             .isInstanceOf(ExecutionFailure.class);
+    }
+
+    private static ObjectNode fixture(String relative) throws Exception {
+        Path root = Paths.get("").toAbsolutePath();
+        for (int depth = 0; depth < 5 && root != null; depth++, root = root.getParent()) {
+            Path candidate = root.resolve("ai/tests/fixtures/" + relative);
+            if (Files.exists(candidate)) return (ObjectNode) MAPPER.readTree(Files.readString(candidate));
+        }
+        throw new IllegalStateException("Fixture not found: " + relative);
     }
 }

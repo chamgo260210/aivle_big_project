@@ -8,6 +8,7 @@ import com.aivle.backend.pipeline.conceptportfolio.domain.ConceptInputRequestSta
 import com.aivle.backend.pipeline.conceptportfolio.repository.ConceptInputRequestRepository;
 import com.aivle.backend.project.repository.ProjectRepository;
 import com.aivle.backend.taskrun.api.ProjectJobView;
+import com.aivle.backend.taskrun.api.ProjectJobHistoryResponse;
 import com.aivle.backend.taskrun.domain.TaskRun;
 import com.aivle.backend.taskrun.domain.TaskRunState;
 import com.aivle.backend.taskrun.domain.TaskType;
@@ -57,6 +58,16 @@ public class ProjectJobQueryService {
             .toList();
     }
 
+    public ProjectJobHistoryResponse history(Long ownerId, Long projectId, int page, int size) {
+        requireOwned(ownerId, projectId);
+        int safePage = Math.max(0, page);
+        int safeSize = Math.min(50, Math.max(1, size));
+        var result = taskRuns.findByProjectIdAndDeletedAtIsNullOrderByUpdatedAtDescIdDesc(
+            projectId, PageRequest.of(safePage, safeSize));
+        return new ProjectJobHistoryResponse(result.getContent().stream().map(this::view).toList(),
+            result.getNumber(), result.getSize(), result.hasNext(), result.getTotalElements());
+    }
+
     private List<ProjectJobView> find(Long projectId, List<TaskRunState> states) {
         return taskRuns.findByProjectIdAndStateInAndDeletedAtIsNullOrderByUpdatedAtDescIdDesc(
             projectId, states, PageRequest.of(0, MAX_RESULTS)).stream().map(this::view).toList();
@@ -69,7 +80,7 @@ public class ProjectJobQueryService {
     }
 
     private ProjectJobView view(TaskRun run) {
-        JobModule module = module(run.getTaskType());
+        JobModule module = module(run);
         String rawStatus = run.getState().name();
         boolean actionable = actionable(run);
         String presentationStatus = presentationStatus(run.getState(), actionable);
@@ -128,31 +139,35 @@ public class ProjectJobQueryService {
         return rawStatus.name();
     }
 
-    private JobModule module(TaskType type) {
-        return switch (type) {
+    private JobModule module(TaskRun run) {
+        return switch (run.getTaskType()) {
             case IDEA_ATTACHMENT_PARSE, IDEA_BRIEF_DERIVATION -> JobModule.IDEA;
             case CONCEPT_PORTFOLIO_V2_RUN, CONCEPT_PORTFOLIO_V2_CONTINUE,
                 CONCEPT_PORTFOLIO_V2_SELECTION_ACTION -> JobModule.CONCEPT_PORTFOLIO;
             case CONCEPT_FACTORY_RUN, CONCEPT_CANDIDATE, CONCEPT_DISTINCTNESS_JUDGE,
                 CONCEPT_LEGAL_REVIEW, CONCEPT_REDESIGN -> JobModule.CONCEPT_FACTORY;
             case CONCEPT_HYPOTHESIS_ALTERNATIVE, CONCEPT_DELTA_LEGAL_REVIEW -> JobModule.CONCEPT_SELECTION;
-            case TECH_OPS_PROPOSAL -> JobModule.TECH_OPS;
-            case FINANCE_ESTIMATE -> JobModule.FINANCE;
-            case MARKETING_CONTENT_GENERATION -> JobModule.MARKETING;
-            // 사업 검증은 시장조사와 같은 칸이다 — 여정 3번 한 칸이 둘을 다 대표한다.
-            case MARKET_RESEARCH, BUSINESS_VALIDATION -> JobModule.MARKET;
-            // 여정 7번 칸은 「시장 인터뷰」로 바뀌었다. enum 값 이름(PANEL_SURVEY)은 상태 API
-            // 계약이라 그대로 두고, 라우트와 라벨만 옮겼다. 옛 TWIN_* 은 도달 불가로 남는다.
-            case TWIN_SURVEY, TWIN_STIMULUS_DRAFT, MARKET_INTERVIEW -> JobModule.PANEL_SURVEY;
+            case TECH_OPS_PROPOSAL, TECH_OPS_ADVISORY -> JobModule.TECH_OPS;
+            case FINANCE_ESTIMATE, FINANCE_ANALYSIS_REPORT -> JobModule.FINANCE;
+            case MARKETING_CONTENT_GENERATION, MARKETING_VISUAL_GENERATION -> JobModule.MARKETING;
+            case MARKET_RESEARCH -> "MARKET_RESEARCH_BM".equals(run.getSubjectType())
+                ? JobModule.BUSINESS_MODEL : JobModule.MARKET;
+            // 사업 검증(한 실행)은 시장 분석 탭이 대표한다 — 여정 2번 안에서 시작하는 일이다.
+            case BUSINESS_VALIDATION -> JobModule.MARKET;
+            case TWIN_SURVEY, TWIN_STIMULUS_DRAFT -> JobModule.TWIN;
+            // ⚠ 여정 4번을 「시장 인터뷰」로 바꾸는 것은 3판이다. 지금은 백엔드만 있고
+            //    프론트 라우트(`/market-interview`)가 아직 없다.
+            case MARKET_INTERVIEW -> JobModule.MARKET_INTERVIEW;
         };
     }
 
     private enum JobModule {
-        IDEA("/idea"), CONCEPT_PORTFOLIO("/concepts"), CONCEPT_FACTORY("/concepts"),
-        CONCEPT_SELECTION("/concepts/compare"),
-        // MARKET 은 「사업 검증」 칸이다 — enum 값 이름은 계약이라 두고 경로만 옮겼다.
-        TECH_OPS("/tech-ops"), FINANCE("/finance"), MARKETING("/marketing"), MARKET("/business-validation"),
-        PANEL_SURVEY("/market-interview");
+        IDEA("/idea"), CONCEPT_PORTFOLIO("/concepts"), CONCEPT_FACTORY("/concepts"), CONCEPT_SELECTION("/concepts/compare"),
+        MARKET("/market"), BUSINESS_MODEL("/business-model"), TWIN("/twin-survey"),
+        // ⚠ 프론트 라우트는 **3판에서 생긴다.** 지금 이 경로로 보내면 404 다 —
+        //    다만 `MARKET_INTERVIEW` 실행을 만드는 화면이 아직 없어 도달하지 않는다.
+        MARKET_INTERVIEW("/market-interview"),
+        TECH_OPS("/tech-ops"), FINANCE("/finance"), MARKETING("/marketing");
         private final String route;
         JobModule(String route) { this.route = route; }
     }

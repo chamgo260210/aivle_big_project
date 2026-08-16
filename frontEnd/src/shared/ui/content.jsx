@@ -38,11 +38,6 @@ const STATUS_VIEW = {
   NEEDS_REVIEW: ['추가 확인 필요', 'warning'],
   INVALID: ['확인 필요', 'danger'],
   UNKNOWN: ['확인 필요', 'neutral'],
-  // BM 캔버스 칸 상태 (판 ㉝). PARTIAL 은 위에 이미 있다.
-  VERIFIED: ['확인됨', 'success'],
-  UNVERIFIED: ['미확인', 'danger'],
-  PLAN: ['계획(근거 없음)', 'neutral'],
-  BLOCKED: ['진행 불가', 'danger'],
   PASS: ['통과', 'success'],
   DRAFT: ['작성 중', 'neutral'],
   ACTIVE: ['진행 중', 'info'],
