@@ -23,12 +23,14 @@ import com.aivle.backend.pipeline.market.MarketResearchRun;
 import com.aivle.backend.pipeline.market.MarketResearchRunRepository;
 import com.aivle.backend.pipeline.market.MarketResearchVersion;
 import com.aivle.backend.pipeline.market.MarketResearchVersionRepository;
+import com.aivle.backend.pipeline.market.TwinSurveyRun;
+import com.aivle.backend.pipeline.market.TwinSurveyRunRepository;
+import com.aivle.backend.pipeline.market.TwinSurveyVersionRepository;
 import com.aivle.backend.pipeline.market.MarketInterviewRun;
 import com.aivle.backend.pipeline.market.MarketInterviewRunRepository;
-import com.aivle.backend.pipeline.market.TwinSurveyVersionRepository;
 import com.aivle.backend.pipeline.module.ProjectModuleStatusResponse.NextAction;
-import com.aivle.backend.pipeline.refinement.ConceptRefinementFinalRepository;
 import com.aivle.backend.pipeline.refinement.ConceptRefinementRound;
+import com.aivle.backend.pipeline.refinement.ConceptRefinementFinalRepository;
 import com.aivle.backend.pipeline.refinement.ConceptRefinementService;
 import com.aivle.backend.pipeline.selection.repository.ConceptSelectionRepository;
 import com.aivle.backend.pipeline.techops.repository.TechOpsInputPreparationRepository;
@@ -58,8 +60,9 @@ public class ProjectModuleStatusService {
     private final ModuleRunRepository moduleRunRepository;
     private final MarketResearchRunRepository marketResearchRunRepository;
     private final MarketResearchVersionRepository marketResearchVersionRepository;
-    private final MarketInterviewRunRepository marketInterviewRunRepository;
+    private final TwinSurveyRunRepository twinSurveyRunRepository;
     private final TwinSurveyVersionRepository twinSurveyVersionRepository;
+    private final MarketInterviewRunRepository marketInterviewRunRepository;
     private final MarketingContentRepository marketingRepository;
     private final MarketingSourceSnapshotRepository marketingSourceRepository;
     private final TechOpsInputPreparationRepository techOpsPreparationRepository;
@@ -68,10 +71,6 @@ public class ProjectModuleStatusService {
     private final FinancialInputPreparationRepository financialPreparationRepository;
     private final FinancialInputSnapshotRepository financialSnapshotRepository;
     private final TaskRunRepository taskRunRepository;
-    /**
-     * 다듬기 칸의 상태 재료. <b>규칙을 여기에 베끼지 않는다</b> — 「다음 라운드를 더 돌 수 있나」는
-     * {@link ConceptRefinementService#canRunAnotherRound} 가 이미 정한다. 사본을 두면 갈린다.
-     */
     private final ConceptRefinementService conceptRefinementService;
     private final ConceptRefinementFinalRepository conceptRefinementFinalRepository;
 
@@ -114,18 +113,19 @@ public class ProjectModuleStatusService {
             .findTopByProjectIdAndDeletedAtIsNullOrderByCreatedAtDescIdDesc(projectId).orElse(null);
         ModuleRun techOpsRun = latestRun(projectId, ModuleType.TECH_OPS);
         MarketingContent marketing = marketingRepository.findFirstByProjectIdAndDeletedAtIsNullOrderByCreatedAtDesc(projectId).orElse(null);
+        TaskRun marketingStrategyTask = taskRunRepository
+            .findFirstByProjectIdAndTaskTypeAndDeletedAtIsNullOrderByCreatedAtDescIdDesc(
+                projectId, TaskType.MARKETING_STRATEGY_GENERATION).orElse(null);
         TaskRun marketingVisualTask = marketing == null ? null : taskRunRepository
             .findFirstByProjectIdAndTaskTypeAndSubjectTypeAndSubjectIdAndDeletedAtIsNullOrderByCreatedAtDescIdDesc(
                 projectId, TaskType.MARKETING_VISUAL_GENERATION, "MARKETING_VISUAL", marketing.getId()).orElse(null);
         var marketingSource = selectedSnapshot == null ? null
             : marketingSourceRepository.findBySourceMarketSeedSnapshotIdAndProjectIdAndDeletedAtIsNull(
                 selectedSnapshot.getId(), projectId).orElse(null);
-        var techOpsPreparation = selectedSnapshot == null ? null
-            : techOpsPreparationRepository.findByProjectIdAndSourceMarketSeedSnapshotIdAndDeletedAtIsNull(
-                projectId, selectedSnapshot.getId()).orElse(null);
-        var techOpsSnapshot = selectedSnapshot == null ? null
-            : techOpsSnapshotRepository.findBySourceMarketSeedSnapshotIdAndProjectIdAndDeletedAtIsNull(
-                selectedSnapshot.getId(), projectId).orElse(null);
+        var techOpsPreparation = techOpsPreparationRepository
+            .findFirstByProjectIdAndDeletedAtIsNullOrderByUpdatedAtDescIdDesc(projectId).orElse(null);
+        var techOpsSnapshot = techOpsSnapshotRepository
+            .findFirstByProjectIdAndDeletedAtIsNullOrderByFinalizedAtDesc(projectId).orElse(null);
         var techOpsAdvisory = techOpsAdvisoryReportRepository
             .findFirstByProjectIdAndDeletedAtIsNullOrderByCreatedAtDescIdDesc(projectId).orElse(null);
         TaskRun techOpsAdvisoryTask = taskRunRepository
@@ -137,6 +137,9 @@ public class ProjectModuleStatusService {
         TaskRun launchOperationsTask = taskRunRepository
             .findFirstByProjectIdAndTaskTypeAndDeletedAtIsNullOrderByCreatedAtDescIdDesc(
                 projectId, TaskType.LAUNCH_OPERATIONS_READINESS).orElse(null);
+        TaskRun finalReportTask = taskRunRepository
+            .findFirstByProjectIdAndTaskTypeAndDeletedAtIsNullOrderByCreatedAtDescIdDesc(
+                projectId, TaskType.FINAL_BUSINESS_PROPOSAL_GENERATION).orElse(null);
         var userDocumentPreparation = financialPreparationRepository
             .findFirstByProjectIdAndSourceModeAndDeletedAtIsNullOrderByCreatedAtDesc(projectId, "USER_DOCUMENT_INPUT").orElse(null);
         var financialPreparation = userDocumentPreparation != null ? userDocumentPreparation
@@ -177,15 +180,20 @@ public class ProjectModuleStatusService {
         PipelineModuleStatus interviewStatus = selectedSnapshot == null ? PipelineModuleStatus.NOT_READY
             : interviewRun == null ? PipelineModuleStatus.READY : interviewStatus(interviewRun);
         TaskRun activeInterviewTask = interviewRun == null ? null : activeTask(interviewRun.getTaskRun());
-        PipelineModuleStatus marketingStatus = marketingStatus(marketing,
-            marketingSource == null ? null : marketingSource.getId(), marketingVisualTask);
+        PipelineModuleStatus marketingStatus = marketingStatus(selectedSnapshot != null, marketing,
+            marketingSource == null ? null : marketingSource.getId(), marketingVisualTask,
+            marketingStrategyTask);
+        TaskRun activeMarketingTask = activeTask(marketingVisualTask) != null ? marketingVisualTask
+            : marketing != null && marketing.getTaskRunId() != null
+                ? taskRunRepository.findById(marketing.getTaskRunId()).filter(task -> !task.terminal()).orElse(null)
+                : activeTask(marketingStrategyTask);
         boolean techOpsAdvisoryStale = techOpsAdvisory != null && (techOpsSnapshot == null
-            || currentMarketVersion == null || currentBusinessVersion == null || portfolioSelection == null
-            || !techOpsSnapshot.getId().equals(techOpsAdvisory.getTechOpsInputSnapshotId())
-            || !currentMarketVersion.getId().equals(techOpsAdvisory.getSourceMarketResearchVersionId())
-            || !currentBusinessVersion.getId().equals(techOpsAdvisory.getSourceBusinessModelVersionId())
-            || !portfolioSelection.getId().equals(techOpsAdvisory.getSourcePortfolioSelectionId()));
-        PipelineModuleStatus techOpsStatus = aggregateLaunchStatus(launchTechnologyTask, launchOperationsTask);
+            || !techOpsSnapshot.getId().equals(techOpsAdvisory.getTechOpsInputSnapshotId()));
+        PipelineModuleStatus techOpsStatus = techOpsPreparation == null ? PipelineModuleStatus.READY
+            : techOpsSnapshot == null ? PipelineModuleStatus.NEEDS_INPUT
+            : techOpsAdvisoryStale ? PipelineModuleStatus.STALE
+            : techOpsAdvisoryTask == null ? PipelineModuleStatus.READY : taskStatus(techOpsAdvisoryTask.getState());
+        PipelineModuleStatus launchStatus = aggregateLaunchStatus(launchTechnologyTask, launchOperationsTask);
         PipelineModuleStatus financialBaseStatus = financialPreparation == null ? PipelineModuleStatus.READY
             : financialSnapshot == null ? PipelineModuleStatus.NEEDS_INPUT
             : financialTask == null ? PipelineModuleStatus.READY : taskStatus(financialTask.getState());
@@ -223,9 +231,6 @@ public class ProjectModuleStatusService {
                 businessRun == null ? null : businessRun.getTaskRun().getId(),
                 currentMarketVersion == null ? null : String.valueOf(currentMarketVersion.getId()), null, null,
                 businessRun == null ? null : businessRun.getUpdatedAt()),
-            // 사업 검증의 셋째 칸. 자리는 **BM 바로 뒤** — 사용자가 겪는 순서가
-            // 시장분석 → BM → 다듬기다(다듬기를 거는 것도 BM 채택이다:
-            // MarketResearchWorker.REFINEMENT_TRIGGER_SUBJECT).
             response(projectId, PipelineModuleType.CONCEPT_REFINEMENT, refinementStatus,
                 portfolioSelection == null ? List.of("conceptPortfolioSelectionId")
                     : refinementRounds.isEmpty() ? List.of("conceptRefinementRound") : List.of(),
@@ -235,21 +240,28 @@ public class ProjectModuleStatusService {
                 portfolioSelection == null ? null : String.valueOf(portfolioSelection.getId()), null, null,
                 lastRefinementRound == null ? null : lastRefinementRound.getCreatedAt()),
             response(projectId, PipelineModuleType.TECH_OPS, techOpsStatus,
-                List.of(), new NextAction("출시 준비 분석", "/launch-readiness"),
-                latestId(launchTechnologyTask, launchOperationsTask),
-                latestActiveId(launchTechnologyTask, launchOperationsTask), null, null, null,
-                latestUpdatedAt(launchTechnologyTask, launchOperationsTask)),
+                techOpsSnapshot == null ? List.of("techOpsInput") : List.of(),
+                new NextAction("기술·운영 분석", "/tech-ops"),
+                techOpsAdvisoryTask == null ? null : techOpsAdvisoryTask.getId(),
+                activeTask(techOpsAdvisoryTask) == null ? null : techOpsAdvisoryTask.getId(),
+                techOpsSnapshot == null ? null : techOpsSnapshot.getId(), null, null,
+                techOpsAdvisoryTask == null ? techOpsPreparation == null ? null : techOpsPreparation.getUpdatedAt()
+                    : techOpsAdvisoryTask.getUpdatedAt()),
             response(projectId, PipelineModuleType.FINANCE, financialStatus,
                 financialSnapshot == null ? List.of("financialInputDocument")
                     : financialTask == null ? List.of("financialAnalysisReport") : List.of(),
-                new NextAction("출시 준비 분석", "/launch-readiness"), activeFinancialTask == null
+                new NextAction("재무 분석", "/finance"), activeFinancialTask == null
                     ? financialTask == null ? null : financialTask.getId() : activeFinancialTask.getId(),
                 activeFinancialTask == null ? null : activeFinancialTask.getId(),
                 financialSnapshot == null ? null : financialSnapshot.getId(), null, null,
                 financialTask == null ? financialPreparation == null ? null : financialPreparation.getUpdatedAt() : financialTask.getUpdatedAt()),
-            // ⚠ enum 값 이름 TWIN_SURVEY 는 **그대로 둔다** — 값 이름이 상태 API 계약이고
-            //   프론트가 그 이름으로 칸을 찾는다. 옮기는 것은 **라벨과 경로뿐**이다.
-            response(projectId, PipelineModuleType.TWIN_SURVEY, interviewStatus,
+            response(projectId, PipelineModuleType.LAUNCH_READINESS,
+                launchReadinessStatus(launchTechnologyTask, launchOperationsTask),
+                List.of(), new NextAction("선택 분석", "/launch-readiness"),
+                latestId(launchTechnologyTask, launchOperationsTask),
+                latestActiveId(launchTechnologyTask, launchOperationsTask), null, null, null,
+                latestUpdatedAt(launchTechnologyTask, launchOperationsTask)),
+            response(projectId, PipelineModuleType.MARKET_INTERVIEW, interviewStatus,
                 selectedSnapshot == null ? List.of("marketAnalysisSeedSnapshotId") : List.of(),
                 new NextAction("시장 인터뷰", "/market-interview"),
                 interviewRun == null ? null : String.valueOf(interviewRun.getId()),
@@ -257,13 +269,22 @@ public class ProjectModuleStatusService {
                 selectedSnapshot == null ? null : selectedSnapshot.getId(), null, null,
                 interviewRun == null ? null : interviewRun.getUpdatedAt()),
             response(projectId, PipelineModuleType.MARKETING, marketingStatus,
-                marketingSource == null ? List.of("marketingSourceSnapshotId") : List.of(),
-                new NextAction("마케팅 콘텐츠", "/marketing"), marketing == null ? null : marketing.getId(),
-                marketingVisualTask != null && !marketingVisualTask.terminal() ? marketingVisualTask.getId()
-                    : marketing == null ? null : marketing.getTaskRunId(),
-                marketingSource == null ? null : marketingSource.getId(), null, null,
-                marketingVisualTask == null ? marketing == null ? null : marketing.getUpdatedAt()
-                    : marketingVisualTask.getUpdatedAt())
+                selectedSnapshot == null ? List.of("marketAnalysisSeedSnapshotId") : List.of(),
+                new NextAction("마케팅 전략·콘텐츠", "/marketing"),
+                marketing == null ? marketingStrategyTask == null ? null : marketingStrategyTask.getId() : marketing.getId(),
+                activeMarketingTask == null ? null : activeMarketingTask.getId(),
+                marketingSource == null ? selectedSnapshot == null ? null : selectedSnapshot.getId()
+                    : marketingSource.getId(), null, null,
+                latestUpdatedAt(marketingStrategyTask, marketingVisualTask) == null
+                    ? marketing == null ? null : marketing.getUpdatedAt()
+                    : latestUpdatedAt(marketingStrategyTask, marketingVisualTask)),
+            // 최종 보고서는 여태 이 목록에 «아예 없었다». 그래서 화면의 6단계는 무엇을 해도
+            // 상태를 알 수 없었고 여정에 완료가 뜨지 않았다.
+            response(projectId, PipelineModuleType.FINAL_REPORT, finalReportStatus(finalReportTask),
+                List.of(), new NextAction("최종 보고서", "/final-report"),
+                finalReportTask == null ? null : finalReportTask.getId(),
+                activeTask(finalReportTask) == null ? null : finalReportTask.getId(), null, null, null,
+                finalReportTask == null ? null : finalReportTask.getUpdatedAt())
         );
     }
 
@@ -382,13 +403,82 @@ public class ProjectModuleStatusService {
         };
     }
 
+    private PipelineModuleStatus twinStatus(TwinSurveyRun run, boolean stale) {
+        if (stale) return PipelineModuleStatus.STALE;
+        return switch (run.getTaskRun().getState()) {
+            case QUEUED, READY -> PipelineModuleStatus.QUEUED;
+            case RUNNING -> PipelineModuleStatus.RUNNING;
+            case NEEDS_INPUT -> PipelineModuleStatus.NEEDS_INPUT;
+            case SUCCEEDED -> PipelineModuleStatus.COMPLETED;
+            case FAILED, CANCELLED, TIMED_OUT -> PipelineModuleStatus.FAILED;
+        };
+    }
+
+    private PipelineModuleStatus marketingStatus(boolean hasCurrentConcept, MarketingContent content,
+            String marketingSourceSnapshotId, TaskRun visualTask, TaskRun strategyTask) {
+        if (!hasCurrentConcept) return PipelineModuleStatus.NOT_READY;
+        if (activeTask(strategyTask) != null) return taskStatus(strategyTask.getState());
+        if (content == null) {
+            if (strategyTask == null || strategyTask.getState() == TaskRunState.SUCCEEDED) {
+                return PipelineModuleStatus.READY;
+            }
+            return taskStatus(strategyTask.getState());
+        }
+        if (marketingSourceSnapshotId == null) return PipelineModuleStatus.STALE;
+        if (!marketingSourceSnapshotId.equals(content.getMarketingSourceSnapshotId())) return PipelineModuleStatus.STALE;
+        PipelineModuleStatus contentStatus = switch (content.getStatus()) {
+            case QUEUED -> PipelineModuleStatus.QUEUED;
+            case RUNNING -> PipelineModuleStatus.RUNNING;
+            case COMPLETED, FINALIZED -> PipelineModuleStatus.COMPLETED;
+            case FAILED -> PipelineModuleStatus.FAILED;
+            case STALE -> PipelineModuleStatus.STALE;
+        };
+        if (visualTask == null || contentStatus != PipelineModuleStatus.COMPLETED) return contentStatus;
+        return switch (visualTask.getState()) {
+            case QUEUED, READY -> PipelineModuleStatus.QUEUED;
+            case RUNNING -> PipelineModuleStatus.RUNNING;
+            case FAILED, CANCELLED, TIMED_OUT -> contentStatus;
+            case SUCCEEDED, NEEDS_INPUT -> contentStatus;
+        };
+    }
+
     /**
-     * 시장 인터뷰 칸의 상태. <b>실행의 TaskRun 상태가 전부다.</b>
+     * 시장 인터뷰 칸의 상태. **실행의 TaskRun 상태가 전부다.**
      *
-     * <p>트윈 조사와 달리 STALE 갈래가 없다 — {@link MarketInterviewRun} 은 씨앗 스냅샷을
-     * 붙들지 않는다. 인터뷰가 응답자에게 보이는 것은 <b>화면이 그때 보낸 컨셉보드</b>이고
-     * (「누를 때마다 새로 실행」), 그것이 낡았는지는 시드가 아니라 그 보드가 정한다.
+     * 트윈 조사와 달리 STALE 갈래가 없다 — `MarketInterviewRun` 은 씨앗 스냅샷을 붙들지
+     * 않는다. 인터뷰가 응답자에게 보이는 것은 **화면이 그때 보낸 컨셉보드**이고, 그것이
+     * 낡았는지는 시드가 아니라 그 보드가 정한다.
      */
+    /**
+     * 출시 준비는 기술·운영 두 분석으로 이루어진다.
+     *
+     * <p>예전에는 이 칸이 <b>무조건 {@code READY}</b> 였다. 둘 다 성공해도 화면의 여정에는
+     * 영영 「완료」가 뜨지 않았다 — 사용자가 일을 끝냈는데 끝난 표시가 안 났다.
+     * 두 분석의 실제 TaskRun 상태로 판정한다.
+     */
+    private PipelineModuleStatus launchReadinessStatus(TaskRun technology, TaskRun operations) {
+        if (activeTask(technology) != null || activeTask(operations) != null) return PipelineModuleStatus.RUNNING;
+        boolean technologyDone = technology != null && technology.getState() == TaskRunState.SUCCEEDED;
+        boolean operationsDone = operations != null && operations.getState() == TaskRunState.SUCCEEDED;
+        if (technologyDone && operationsDone) return PipelineModuleStatus.COMPLETED;
+        // 하나만 끝난 상태를 FAILED 로 접지 않는다 — 나머지 하나는 아직 «할 수 있는» 일이다.
+        if (technologyDone || operationsDone) return PipelineModuleStatus.READY;
+        boolean anyFailed = (technology != null && technology.terminal() && technology.getState() != TaskRunState.SUCCEEDED)
+            || (operations != null && operations.terminal() && operations.getState() != TaskRunState.SUCCEEDED);
+        return anyFailed ? PipelineModuleStatus.FAILED : PipelineModuleStatus.READY;
+    }
+
+    private PipelineModuleStatus finalReportStatus(TaskRun task) {
+        if (task == null) return PipelineModuleStatus.READY;
+        return switch (task.getState()) {
+            case QUEUED, READY -> PipelineModuleStatus.QUEUED;
+            case RUNNING -> PipelineModuleStatus.RUNNING;
+            case NEEDS_INPUT -> PipelineModuleStatus.NEEDS_INPUT;
+            case SUCCEEDED -> PipelineModuleStatus.COMPLETED;
+            case FAILED, CANCELLED, TIMED_OUT -> PipelineModuleStatus.FAILED;
+        };
+    }
+
     private PipelineModuleStatus interviewStatus(MarketInterviewRun run) {
         return switch (run.getTaskRun().getState()) {
             case QUEUED, READY -> PipelineModuleStatus.QUEUED;
@@ -402,33 +492,15 @@ public class ProjectModuleStatusService {
     /**
      * 컨셉 다듬기 칸의 상태.
      *
-     * <p><b>사용자가 직접 시작하는 칸이 아니다.</b> 라운드를 거는 것은 BM 채택
-     * ({@code MarketResearchWorker.REFINEMENT_TRIGGER_SUBJECT} →
-     * {@link ConceptRefinementService#startFirstRoundAfterResearch})뿐이라,
-     * 라운드가 없으면 {@code READY} 가 아니라 <b>{@code NOT_READY}</b> 다 — 화면에 「시작하기」를
-     * 세워도 누를 문이 없다.
+     * **사용자가 직접 시작하는 칸이 아니다.** 라운드를 거는 것은 BM 채택뿐이라, 라운드가
+     * 없으면 `READY` 가 아니라 **`NOT_READY`** 다 — 화면에 「시작하기」를 세워도 누를 문이 없다.
      *
-     * <p>갈래:
-     * <ul>
-     *   <li>현재 사업안 선택이 없다 → {@code NOT_READY}</li>
-     *   <li>라운드가 하나도 없다 → {@code NOT_READY}</li>
-     *   <li>최종 확정({@link com.aivle.backend.pipeline.refinement.ConceptRefinementFinal})이 있다
-     *       → {@code COMPLETED}</li>
-     *   <li>마지막 라운드가 <b>열린 채</b> 제안을 들고 있고 사람이 아직 안 골랐다
-     *       → {@code NEEDS_INPUT} (「고를 차례」)</li>
-     *   <li>사람이 <b>전부 거절</b>했다 → {@code COMPLETED}. 라운드는 닫히지 않지만
-     *       ({@link ConceptRefinementService#decide} 가 거절만 있으면 {@code recordLegal} 을 안 부른다)
-     *       루프는 거기서 끝난다 — 「그만」을 「진행 중」으로 보이면 여정 2번이 영영 안 끝난다</li>
-     *   <li>닫힌 라운드인데 더 돌 수 없다(상한 3 · 제안 0건 · 채택 0건)
-     *       → {@code COMPLETED}. 판정은 {@link ConceptRefinementService#canRunAnotherRound} 것을
-     *       그대로 쓴다 — 사본을 두면 워커와 화면이 갈린다</li>
-     *   <li>그 밖 → {@code RUNNING} (워커가 다음 걸음을 걷는 중)</li>
-     * </ul>
+     * ⚠ 「고칠 것이 없었다」와 「법이 막았다」·「3라운드에 못 풀었다」도 **끝난 것**으로 센다.
+     *   최종 확정 행은 서술문이나 오버레이가 있을 때만 생기므로, 그것만 `COMPLETED` 의
+     *   조건으로 삼으면 제안 0건으로 끝난 프로젝트는 **영영 완료가 안 된다.**
      *
-     * <p>⚠ 「고칠 것이 없었다」({@code NOTHING_TO_FIX})와 「법이 막았다」·「3라운드에 못 풀었다」도
-     * <b>끝난 것</b>으로 센다. 최종 확정 행은 서술문이나 오버레이가 있을 때만 생기므로
-     * ({@code ConceptRefinementService.recordNarrative}) 그것만 {@code COMPLETED} 의 조건으로 삼으면
-     * 제안 0건으로 끝난 프로젝트는 <b>영영 완료가 안 된다.</b>
+     * ⚠ 더 돌 수 있는지는 `ConceptRefinementService.canRunAnotherRound` 것을 그대로 쓴다 —
+     *   사본을 두면 워커와 화면이 갈린다.
      */
     private PipelineModuleStatus refinementStatus(ConceptPortfolioSelection selection,
             List<ConceptRefinementRound> rounds) {
@@ -447,26 +519,6 @@ public class ProjectModuleStatusService {
         }
         return conceptRefinementService.canRunAnotherRound(selection.getId())
             ? PipelineModuleStatus.RUNNING : PipelineModuleStatus.COMPLETED;
-    }
-
-    private PipelineModuleStatus marketingStatus(MarketingContent content, String marketingSourceSnapshotId,
-            TaskRun visualTask) {
-        if (marketingSourceSnapshotId == null) return PipelineModuleStatus.NOT_READY;
-        if (content == null) return PipelineModuleStatus.READY;
-        if (!marketingSourceSnapshotId.equals(content.getMarketingSourceSnapshotId())) return PipelineModuleStatus.STALE;
-        PipelineModuleStatus contentStatus = switch (content.getStatus()) {
-            case QUEUED -> PipelineModuleStatus.QUEUED;
-            case RUNNING -> PipelineModuleStatus.RUNNING;
-            case COMPLETED, FINALIZED -> PipelineModuleStatus.COMPLETED;
-            case FAILED -> PipelineModuleStatus.FAILED;
-        };
-        if (visualTask == null || contentStatus != PipelineModuleStatus.COMPLETED) return contentStatus;
-        return switch (visualTask.getState()) {
-            case QUEUED, READY -> PipelineModuleStatus.QUEUED;
-            case RUNNING -> PipelineModuleStatus.RUNNING;
-            case FAILED, CANCELLED, TIMED_OUT -> contentStatus;
-            case SUCCEEDED, NEEDS_INPUT -> contentStatus;
-        };
     }
 
     private ProjectModuleStatusResponse response(Long projectId, PipelineModuleType module,

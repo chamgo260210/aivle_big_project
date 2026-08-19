@@ -87,11 +87,19 @@ export default function BmCanvasPage() {
           {/* ⚠ **안 썼으면 카드를 세우지 않는다.** 옛 판은 「사용하지 않음 · UNVERIFIED」를
               띄우고 그 아래에 「법률 위험 — 없음」·「필수 조치 — 없음」을 세웠다. 법을 아예
               안 봤는데 위험이 없다고 말하는 셈이라 **틀린 안심**이다. 한 줄로만 말한다. */}
+          {/* ⚠ 빈 칸에 «자리 채우기»를 세우지 않는다. 위험과 조치가 둘 다 비면 예전에는
+              「적지 못했어요」가 **두 줄 똑같이** 떴고 그 위에 원문 코드 UNVERIFIED 가 그대로
+              보였다 — 읽는 사람에게는 그냥 깨진 화면이다. 실제로 온 것은 요약 한 문단뿐이므로
+              그것만 보여 준다. 다만 「없음」이라고는 여전히 말하지 않는다(틀린 안심). */}
           {bm?.legal?.used ? <Card title="법률 결과 반영">
-            <p>상태: <strong>{bm.legal.status || 'UNVERIFIED'}</strong></p>
+            <p>상태: <strong>{LEGAL_STATUS_LABEL[bm.legal.status] ?? '확인 필요'}</strong></p>
             <p>{bm.legal.summary || '법률 요약이 오지 않았어요.'}</p>
-            <SwrBox title="법률 위험" items={bm.legal.risks} tone="var(--color-status-danger)" />
-            <SwrBox title="필수 조치" items={bm.legal.requiredActions} tone="var(--color-status-warning)" />
+            {bm.legal.risks?.length > 0
+              && <SwrBox title="법률 위험" items={bm.legal.risks} tone="var(--color-status-danger)" />}
+            {bm.legal.requiredActions?.length > 0
+              && <SwrBox title="필수 조치" items={bm.legal.requiredActions} tone="var(--color-status-warning)" />}
+            {!bm.legal.risks?.length && !bm.legal.requiredActions?.length
+              && <p className="market-note">이번 판정은 개별 위험·조치를 항목으로 <strong>적지 못했어요</strong> — 없다는 뜻이 아니에요.</p>}
           </Card> : bm?.legal ? (
             <p className="market-note">법률 결과는 이번 판정에 <strong>반영되지 않았어요</strong> — 위험이 없다는 뜻이 아니에요.</p>
           ) : null}
@@ -105,6 +113,14 @@ export default function BmCanvasPage() {
 }
 
 
+
+/** 계약(LegalStatus)의 네 값. 원문 코드를 화면에 그대로 내보내지 않는다. */
+const LEGAL_STATUS_LABEL = Object.freeze({
+  PASS: '문제 없음',
+  CONDITIONAL: '조건부 가능',
+  BLOCKED: '진행 불가',
+  UNVERIFIED: '미검증',
+});
 
 function SwrBox({ title, items, tone }) {
   return (

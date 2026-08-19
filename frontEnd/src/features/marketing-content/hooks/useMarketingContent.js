@@ -79,11 +79,35 @@ export default function useMarketingContent(projectId) {
   };
   const create = async (request) => { const detail = await generation.create(request); await refresh(); return detail; };
   const regenerate = async () => { if (!state.selected) return null; const detail = await generation.regenerate(state.selected.content.contentId); await refresh(); return detail; };
+  const retry = async () => { if (!state.selected) return null; const detail = await generation.retry(state.selected.content.contentId); await refresh(); return detail; };
   const save = async (result, revisionType = 'USER_EDITED') => {
     if (!state.selected) return null; setState((value) => ({ ...value, saving: true, error: null }));
     try { const detail = await api.update(projectId, state.selected.content.contentId, { revisionType, result }); updateSelected(detail); await refresh(); setState((value) => ({ ...value, saving: false })); return detail; }
     catch (error) { setState((value) => ({ ...value, saving: false, error })); throw error; }
   };
+  // 생성 키비주얼은 저장소 키(`ai-artifacts/...jpg`)로만 온다. 그 키를 <img src> 에 그대로 넣으면
+  // 브라우저가 상대경로로 풀어 SPA 폴백 HTML 을 받아 **깨진 이미지**가 된다.
+  // Bearer 토큰이 필요하므로 전용 엔드포인트에서 blob 으로 받아 object URL 로 바꾼다.
+  const contentId = state.selected?.content?.contentId ?? null;
+  const hasImage = Boolean(state.selected?.artifactRefs?.length);
+  const [imageUrl, setImageUrl] = useState(null);
+  const imageUrlRef = useRef(null);
+  const releaseImage = useCallback(() => {
+    if (imageUrlRef.current) { URL.revokeObjectURL(imageUrlRef.current); imageUrlRef.current = null; }
+  }, []);
+  useEffect(() => {
+    let cancelled = false;
+    if (!contentId || !hasImage) { releaseImage(); setImageUrl(null); return undefined; }
+    api.image(projectId, contentId).then((blob) => {
+      if (cancelled || !blob) return;
+      releaseImage();
+      imageUrlRef.current = URL.createObjectURL(blob);
+      setImageUrl(imageUrlRef.current);
+    }).catch(() => { if (!cancelled) setImageUrl(null); });
+    return () => { cancelled = true; };
+  }, [api, projectId, contentId, hasImage, releaseImage]);
+  useEffect(() => releaseImage, [releaseImage]);
+
   const finalize = async () => { if (!state.selected) return null; const detail = await api.finalize(projectId, state.selected.content.contentId); updateSelected(detail); await refresh(); return detail; };
-  return { ...state, ...generation, refresh, open, create, regenerate, save, finalize, uploadReference };
+  return { ...state, ...generation, imageUrl, refresh, open, create, regenerate, retry, save, finalize, uploadReference };
 }

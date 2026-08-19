@@ -240,8 +240,18 @@ public class ConceptPortfolioSelectionService {
         // 오버레이라서), 그러면 상태가 READY_FOR_MARKET 에 머문다. 그 상태에서 확정을 거절하니
         // **다듬어진 두 칸이 시드에 영영 못 실렸다.** 가설을 안 건드린 다듬기는 법률 델타가
         // 필요 없으므로(오버레이 2칸은 법률과 무관하다) 살아 있는 CURRENT 보고서로 충분하다.
+        //   ③ **직전 확정이 실패해 FAILED 로 남은 경우.** 실패는 상태를 FAILED 로 남기는데
+        //      그것을 되돌리는 문이 어디에도 없다. 그래서 확정이 한 번 깨지면 사용자는 같은
+        //      버튼을 영영 못 누른다 — 화면은 409 만 반복한다(2026-08-19 실측: 시드 유니크
+        //      충돌로 깨진 뒤 재시도가 전부 거절됐다). 확정은 재시도할 수 있어야 한다.
+        //      ⚠ **가설 7종이 모두 확정된 때만 연다.** CONFIRM_HYPOTHESES 가 실패해 FAILED 인
+        //      경우까지 열면 가설이 덜 정해진 사업안이 확정된다 — 상태만 보고 열면 그 둘을
+        //      구별하지 못하므로 결정 완료 여부를 직접 확인한다.
+        boolean retryAfterFailure = selection.getStatus()==ConceptPortfolioSelectionStatus.FAILED
+            && latestRequired(selectionId).stream().allMatch(ConceptPortfolioHypothesisDecision::ready);
         if (selection.getStatus()!=ConceptPortfolioSelectionStatus.LEGAL_REPORT_READY
-                && selection.getStatus()!=ConceptPortfolioSelectionStatus.READY_FOR_MARKET)
+                && selection.getStatus()!=ConceptPortfolioSelectionStatus.READY_FOR_MARKET
+                && !retryAfterFailure)
             throw new BusinessException(ErrorCode.HYPOTHESIS_DECISIONS_INCOMPLETE);
         ConceptPortfolioRun run = runs.findLocked(selection.getRunId()).orElseThrow();
         ConceptPortfolioConcept concept = concept(selection);
@@ -340,7 +350,40 @@ public class ConceptPortfolioSelectionService {
             marketSeeds.findByPortfolioSelectionIdAndStaleAtIsNullAndDeletedAtIsNull(value.getId()).isPresent()?"READY":"NOT_READY",task,
             task != null ? "WAIT" : next(value.getStatus()),utc(value.getUpdatedAt()));}
     private String next(ConceptPortfolioSelectionStatus s){return switch(s){case HYPOTHESES_PREPARING,DELTA_LEGAL_PENDING,MARKET_SEED_FINALIZING->"WAIT";case PENDING_HYPOTHESIS_CONFIRMATION->"CONFIRM_VALIDATION_ASSUMPTIONS";case DELTA_LEGAL_FAILED->"REVISE_OR_RETRY";case READY_FOR_LEGAL_REPORT->"REVIEW_LEGAL_REPORT";case LEGAL_REPORT_READY->"FINALIZE_MARKET_SEED";case READY_FOR_MARKET->"START_MARKET_ANALYSIS";default->"NONE";};}
-    private HypothesisView hypothesisView(ConceptPortfolioHypothesisDecision v){return new HypothesisView(v.getId(),v.getHypothesisType().name(),mapper.readTree(v.getProposedValueJson()),v.getFinalValueJson()==null?null:mapper.readTree(v.getFinalValueJson()),v.getSource(),v.getDecisionStatus(),v.getProposalVersion(),v.isLocked(),v.getSemanticStatus(),v.getSemanticReason(),v.getLegalImpact(),v.getLegalReviewStatus(),v.isDeltaLegalRequired(),v.getDecidedAt());}
+    private HypothesisView hypothesisView(ConceptPortfolioHypothesisDecision v) {
+        JsonNode proposed = mapper.readTree(v.getProposedValueJson());
+        JsonNode finalValue = v.getFinalValueJson() == null ? null : mapper.readTree(v.getFinalValueJson());
+        JsonNode current = finalValue == null || finalValue.isNull() ? proposed : finalValue;
+        boolean hasCurrentValue = hasValue(current);
+        String blockingReason = null;
+        if (!hasCurrentValue) blockingReason = "현재 값이 비어 있습니다.";
+        else if (!"VALID".equals(v.getSemanticStatus())) blockingReason = v.getSemanticReason() == null
+            || v.getSemanticReason().isBlank()
+                ? "시장 분석 기준으로 확정하려면 값을 조금 더 구체화해 주세요."
+                : v.getSemanticReason();
+        else if ("FAILED".equals(v.getLegalReviewStatus()))
+            blockingReason = "법률·규제 검토를 통과하지 못해 현재 값으로 확정할 수 없습니다.";
+        return new HypothesisView(v.getId(), v.getHypothesisType().name(), proposed, finalValue,
+            v.getSource(), v.getDecisionStatus(), v.getProposalVersion(), v.isLocked(),
+            v.getSemanticStatus(), v.getSemanticReason(), v.getLegalImpact(), v.getLegalReviewStatus(),
+            v.isDeltaLegalRequired(), v.getDecidedAt(), hasCurrentValue, blockingReason == null,
+            blockingReason);
+    }
+
+    private boolean hasValue(JsonNode value) {
+        if (value == null || value.isNull() || value.isMissingNode()) return false;
+        if (value.isTextual()) return !value.asText().isBlank();
+        if (value.isArray()) {
+            for (JsonNode item : value) if (hasValue(item)) return true;
+            return false;
+        }
+        if (value.isObject()) {
+            var fields = value.iterator();
+            while (fields.hasNext()) if (hasValue(fields.next())) return true;
+            return false;
+        }
+        return true;
+    }
     private LegalReportView reportView(ConceptLegalRegulatoryReport v){return new LegalReportView(v.getId(),v.getSelectionId(),v.getConceptId(),v.getStatus(),v.getSchemaVersion(),v.getReportHash(),v.getBasisDate(),v.getCreatedAt(),mapper.readTree(v.getReportJson()));}
     private void copyLegal(ObjectNode out,JsonNode legal,String...names){for(String n:names)out.set(n,legal.has(n)?legal.path(n).deepCopy():mapper.createArrayNode());}
     private void requireOwned(Long owner,Long project){projects.findByIdAndOwnerIdAndDeletedAtIsNull(project,owner).orElseThrow(()->new BusinessException(ErrorCode.PROJECT_NOT_FOUND));}

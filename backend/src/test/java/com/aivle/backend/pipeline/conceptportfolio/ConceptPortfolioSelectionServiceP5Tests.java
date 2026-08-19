@@ -41,6 +41,8 @@ class ConceptPortfolioSelectionServiceP5Tests {
     private final ConceptPortfolioDeltaLegalReviewRepository deltas=mock(ConceptPortfolioDeltaLegalReviewRepository.class);
     private final ConceptLegalRegulatoryReportRepository reports=mock(ConceptLegalRegulatoryReportRepository.class);
     private final MarketAnalysisSeedSnapshotRepository marketSeeds=mock(MarketAnalysisSeedSnapshotRepository.class);
+    private final com.aivle.backend.pipeline.refinement.ConceptRefinementFinalRepository refinementFinals=
+        mock(com.aivle.backend.pipeline.refinement.ConceptRefinementFinalRepository.class);
     private final IdeaBriefFieldRepository briefFields=mock(IdeaBriefFieldRepository.class);
     private final ConceptPortfolioSeedBuilder seedBuilder=mock(ConceptPortfolioSeedBuilder.class);
     private final ConceptPortfolioSelectionTaskFactory taskFactory=mock(ConceptPortfolioSelectionTaskFactory.class);
@@ -48,19 +50,17 @@ class ConceptPortfolioSelectionServiceP5Tests {
     private final ConceptPortfolioJsonHasher hasher=mock(ConceptPortfolioJsonHasher.class);
     private final ObjectMapper mapper=new ObjectMapper();
     private final Clock clock=Clock.fixed(Instant.parse("2026-08-11T00:00:00Z"),ZoneOffset.UTC);
-    private final com.aivle.backend.pipeline.refinement.ConceptRefinementFinalRepository refinementFinals=
-        mock(com.aivle.backend.pipeline.refinement.ConceptRefinementFinalRepository.class);
     private final ConceptPortfolioSelectionService service=new ConceptPortfolioSelectionService(projects,runs,concepts,
-        selections,hypotheses,deltas,reports,marketSeeds,briefFields,seedBuilder,taskFactory,taskRuns,hasher,
-        refinementFinals,mapper,clock);
+        selections,hypotheses,deltas,reports,marketSeeds,briefFields,seedBuilder,taskFactory,taskRuns,hasher,refinementFinals,mapper,clock);
 
     @BeforeEach
-    void defaults(){reset(projects,runs,concepts,selections,hypotheses,deltas,reports,marketSeeds,briefFields,seedBuilder,taskFactory,taskRuns,hasher);
+    void defaults(){reset(projects,runs,concepts,selections,hypotheses,deltas,reports,marketSeeds,refinementFinals,briefFields,seedBuilder,taskFactory,taskRuns,hasher);
         when(hasher.hash(any())).thenReturn(HASH); when(selections.findByProjectIdAndIdempotencyKeyAndDeletedAtIsNull(anyLong(),anyString())).thenReturn(Optional.empty());
         when(selections.findByProjectIdAndIsCurrentTrueAndDeletedAtIsNull(anyLong())).thenReturn(Optional.empty());
         when(hypotheses.findAllBySelectionIdAndDeletedAtIsNullOrderByHypothesisTypeAscProposalVersionDesc(anyLong())).thenReturn(List.of());
         when(reports.findBySelectionIdAndStatusAndDeletedAtIsNull(anyLong(),anyString())).thenReturn(Optional.empty());
         when(marketSeeds.findByPortfolioSelectionIdAndStaleAtIsNullAndDeletedAtIsNull(anyLong())).thenReturn(Optional.empty());
+        when(refinementFinals.findBySelectionIdAndDeletedAtIsNull(anyLong())).thenReturn(Optional.empty());
         ObjectNode seed=mapper.createObjectNode();seed.putObject("seed").put("ideaOverview","seed");
         when(seedBuilder.build(any(),anyList(),anyInt())).thenReturn(new ConceptPortfolioSeedBuilder.BuiltInput(seed,seed.toString()));
         TaskRun task=mock(TaskRun.class);when(task.getId()).thenReturn("prepare-task");

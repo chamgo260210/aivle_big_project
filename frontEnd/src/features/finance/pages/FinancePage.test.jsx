@@ -50,7 +50,7 @@ describe('FinancePage', () => {
     expect(screen.getByText('AI 추천', { selector: 'small' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '입력 내용 저장' })).toBeDisabled();
     expect(container.querySelectorAll('.finance-form-grid.project-form-layout').length).toBeGreaterThan(0);
-    expect(screen.getByRole('link', { name: '다음 - 시장 인터뷰' }))
+    expect(screen.getByRole('link', { name: '다음 - 가상 시장 인터뷰' }))
       .toHaveAttribute('href', '/app/projects/1/market-interview');
   });
 

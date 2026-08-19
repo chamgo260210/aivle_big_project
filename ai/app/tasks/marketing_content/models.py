@@ -1,6 +1,6 @@
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 
 class StrictModel(BaseModel):
@@ -10,6 +10,24 @@ class StrictModel(BaseModel):
 ShortText = Annotated[str, Field(min_length=1, max_length=500)]
 FeatureText = Annotated[str, Field(min_length=1, max_length=300)]
 ClaimText = Annotated[str, Field(min_length=1, max_length=500)]
+
+#: 소스 스냅샷 칸은 **사람이 확정한 자유서술이 그대로** 온다 — 컨셉 가설의
+#: `revenueModel`·`price`·`differentiators` 는 한 문장이 아니라 문단이다.
+#: 응답 쪽 한도(ShortText·FeatureText·ClaimText)를 입력에 그대로 쓰면 **입력이 먼저 막힌다.**
+#:
+#: 실측(2026-08-19 · 프로젝트 2): revenueModel 539자 · pricing 651자 ·
+#: competitorDifferentiators 665자. 각각 500·500·300 을 넘어
+#: `MarketingContentInput.model_validate` 가 **FIELD_CONSTRAINT_VIOLATION(400·재시도 불가)** 로
+#: 떨어진다. 콘텐츠와 비주얼이 같은 모델을 쓰므로 모듈 5 가 통째로 막힌다.
+#:
+#: ⚠ `pricing` 은 백엔드가 `revenueModel + " · " + price` 로 **합쳐서** 만든다
+#: (`MarketingSourceSnapshotFactory`). 두 칸을 각각 한도 안에 넣어도 합은 구조적으로 넘는다.
+#:
+#: 자르지 않고 **넓힌다** — 자르면 가격 3단 중 마지막 단, 차별점 마지막 항목이 조용히
+#: 사라지고 사라졌다는 사실이 어디에도 안 남는다.
+#: **응답 쪽 한도는 그대로 둔다** — 모델이 뱉는 양은 여전히 묶여 있어야 한다.
+SourceText = Annotated[str, Field(min_length=1, max_length=4000)]
+SourceItem = Annotated[str, Field(min_length=1, max_length=2000)]
 ArtifactRef = Annotated[str, Field(
     min_length=1,
     max_length=300,
@@ -56,9 +74,22 @@ class OfficialEvidenceReference(StrictModel):
     registryVersion: Annotated[str, Field(min_length=0, max_length=80)] = ""
 
 
+class BusinessModel(StrictModel):
+    key_activities: list[FeatureText] = Field(default_factory=list, max_length=30)
+    key_resources: list[FeatureText] = Field(default_factory=list, max_length=30)
+    key_partners: list[FeatureText] = Field(default_factory=list, max_length=30)
+    customer_relationship: Annotated[str, Field(min_length=0, max_length=500)] = ""
+
+
+class BusinessConstraints(StrictModel):
+    budget_krw: int | None = Field(default=None, ge=0)
+    months: int | None = Field(default=None, ge=0)
+    team: int | None = Field(default=None, ge=0)
+
+
 class MarketingSourceSnapshot(StrictModel):
     contract: Literal["marketing-source-snapshot-v1"]
-    schemaVersion: Literal["2.0"]
+    schemaVersion: Literal["2.0", "2.1"]
     snapshotId: Annotated[str, Field(min_length=1, max_length=64)]
     hash: HashText
     createdAt: Annotated[str, Field(min_length=1, max_length=50)]
@@ -67,28 +98,34 @@ class MarketingSourceSnapshot(StrictModel):
     conceptId: Annotated[str, Field(min_length=1, max_length=64)]
     marketAnalysisSeedSnapshotId: Annotated[str, Field(min_length=1, max_length=64)]
     marketAnalysisSeedSnapshotHash: HashText
+    # ⚠ conceptName 만 ShortText 를 유지한다 — 실측 17자로 짧고, 계약 테스트가 이 칸으로
+    #   「한도가 살아 있는지」를 확인한다(`test_source_strings_and_arrays_are_bounded`).
     conceptName: ShortText
-    targetSegment: ShortText
-    problem: ShortText
-    valueProposition: ShortText
-    positioning: ShortText
-    keyFeatures: list[FeatureText] = Field(min_length=1, max_length=30)
-    pricing: ShortText
-    targetRegion: ShortText
-    revenueModel: ShortText
-    price: ShortText
-    channels: list[FeatureText] = Field(min_length=1, max_length=20)
-    competitorDifferentiators: list[FeatureText] = Field(max_length=30)
+    targetSegment: SourceText
+    problem: SourceText
+    valueProposition: SourceText
+    positioning: SourceText
+    keyFeatures: list[SourceItem] = Field(min_length=1, max_length=30)
+    pricing: SourceText
+    targetRegion: SourceText
+    revenueModel: SourceText
+    price: SourceText
+    channels: list[SourceItem] = Field(min_length=1, max_length=20)
+    competitorDifferentiators: list[SourceItem] = Field(max_length=30)
     preMarketSomShare: PreMarketSomShare
     preMarketSom: PreMarketSom
-    legalStatus: ShortText
-    allowedClaims: list[ClaimText] = Field(max_length=30)
-    prohibitedClaims: list[ClaimText] = Field(max_length=30)
-    requiredDisclosures: list[ClaimText] = Field(max_length=30)
-    requiredControls: list[ClaimText] = Field(max_length=30)
-    communicationRequiredControls: list[ClaimText] = Field(max_length=30)
+    legalStatus: SourceText
+    allowedClaims: list[SourceItem] = Field(max_length=30)
+    prohibitedClaims: list[SourceItem] = Field(max_length=30)
+    requiredDisclosures: list[SourceItem] = Field(max_length=30)
+    requiredControls: list[SourceItem] = Field(max_length=30)
+    communicationRequiredControls: list[SourceItem] = Field(max_length=30)
     officialEvidenceReferences: list[OfficialEvidenceReference] = Field(max_length=200)
     sourceSnapshotHash: HashText
+    selectionRevision: int | None = Field(default=None, ge=0)
+    bmPlanRevision: int | None = Field(default=None, ge=0)
+    businessModel: BusinessModel | None = None
+    businessConstraints: BusinessConstraints | None = None
 
 
 class MarketingContentRequest(StrictModel):
@@ -105,11 +142,20 @@ class MarketingContentRequest(StrictModel):
     referenceArtifactId: Annotated[str, Field(
         pattern=r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
     )] | None = None
+    marketingStrategyReportId: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")] | None = None
+
+
+class GenerationContext(StrictModel):
+    operation: Literal["START", "RETRY", "REGENERATE"]
+    attempt: int = Field(ge=1, le=3)
+    designVersion: Literal["marketing-draft-v1"]
 
 
 class MarketingContentInput(StrictModel):
     source: MarketingSourceSnapshot
     request: MarketingContentRequest
+    strategy: dict[str, JsonValue] | None = None
+    generation: GenerationContext | None = None
 
 
 class LegalReview(StrictModel):

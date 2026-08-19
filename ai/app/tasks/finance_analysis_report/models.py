@@ -13,6 +13,11 @@ class FinanceAnalysisReportInput(StrictModel):
     sourceMarketResearchVersionId: int | None
     sourceBusinessModelVersionId: int | None
     sourceTechOpsSnapshotId: str | None = Field(default=None, min_length=1, max_length=64)
+    # 백엔드(FinancialAnalysisService:66)는 계보를 sourceBinding 으로 항상 같이 보낸다.
+    # StrictModel 이 extra="forbid" 라 이 칸을 선언하지 않으면 요청이 통째로 400 이 되고,
+    # 워커의 safeReason 이 그것을 AI_SERVICE_UNAVAILABLE 로 접어 **매번 fallback 보고서**가 나온다.
+    # 보고서 본문은 deterministicResult 만 쓰므로 값은 받아두고 프롬프트에는 넣지 않는다.
+    sourceBinding: dict | None = None
     deterministicResult: dict
 
 

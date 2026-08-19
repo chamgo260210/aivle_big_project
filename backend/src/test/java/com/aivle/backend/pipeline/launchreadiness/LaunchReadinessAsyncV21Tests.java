@@ -7,6 +7,7 @@ import static org.mockito.Mockito.*;
 import com.aivle.backend.jobevent.JobEventPublisher;
 import com.aivle.backend.pipeline.artifact.api.ProjectEvidenceArtifactApiModels.ArtifactView;
 import com.aivle.backend.pipeline.artifact.application.ProjectEvidenceArtifactService;
+import com.aivle.backend.pipeline.artifact.application.ProjectEvidenceArtifactService.UploadFingerprint;
 import com.aivle.backend.pipeline.launchreadiness.application.LaunchReadinessDocumentService;
 import com.aivle.backend.pipeline.launchreadiness.application.LaunchReadinessService;
 import com.aivle.backend.pipeline.launchreadiness.domain.LaunchReadinessInputSnapshot;
@@ -31,38 +32,45 @@ import tools.jackson.databind.ObjectMapper;
 
 class LaunchReadinessAsyncV21Tests {
     @Test
-    void repeatedCommandKeyReturnsExistingTaskBeforeUploadingAnotherDocument() {
+    void repeatedCommandKeyReturnsExistingTaskBeforeUploadingAnotherDocument() throws Exception {
         ObjectMapper mapper = new ObjectMapper();
         ProjectRepository projects = mock(ProjectRepository.class); Project project = mock(Project.class);
         when(projects.findByIdAndOwnerIdAndDeletedAtIsNull(41L, 7L)).thenReturn(Optional.of(project));
         TaskRunRepository runs = mock(TaskRunRepository.class);
-        String input = "{\"inputSnapshotId\":\"snapshot-existing\",\"inputSnapshotHash\":\"" + hash('c') + "\"}";
+        String input = "{\"operation\":\"START\",\"inputSnapshotId\":\"snapshot-existing\",\"inputSnapshotHash\":\"" + hash('c') + "\"}";
         TaskRun existing = TaskRun.create(project, TaskType.LAUNCH_TECHNOLOGY_READINESS,
             "LAUNCH_READINESS_INPUT", "snapshot-existing", input, hash('d'), "command-1", "request-1", 2);
         when(runs.findFirstByProjectIdAndTaskTypeAndIdempotencyKeyAndDeletedAtIsNullOrderByCreatedAtDescIdDesc(
             41L, TaskType.LAUNCH_TECHNOLOGY_READINESS, "command-1")).thenReturn(Optional.of(existing));
         ProjectEvidenceArtifactService artifacts = mock(ProjectEvidenceArtifactService.class);
+        when(artifacts.fingerprint(any())).thenReturn(new UploadFingerprint(hash('a'), 1024,
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"));
+        SnapshotHasher snapshotHasher = mock(SnapshotHasher.class);
+        when(snapshotHasher.hash(any(tools.jackson.databind.JsonNode.class))).thenReturn(hash('c'));
+        LaunchReadinessDocumentService documents = new LaunchReadinessDocumentService();
         LaunchReadinessService service = new LaunchReadinessService(projects, artifacts,
-            new LaunchReadinessDocumentService(), mock(LaunchReadinessInputSnapshotRepository.class),
+            documents, mock(LaunchReadinessInputSnapshotRepository.class),
             mock(LaunchReadinessReportRepository.class), runs, mock(TaskRunService.class),
-            mock(CanonicalInputHasher.class), new SnapshotHasher(mapper), mock(JobEventPublisher.class), mapper);
+            mock(CanonicalInputHasher.class), snapshotHasher, mock(JobEventPublisher.class), mapper);
 
         var replay = service.start(7L, 41L, ModuleType.TECHNOLOGY,
-            new MockMultipartFile("file", "different.docx", "application/octet-stream", new byte[] { 1 }),
+            completedDocument(documents),
             "command-1", "request-2");
 
         assertThat(replay.taskRunId()).isEqualTo(existing.getId());
         assertThat(replay.inputSnapshotId()).isEqualTo("snapshot-existing");
-        verifyNoInteractions(artifacts);
+        verify(artifacts, never()).upload(anyLong(), anyLong(), any());
     }
 
     @Test
-    void uploadCreatesImmutableSnapshotAndQueuedTaskRunInsteadOfWaitingForAi() throws Exception {
+    void technologyStartsWithNoSelectionConceptMarketOrBusinessModel() throws Exception {
         ObjectMapper mapper = new ObjectMapper();
         ProjectRepository projects = mock(ProjectRepository.class);
         Project project = mock(Project.class);
         when(projects.findByIdAndOwnerIdAndDeletedAtIsNull(41L, 7L)).thenReturn(Optional.of(project));
         ProjectEvidenceArtifactService artifacts = mock(ProjectEvidenceArtifactService.class);
+        when(artifacts.fingerprint(any())).thenReturn(new UploadFingerprint(hash('a'), 1024,
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"));
         when(artifacts.upload(eq(7L), eq(41L), any())).thenReturn(new ArtifactView("artifact-1", 41L,
             "technology.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             1024, hash('a'), LocalDateTime.now()));
@@ -74,10 +82,10 @@ class LaunchReadinessAsyncV21Tests {
             41L, ModuleType.TECHNOLOGY)).thenReturn(Optional.empty());
         TaskRunService taskRuns = mock(TaskRunService.class);
         TaskRun task = TaskRun.create(project, TaskType.LAUNCH_TECHNOLOGY_READINESS,
-            "LAUNCH_READINESS_INPUT", "snapshot", "{}", hash('b'), "command-1", "request-1", 2);
+            "LAUNCH_READINESS_INPUT", "snapshot", "{}", hash('b'), "command-1", "request-1", 1);
         when(taskRuns.createWithDisposition(eq(7L), eq(41L), eq(TaskType.LAUNCH_TECHNOLOGY_READINESS),
             eq("LAUNCH_READINESS_INPUT"), anyString(), anyString(), anyString(), eq("command-1"),
-            eq("request-1"), eq(2))).thenReturn(new TaskRunService.CreateResult(task, true, false));
+            eq("request-1"), eq(1))).thenReturn(new TaskRunService.CreateResult(task, true, false));
         CanonicalInputHasher inputHasher = mock(CanonicalInputHasher.class);
         when(inputHasher.hash(eq(TaskType.LAUNCH_TECHNOLOGY_READINESS), eq("1.0"), eq("ko-KR"), anyString()))
             .thenReturn(hash('b'));
@@ -96,9 +104,14 @@ class LaunchReadinessAsyncV21Tests {
         assertThat(savedSnapshot.getValue().getSourceDocumentArtifactId()).isEqualTo("artifact-1");
         assertThat(savedSnapshot.getValue().getParsedInputJson()).contains("3계층 구조");
         assertThat(savedSnapshot.getValue().isCurrent()).isTrue();
+        assertThat(savedSnapshot.getValue().getSourceMarketSeedSnapshotId()).isNull();
+        assertThat(savedSnapshot.getValue().getSourceSelectionId()).isNull();
+        assertThat(savedSnapshot.getValue().getSourceSelectionRevision()).isNull();
+        assertThat(savedSnapshot.getValue().getSourceBmPlanRevision()).isNull();
+        assertThat(savedSnapshot.getValue().getSourceBindingHash()).isNull();
         verify(taskRuns).createWithDisposition(eq(7L), eq(41L),
             eq(TaskType.LAUNCH_TECHNOLOGY_READINESS), eq("LAUNCH_READINESS_INPUT"),
-            eq(response.inputSnapshotId()), anyString(), anyString(), eq("command-1"), eq("request-1"), eq(2));
+            eq("41"), anyString(), anyString(), eq("command-1"), eq("request-1"), eq(1));
         verify(events).publish(any());
 
         when(snapshots.findFirstByProjectIdAndModuleTypeAndCurrentTrueAndDeletedAtIsNullOrderByFinalizedAtDesc(
@@ -108,11 +121,13 @@ class LaunchReadinessAsyncV21Tests {
     }
 
     @Test
-    void operationsStartsFromProjectAndProfessionalDocumentWithoutMarketOrBusinessModel() throws Exception {
+    void operationsStartsWithNoSelectionConceptMarketOrBusinessModel() throws Exception {
         ObjectMapper mapper = new ObjectMapper();
         ProjectRepository projects = mock(ProjectRepository.class); Project project = mock(Project.class);
         when(projects.findByIdAndOwnerIdAndDeletedAtIsNull(41L, 7L)).thenReturn(Optional.of(project));
         ProjectEvidenceArtifactService artifacts = mock(ProjectEvidenceArtifactService.class);
+        when(artifacts.fingerprint(any())).thenReturn(new UploadFingerprint(hash('a'), 1024,
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"));
         when(artifacts.upload(eq(7L), eq(41L), any())).thenReturn(new ArtifactView("artifact-operations", 41L,
             "operations.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             1024, hash('a'), LocalDateTime.now()));
@@ -124,10 +139,10 @@ class LaunchReadinessAsyncV21Tests {
             41L, ModuleType.OPERATIONS)).thenReturn(Optional.empty());
         TaskRunService taskRuns = mock(TaskRunService.class);
         TaskRun task = TaskRun.create(project, TaskType.LAUNCH_OPERATIONS_READINESS,
-            "LAUNCH_READINESS_INPUT", "snapshot", "{}", hash('b'), "command-ops", "request-ops", 2);
+            "LAUNCH_READINESS_INPUT", "snapshot", "{}", hash('b'), "command-ops", "request-ops", 1);
         when(taskRuns.createWithDisposition(eq(7L), eq(41L), eq(TaskType.LAUNCH_OPERATIONS_READINESS),
             eq("LAUNCH_READINESS_INPUT"), anyString(), anyString(), anyString(), eq("command-ops"),
-            eq("request-ops"), eq(2))).thenReturn(new TaskRunService.CreateResult(task, true, false));
+            eq("request-ops"), eq(1))).thenReturn(new TaskRunService.CreateResult(task, true, false));
         CanonicalInputHasher inputHasher = mock(CanonicalInputHasher.class);
         when(inputHasher.hash(eq(TaskType.LAUNCH_OPERATIONS_READINESS), eq("1.0"), eq("ko-KR"), anyString()))
             .thenReturn(hash('b'));
@@ -142,7 +157,7 @@ class LaunchReadinessAsyncV21Tests {
         assertThat(response.status()).isEqualTo("QUEUED");
         verify(taskRuns).createWithDisposition(eq(7L), eq(41L), eq(TaskType.LAUNCH_OPERATIONS_READINESS),
             eq("LAUNCH_READINESS_INPUT"), anyString(), anyString(), anyString(), eq("command-ops"),
-            eq("request-ops"), eq(2));
+            eq("request-ops"), eq(1));
     }
 
     private MockMultipartFile completedDocument(LaunchReadinessDocumentService documents) throws Exception {
@@ -161,4 +176,5 @@ class LaunchReadinessAsyncV21Tests {
     }
 
     private static String hash(char value) { return "sha256:" + String.valueOf(value).repeat(64); }
+
 }

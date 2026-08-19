@@ -12,6 +12,11 @@ RUN pip install --no-cache-dir --requirement requirements.txt \
 COPY --chown=app:app main.py ./
 COPY --chown=app:app app ./app
 COPY --chown=app:app assets ./assets
+# ⚠ **트윈 뱅크가 이미지 안에 있어야 한다.** 없으면 모듈 4(시장 인터뷰)가 실패하지 않고
+#   «표본 0명»으로 조용히 성공한다 — 화면 경고도 0건이다(targeting.py 주석 참조).
+#   런타임에 그렇게 새는 것보다 빌드에서 끊는 편이 낫다.
+RUN test -s app/twin/bank/twin_bank_manifest.json \
+    || (echo "ERROR: ai/app/twin/bank 이 비어 있습니다. 트윈 뱅크를 채운 뒤 다시 빌드하세요." >&2; exit 1)
 RUN mkdir -p /app/outputs && chown app:app /app/outputs
 USER app
 

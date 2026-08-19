@@ -63,9 +63,11 @@ describe('project context tools', () => {
     expect(screen.queryByRole('button', { name: '도움말' })).not.toBeInTheDocument();
   });
 
-  it('개요를 포함한 7개 탐색 순서를 사용하고 마지막 단계 문구를 노출하지 않는다', async () => {
+  it('개요와 canonical 6개 여정 순서를 사용하고 마지막 단계 문구를 노출하지 않는다', async () => {
     const overviewModel = { ...model, currentJourney: { id: 'overview', shortLabel: '프로젝트 개요' }, journeys: [
-      ...model.journeys,
+      { id: 'planning', shortLabel: '사업 기획', href: '/app/projects/41/idea', status: 'COMPLETED' },
+      { id: 'validation', shortLabel: '사업 검증', href: '/app/projects/41/business-validation', status: 'IN_PROGRESS' },
+      { id: 'launch', shortLabel: '출시 준비', href: '/app/projects/41/launch-readiness', status: 'NOT_STARTED' },
       { id: 'interview', shortLabel: '시장 인터뷰', href: '/app/projects/41/market-interview', status: 'NOT_STARTED' },
       { id: 'marketingStrategy', shortLabel: '마케팅 전략', href: '/app/projects/41/marketing', status: 'NOT_STARTED' },
       { id: 'finalReport', shortLabel: '최종 보고서', href: '/app/projects/41/final-report', status: 'NOT_STARTED' },

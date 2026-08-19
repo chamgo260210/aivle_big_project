@@ -31,6 +31,11 @@ public class FinancialInputSnapshot extends BaseEntity {
     @Column(name = "preparation_revision") private Integer preparationRevision;
     @Column(name = "source_document_artifact_id", length = 64) private String sourceDocumentArtifactId;
     @Column(name = "source_document_hash", length = 71) private String sourceDocumentHash;
+    @Column(name = "source_current_market_seed_snapshot_id", length = 64) private String sourceCurrentMarketSeedSnapshotId;
+    @Column(name = "source_selection_id") private Long sourceSelectionId;
+    @Column(name = "source_selection_revision") private Integer sourceSelectionRevision;
+    @Column(name = "source_bm_plan_revision") private Integer sourceBmPlanRevision;
+    @Column(name = "current_concept_binding_hash", length = 71) private String currentConceptBindingHash;
 
     public static FinancialInputSnapshot createFromUserDocument(String id, Long projectId,
             String preparationId, int preparationRevision, String artifactId, String documentHash,
@@ -44,6 +49,21 @@ public class FinancialInputSnapshot extends BaseEntity {
         value.id = id; value.projectId = projectId; value.preparationId = preparationId;
         value.sourceMode = "USER_DOCUMENT_INPUT"; value.preparationRevision = preparationRevision;
         value.sourceDocumentArtifactId = artifactId; value.sourceDocumentHash = documentHash;
+        value.schemaVersion = schemaVersion; value.snapshotHash = hash; value.snapshotJson = json;
+        value.createdByUserId = userId; value.finalizedAt = finalizedAt;
+        return value;
+    }
+
+    public static FinancialInputSnapshot createIndependent(String id, Long projectId,
+            String preparationId, int preparationRevision, String schemaVersion, String hash,
+            String json, Long userId, Instant finalizedAt) {
+        if (blank(id) || projectId == null || blank(preparationId) || preparationRevision < 1
+                || blank(schemaVersion) || !hash(hash) || blank(json) || userId == null || finalizedAt == null) {
+            throw new IllegalArgumentException("직접 재무 입력 Snapshot 정보가 올바르지 않습니다.");
+        }
+        FinancialInputSnapshot value = new FinancialInputSnapshot();
+        value.id = id; value.projectId = projectId; value.preparationId = preparationId;
+        value.sourceMode = "DIRECT_INPUT"; value.preparationRevision = preparationRevision;
         value.schemaVersion = schemaVersion; value.snapshotHash = hash; value.snapshotJson = json;
         value.createdByUserId = userId; value.finalizedAt = finalizedAt;
         return value;
@@ -68,6 +88,13 @@ public class FinancialInputSnapshot extends BaseEntity {
         value.createdByUserId = userId;
         value.finalizedAt = finalizedAt;
         return value;
+    }
+
+    public void bindCurrentConcept(String seedId, Long selectionId, int selectionRevision,
+            int bmPlanRevision, String bindingHash) {
+        sourceCurrentMarketSeedSnapshotId = seedId; sourceSelectionId = selectionId;
+        sourceSelectionRevision = selectionRevision; sourceBmPlanRevision = bmPlanRevision;
+        currentConceptBindingHash = bindingHash;
     }
 
     public static FinancialInputSnapshot createFromMarketAndBusinessModel(String id, Long projectId,

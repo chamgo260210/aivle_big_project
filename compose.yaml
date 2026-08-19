@@ -63,6 +63,10 @@ services:
       AI_PROVIDER: ${AI_PROVIDER:?AI_PROVIDER is required}
       AI_API_KEY: ${AI_API_KEY:?AI_API_KEY is required}
       AI_MODEL: ${AI_MODEL:?AI_MODEL is required}
+      MARKET_INTERVIEW_MODEL: ${MARKET_INTERVIEW_MODEL:-}
+      MARKET_INTERVIEW_TEMPERATURE: ${MARKET_INTERVIEW_TEMPERATURE:-1.0}
+      MARKET_INTERVIEW_REASONING_EFFORT: ${MARKET_INTERVIEW_REASONING_EFFORT:-}
+      MARKET_INTERVIEW_CONCURRENCY: ${MARKET_INTERVIEW_CONCURRENCY:-4}
       MARKETING_COPY_MODEL: ${MARKETING_COPY_MODEL:-gpt-4o-mini}
       MARKETING_IMAGE_MODEL: ${MARKETING_IMAGE_MODEL:-gpt-image-2}
       AI_IMAGE_MODEL: ${MARKETING_IMAGE_MODEL:-gpt-image-2}
@@ -95,16 +99,19 @@ services:
       TECH_OPS_ENABLE_DART_CORP_LOOKUP: ${TECH_OPS_ENABLE_DART_CORP_LOOKUP:-false}
       TECH_OPS_ADVISOR_MODEL: ${TECH_OPS_ADVISOR_MODEL:-}
       BM_MODEL: ${BM_MODEL:-${AI_MODEL}}
-      # ⚠ 온도와 둘 중 하나다 — 값을 주면 온도(0.1)를 안 보낸다. 같이 보내면 400 이다.
       BM_REASONING_EFFORT: ${BM_REASONING_EFFORT:-}
       TWIN_BANK_DIR: /app/app/twin/bank
       TWIN_CONCURRENCY: ${TWIN_CONCURRENCY:-32}
-    volumes:
-      - ./ai/app/research/research2/runs:/app/app/research/research2/runs:ro
-      - type: bind
-        source: ${TWIN_BANK_HOST_DIR}
-        target: /app/app/twin/bank
-        read_only: true
+    # ⚠ **트윈 뱅크와 research2 기준 run 은 이미지에 구워져 있다** — 호스트 바인드를
+    #   일부러 걸지 않는다. 바인드로 두면 그 폴더가 없는 환경에서 compose 가 아예
+    #   안 뜨거나, 더 나쁘게는 빈 폴더가 올라타 모듈 4 가 «표본 0명»으로 조용히
+    #   성공한다. 외부 마운트로 되돌리려면 아래를 되살리고 ai/.dockerignore 에
+    #   app/twin/bank 를 다시 넣는다:
+    #     volumes:
+    #       - type: bind
+    #         source: ${TWIN_BANK_HOST_DIR}
+    #         target: /app/app/twin/bank
+    #         read_only: true
     depends_on:
       minio:
         condition: service_healthy

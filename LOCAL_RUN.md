@@ -6,7 +6,13 @@
 Copy-Item .env.example .env
 ```
 
-`.env`에는 compose가 `:?`로 요구하는 **8개**를 설정한다: `AI_PROVIDER`, `AI_API_KEY`, `AI_MODEL`, `AI_INTERNAL_SERVICE_TOKEN`, `JWT_SECRET`, `POSTGRES_PASSWORD`, `MINIO_ROOT_PASSWORD`, `OPENAI_API_KEY`. 하나라도 비면 `docker compose up`이 기동을 거부한다. `OPENAI_API_KEY`는 시장조사 엔진 지갑이라 제품 지갑(`AI_API_KEY`)과 일부러 갈라져 있다 — 한 지갑으로 쓰려면 같은 값을 **적어서** 합친다. OpenAI 호환 Provider라면 필요에 따라 `AI_BASE_URL`도 설정한다. 실제 Secret은 저장소에 커밋하지 않는다.
+`.env`에는 `AI_PROVIDER`, `AI_API_KEY`, `AI_MODEL`, `AI_INTERNAL_SERVICE_TOKEN`, `JWT_SECRET`, `POSTGRES_PASSWORD`, `MINIO_ROOT_PASSWORD`를 설정한다. Market Research2를 실행하려면 `MARKET_RESEARCH_OPENAI_API_KEY` 또는 `OPENAI_API_KEY`도 별도로 필요하다. OpenAI 호환 Provider라면 필요에 따라 `AI_BASE_URL`을 설정하되, Research2용 `OPENAI_BASE_URL`은 Responses API와 `web_search`를 지원해야 한다. 실제 Secret은 저장소에 커밋하지 않는다.
+
+값을 노출하지 않고 필수 설정과 Twin Bank 경로를 확인한다.
+
+```powershell
+python scripts/check_local_env.py --compose
+```
 
 ```powershell
 docker compose up --build
@@ -16,48 +22,22 @@ docker compose up --build
 - 회원가입: http://localhost:3000/auth/signup
 - 로그인: http://localhost:3000/auth/login
 
-## 2. 고치면서 볼 때 — 재빌드하지 않는 길
-
-위의 `up --build`는 **확인용**이다. 코드를 고치는 동안에는 겹침 파일을 얹는다.
-
-```powershell
-docker compose -f compose.yaml -f compose.dev.yaml up -d
-```
-
-| 무엇 | 겹침 파일이 하는 일 |
-|---|---|
-| `ai/` | 소스를 바인드로 붙이고 uvicorn `--reload`. **저장하면 몇 초 뒤 반영, 재빌드 0회** |
-| `backend/` | `:8080`을 호스트에 공개. 스모크·`curl`·디버거가 nginx를 안 거친다. ⚠ 코드 변경은 **여전히 재빌드** |
-| `frontEnd/` | 겹침 파일과 무관. `cd frontEnd ; npm.cmd run dev`로 `:5173`(HMR)을 쓴다 |
-
-프론트만 볼 때는 frontend 컨테이너 없이도 된다.
-
-```powershell
-$env:VITE_PROXY_TARGET = 'http://localhost:8080'
-cd frontEnd ; npm.cmd run dev
-```
-
-DB와 객체 저장소만 필요하면 `compose.infrastructure.yaml`(postgres+minio, 포트 공개)을 쓴다.
-
-`compose.dev.yaml`은 로컬 전용이다. 여기 있는 바인드 마운트를 `compose.yaml`로 옮기지 않는다 — 이미지가 자립하지 못하게 만든다.
-
 ## A. 현재 공식 Journey 확인
 
-1. 회원가입 또는 로그인
-2. Project 생성
-3. Idea TEXT 또는 FILE 입력
-4. AI Interpretation
-5. Idea Origin 질문 답변 및 확정
-6. Legal Precheck 실행과 결과 확인
-7. Legal Guardrail 확인
-8. Concept Generation 실행
-9. 적격 Concept 3개 표시 확인
+1. 사업 기획 — Idea, Concept
+2. 사업 검증 — current concept의 exact Market/BM lineage 사용
+3. 출시 준비 — Technology, Operations, Finance
+4. 가상 인터뷰 — 시장 인터뷰 정성 탐색, 트윈 패널 정량 시뮬레이션
+5. 마케팅 전략 — Marketing
+6. 최종 보고서
 
-현재 공식 Journey는 적격 Concept 3개 표시에서 종료한다.
+Market fresh collection은 최대 20분 execution budget을 사용하며, 화면과 Work Center에 heartbeat가
+계속 표시된다. 5분 전후에 중단되면 정상 timeout이 아니라 transport 설정 회귀이므로
+`AI_SERVER_MARKET_RESEARCH_READ_TIMEOUT`과 Backend/AI 로그를 확인한다.
 
 ## B. 보존된 기존 MVP 실험 기능 확인
 
-Concept 분석, Concept 선택, Persona, Interview, Marketing, Final Report의 Route와 코드는 보존돼 있다. 이들은 현재 공식 Journey와 자동 연결되지 않으며 운영 완료 기능이나 공식 다음 단계로 해석하지 않는다. 직접 확인은 개발·실험 목적으로만 수행한다.
+`/api/v1` 중심 Legacy stable-core 경로는 현재 6단계 공식 Journey와 별개의 개발·실험 호환 경로다. 공식 제품 완료 여부나 다음 단계 판단에는 current `/api/v3` Journey authority를 사용한다.
 
 `.env.demo.example`과 `scripts/demo-start.ps1`은 Backend와 Frontend만 직접 실행하는 `/api/v1` 중심 Legacy stable-core 데모다. FastAPI, PostgreSQL, MinIO를 포함한 공식 전체 Journey 검증이 아니다.
 

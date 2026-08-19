@@ -15,9 +15,12 @@ function Host() {
 }
 
 describe('project overview journey map', () => {
-  it('6개 업무를 카드 격자가 아닌 하나의 여정 지도와 행동형 CTA로 표시한다', () => {
+  it('canonical 6개 업무를 하나의 여정 지도와 행동형 CTA로 표시한다', () => {
     render(<MemoryRouter initialEntries={['/']}><Routes><Route element={<Host />}><Route path="/" element={<ProjectOverviewPage />} /></Route></Routes></MemoryRouter>);
     expect(screen.getByRole('list').children).toHaveLength(6);
+    expect(screen.getByText('6단계 사업 여정')).toBeInTheDocument();
+    expect(screen.getByText(/아이디어를 정리하고 비교/)).toBeInTheDocument();
+    expect(screen.getByText(/가상 고객에게 물어보고/)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: '사업 기획 시작하기' })).toBeInTheDocument();
     expect(screen.queryByText('사업 기획 열기')).not.toBeInTheDocument();
     expect(document.querySelector('.journey-map')).toBeInTheDocument();

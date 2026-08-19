@@ -49,7 +49,7 @@ class EmptyProposalRoundTests {
             mock(MarketAnalysisSeedSnapshotRepository.class),
             mock(ConceptPortfolioSelectionService.class), new ConceptPortfolioJsonHasher(mapper),
             taskRuns, rounds,
-            mock(ConceptRefinementService.class), mapper, clock);
+            mock(ConceptRefinementService.class), mapper, clock, mock(jakarta.persistence.EntityManager.class));
 
         ConceptPortfolioSelection selection = ConceptPortfolioSelection.create(42L, "run", "concept-1",
             "candidate-1", HASH, HASH, "명시적 사용자 선택", HASH, "selection-key", 7L, clock.instant());
@@ -113,7 +113,7 @@ class EmptyProposalRoundTests {
             mock(MarketAnalysisSeedSnapshotRepository.class),
             selectionService, new ConceptPortfolioJsonHasher(mapper),
             mock(TaskRunService.class), rounds,
-            mock(ConceptRefinementService.class), mapper, clock);
+            mock(ConceptRefinementService.class), mapper, clock, mock(jakarta.persistence.EntityManager.class));
 
         ConceptPortfolioSelection selection = ConceptPortfolioSelection.create(42L, "run", "concept-1",
             "candidate-1", HASH, HASH, "명시적 사용자 선택", HASH, "selection-key", 7L, clock.instant());
@@ -168,7 +168,7 @@ class EmptyProposalRoundTests {
             mock(MarketAnalysisSeedSnapshotRepository.class),
             mock(ConceptPortfolioSelectionService.class), new ConceptPortfolioJsonHasher(mapper),
             mock(TaskRunService.class), rounds,
-            mock(ConceptRefinementService.class), mapper, clock);
+            mock(ConceptRefinementService.class), mapper, clock, mock(jakarta.persistence.EntityManager.class));
 
         ConceptPortfolioSelection selection = ConceptPortfolioSelection.create(42L, "run", "concept-1",
             "candidate-1", HASH, HASH, "명시적 사용자 선택", HASH, "selection-key", 7L, clock.instant());

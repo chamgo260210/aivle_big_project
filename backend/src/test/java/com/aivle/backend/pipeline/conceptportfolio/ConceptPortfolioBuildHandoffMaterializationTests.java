@@ -42,7 +42,7 @@ class ConceptPortfolioBuildHandoffMaterializationTests {
         var refinement = mock(com.aivle.backend.pipeline.refinement.ConceptRefinementService.class);
         var service = new ConceptPortfolioSelectionMaterializationService(selections, hypotheses, deltas,
             reports, marketSeeds, selectionService, hasher, taskRuns, rounds, refinement,
-            mapper, clock);
+            mapper, clock, mock(jakarta.persistence.EntityManager.class));
 
         ConceptPortfolioSelection selection = ConceptPortfolioSelection.create(42L, "run", "concept-1",
             "candidate-1", HASH, HASH, "명시적 사용자 선택", HASH, "selection-key", 7L, clock.instant());
@@ -81,7 +81,7 @@ class ConceptPortfolioBuildHandoffMaterializationTests {
         assertThat(service.complete(new TaskRunService.Claim("task-1", "attempt-1", "claim"), context, response))
             .isEqualTo("BUILD_HANDOFF");
         ArgumentCaptor<MarketAnalysisSeedSnapshot> saved = ArgumentCaptor.forClass(MarketAnalysisSeedSnapshot.class);
-        verify(marketSeeds).save(saved.capture());
+        verify(marketSeeds).saveAndFlush(saved.capture());
         assertThat(saved.getValue().getSourceType()).isEqualTo("CONCEPT_PORTFOLIO_V2");
         assertThat(saved.getValue().getPortfolioSelectionId()).isEqualTo(17L);
         assertThat(saved.getValue().getSnapshotHash()).isEqualTo(marketHash);

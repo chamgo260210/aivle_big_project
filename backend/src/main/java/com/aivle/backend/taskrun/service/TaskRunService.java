@@ -34,11 +34,8 @@ public class TaskRunService {
     }
 
     /**
-     * 멱등 scope 문자열. <b>여기가 유일한 조립처다.</b>
-     *
-     * <p>이 문자열을 다른 곳에서 손으로 이어 붙이면 조회하는 쪽과 저장하는 쪽이 조용히
-     * 갈린다 — 그러면 멱등이 안 걸려 같은 일이 두 번 돌거나, 걸려야 할 재생이 안 걸린다.
-     * 실패한 실행을 되짚는 쪽({@code ConceptRefinementService}) 도 이것을 부른다.
+     * 멱등 범위. **한 자리에서만 만든다** - 재생(replay)을 찾는 쪽과 만드는 쪽이
+     * 각자 문자열을 조립하면 조용히 어긋나고, 그러면 같은 명령이 두 번 실행된다.
      */
     public static String idempotencyScope(TaskType type, String subjectType, String subjectId) {
         return type.name() + ":" + subjectType + ":" + subjectId;
@@ -286,7 +283,7 @@ public class TaskRunService {
             // 「AI 가 죽었다」를 구분해 말할 수 없다.
             "MARKET_INTERVIEW_NO_USABLE_RESPONSE",
             // 조건에 맞는 응답자가 0명이었다. 접으면 화면이 「조건을 고쳐라」와
-            // 「AI 가 죽었다」를 구분해 말할 수 없다 — 사용자가 할 일이 정반대다.
+            // 「AI 가 죽었다」를 구분해 말할 수 없다 - 사용자가 할 일이 정반대다.
             "MARKET_INTERVIEW_NO_TARGET_SAMPLE").contains(reason)) return reason;
         return switch (internal) {
         case "PAYLOAD_TOO_LARGE" -> "PAYLOAD_TOO_LARGE";

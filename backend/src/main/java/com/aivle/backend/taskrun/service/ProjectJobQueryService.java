@@ -149,25 +149,25 @@ public class ProjectJobQueryService {
             case CONCEPT_HYPOTHESIS_ALTERNATIVE, CONCEPT_DELTA_LEGAL_REVIEW -> JobModule.CONCEPT_SELECTION;
             case TECH_OPS_PROPOSAL, TECH_OPS_ADVISORY -> JobModule.TECH_OPS;
             case FINANCE_ESTIMATE, FINANCE_ANALYSIS_REPORT -> JobModule.FINANCE;
-            case LAUNCH_TECHNOLOGY_READINESS, LAUNCH_OPERATIONS_READINESS -> JobModule.LAUNCH_READINESS;
-            case MARKETING_CONTENT_GENERATION, MARKETING_VISUAL_GENERATION -> JobModule.MARKETING;
+            case LAUNCH_TECHNOLOGY_READINESS, LAUNCH_OPERATIONS_READINESS, LAUNCH_READINESS -> JobModule.LAUNCH_READINESS;
+            case MARKETING_CONTENT_GENERATION, MARKETING_STRATEGY_GENERATION,
+                MARKETING_VISUAL_GENERATION -> JobModule.MARKETING;
+            case FINAL_BUSINESS_PROPOSAL_GENERATION, FINAL_BUSINESS_PROPOSAL_REVIEW -> JobModule.FINAL_REPORT;
             case MARKET_RESEARCH -> "MARKET_RESEARCH_BM".equals(run.getSubjectType())
                 ? JobModule.BUSINESS_MODEL : JobModule.MARKET;
-            // 사업 검증(한 실행)은 시장 분석 탭이 대표한다 — 여정 2번 안에서 시작하는 일이다.
+            // 사업 검증은 시장조사·BM 을 한 세션으로 잇는 실행이라 작업센터에서는
+            // 시장 칸에 선다 - 사용자에게 그 둘은 한 걸음이다.
             case BUSINESS_VALIDATION -> JobModule.MARKET;
-            case TWIN_SURVEY, TWIN_STIMULUS_DRAFT -> JobModule.TWIN;
-            // ⚠ 여정 4번을 「시장 인터뷰」로 바꾸는 것은 3판이다. 지금은 백엔드만 있고
-            //    프론트 라우트(`/market-interview`)가 아직 없다.
             case MARKET_INTERVIEW -> JobModule.MARKET_INTERVIEW;
+            case TWIN_SURVEY, TWIN_STIMULUS_DRAFT -> JobModule.TWIN;
         };
     }
 
     private enum JobModule {
         IDEA("/idea"), CONCEPT_PORTFOLIO("/concepts"), CONCEPT_FACTORY("/concepts"), CONCEPT_SELECTION("/concepts/compare"),
-        MARKET("/market"), BUSINESS_MODEL("/business-model"), TWIN("/twin-survey"),
-        MARKET_INTERVIEW("/market-interview"),
-        TECH_OPS("/tech-ops"), FINANCE("/finance"), LAUNCH_READINESS("/launch-readiness"),
-        MARKETING("/marketing");
+        MARKET("/market"), BUSINESS_MODEL("/business-model"), MARKET_INTERVIEW("/market-interview"), TWIN("/twin-survey"),
+        TECH_OPS("/tech-ops"), FINANCE("/finance"), LAUNCH_READINESS("/launch-readiness"), MARKETING("/marketing"),
+        FINAL_REPORT("/final-report");
         private final String route;
         JobModule(String route) { this.route = route; }
     }

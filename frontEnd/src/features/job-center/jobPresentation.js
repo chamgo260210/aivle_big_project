@@ -39,6 +39,6 @@ export function jobModuleLabel(module) {
     CONCEPT_SELECTION: '사업 기획', MARKET: '사업 검증', BUSINESS_MODEL: '사업 검증',
     TECH_OPS: '출시 준비', FINANCE: '출시 준비', LAUNCH_READINESS: '출시 준비',
     // 여정 4는 시장 인터뷰다. TWIN 은 백엔드가 아직 보내는 옛 이름이라 같은 말로 받는다.
-    TWIN: '시장 인터뷰', MARKET_INTERVIEW: '시장 인터뷰', MARKETING: '마케팅 전략',
+    TWIN: '시장 인터뷰', MARKET_INTERVIEW: '시장 인터뷰', MARKETING: '마케팅 실행',
   })[module] ?? '프로젝트';
 }

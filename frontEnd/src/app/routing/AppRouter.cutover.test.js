@@ -28,9 +28,13 @@ describe('project route cutover', () => {
     expect(routerSource).toContain('path="launch-readiness/reports/:reportType" element={<LaunchReadinessReportPage />}');
     expect(routerSource).toContain('path="technology" element={<LaunchReadinessPage initialFocus="technology" />}');
     expect(routerSource).toContain('path="operations" element={<LaunchReadinessPage initialFocus="operations" />}');
-    expect(routerSource).toContain('path="tech-ops" element={<LaunchReadinessPage />}');
-    expect(routerSource).toContain('path="finance" element={<LaunchReadinessPage initialFocus="finance" />}');
-    expect(routerSource).not.toContain('element={<TechOpsPage />}');
-    expect(routerSource).not.toContain('element={<FinancePage />}');
+    expect(routerSource).toContain('path="tech-ops" element={<TechOpsPage />}');
+    expect(routerSource).toContain('path="finance" element={<FinancePage />}');
+  });
+
+  it('사업 검증의 세 화면을 각각 제 주소에 세운다', () => {
+    expect(routerSource).toContain('path="market" element={<MarketResearchPage />}');
+    expect(routerSource).toContain('path="business-model" element={<BmCanvasPage />}');
+    expect(routerSource).toContain('path="concept-refinement" element={<ConceptRefinementPage />}');
   });
 });

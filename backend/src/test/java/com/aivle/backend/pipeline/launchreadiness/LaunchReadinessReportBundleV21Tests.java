@@ -60,7 +60,8 @@ class LaunchReadinessReportBundleV21Tests {
         verify(manifests).save(argThat(value -> value.getSelectedModulesJson().contains("technology")
             && value.getSelectedModulesJson().contains("operations")
             && value.getSourceReportsJson().contains("technology-1")
-            && value.getSourceReportsJson().contains("operations-1")));
+            && value.getSourceReportsJson().contains("operations-1")
+            && !value.getSourceReportsJson().contains("sourceBinding")));
     }
 
     private ProfessionalAnalysisView view(ObjectMapper mapper, String id) {
@@ -69,7 +70,8 @@ class LaunchReadinessReportBundleV21Tests {
             .put("url", "https://example.com/official");
         return new ProfessionalAnalysisView("TECHNOLOGY", "SUCCEEDED", false, null, "run", "run",
             "snapshot", "input.docx", mapper.createObjectNode(), hash('a'), hash('b'), id, hash('c'), mapper.createObjectNode(),
-            mapper.createObjectNode().put("passed", true), evidence, Instant.parse("2026-08-16T00:00:00Z"), true, false);
+            mapper.createObjectNode().put("passed", true), evidence, Instant.parse("2026-08-16T00:00:00Z"), true, false,
+            false, null, "PROFESSIONAL_INPUT", null);
     }
 
     private byte[] onePage(String text) throws Exception {

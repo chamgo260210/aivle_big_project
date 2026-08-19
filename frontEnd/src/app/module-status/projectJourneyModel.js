@@ -9,6 +9,7 @@ export const JOURNEY_STATUS = Object.freeze({
   ATTENTION: 'ATTENTION',
   STALE: 'STALE',
   COMPLETED: 'COMPLETED',
+  OPTIONAL: 'OPTIONAL',
 });
 
 export const JOURNEY_STATUS_VIEW = Object.freeze({
@@ -19,6 +20,7 @@ export const JOURNEY_STATUS_VIEW = Object.freeze({
   ATTENTION: { label: '확인 필요', tone: 'danger' },
   STALE: { label: '업데이트 필요', tone: 'warning' },
   COMPLETED: { label: '완료', tone: 'success' },
+  OPTIONAL: { label: '선택 기능', tone: 'neutral' },
 });
 
 export const PROJECT_JOURNEYS = Object.freeze([
@@ -26,19 +28,19 @@ export const PROJECT_JOURNEYS = Object.freeze([
   { id: 'validation', label: '2. 사업 검증', shortLabel: '사업 검증',
     // 세 걸음이다: 무엇이 관측됐나 → 그 사업이 서나 → 그래서 사업안을 어떻게 고칠까.
     moduleIds: ['market', 'businessModel', 'conceptRefinement'] },
-  // 출시 준비는 팀원 판(#49)을 그대로 받는다 — 기술·운영과 재무가 한 칸으로 합쳐졌다.
-  { id: 'launch', label: '3. 출시 준비', shortLabel: '출시 준비', moduleIds: ['launchReadiness'] },
+  // moduleIds 는 «화면에 자식 카드로 보일 것», statusModuleIds 는 «상태를 정하는 것».
+  // 출시 준비는 자식 카드를 펼치지 않지만(전용 페이지 하나로 간다) 상태는 세 분석이 정한다.
+  { id: 'launch', label: '3. 출시 준비', shortLabel: '출시 준비', moduleIds: [], optional: true,
+    statusModuleIds: ['techOps', 'finance', 'launchReadiness'] },
   { id: 'interview', label: '4. 시장 인터뷰', shortLabel: '시장 인터뷰', moduleIds: ['marketInterview'] },
   { id: 'marketingStrategy', label: '5. 마케팅 전략', shortLabel: '마케팅 전략', moduleIds: ['marketing'] },
-  { id: 'finalReport', label: '6. 최종 보고서', shortLabel: '최종 보고서', moduleIds: [] },
+  { id: 'finalReport', label: '6. 최종 보고서', shortLabel: '최종 보고서', moduleIds: [], optional: true,
+    statusModuleIds: ['finalReport'] },
 ]);
 
 const PATH_TO_JOURNEY = Object.freeze({
   overview: 'overview', idea: 'planning', concepts: 'planning', market: 'validation',
-  'business-model': 'validation', 'concept-refinement': 'validation',
-  // 옛 경로(tech-ops·finance)도 계속 여정 3으로 보낸다 — 라우트가 아직 살아 있다.
-  'launch-readiness': 'launch', technology: 'launch', operations: 'launch',
-  'tech-ops': 'launch', finance: 'launch',
+  'business-model': 'validation', 'concept-refinement': 'validation', 'launch-readiness': 'launch', technology: 'launch', operations: 'launch', 'tech-ops': 'launch', finance: 'launch',
   'market-interview': 'interview', marketing: 'marketingStrategy', 'final-report': 'finalReport',
 });
 
@@ -55,6 +57,7 @@ export function getJourneyActionView(status) {
     [JOURNEY_STATUS.ATTENTION]: '확인하기',
     [JOURNEY_STATUS.STALE]: '업데이트하기',
     [JOURNEY_STATUS.COMPLETED]: '결과 보기',
+    [JOURNEY_STATUS.OPTIONAL]: '열기',
   })[status] ?? '확인하기';
 }
 
@@ -81,10 +84,15 @@ export function getJourneyByPath(pathname) {
     : PROJECT_JOURNEYS.find((journey) => journey.id === id);
 }
 
-export function getProjectJourneys(projectId, modules = [], finalReportStatus = JOURNEY_STATUS.NOT_STARTED) {
+export function getProjectJourneys(projectId, modules = []) {
   return PROJECT_JOURNEYS.map((journey) => {
-    const children = journey.moduleIds.map((id) => modules.find((module) => module.id === id)).filter(Boolean);
-    const status = journey.id === 'finalReport' ? finalReportStatus : aggregateJourneyStatus(children);
+    const sourceChildren = (journey.statusModuleIds ?? journey.moduleIds)
+      .map((id) => modules.find((module) => module.id === id)).filter(Boolean);
+    // 선택 단계라고 상태를 OPTIONAL 로 «고정» 하면, 사용자가 그 단계를 끝내도 완료가 영영 안 뜬다.
+    // 아직 손대지 않았을 때만 「선택 기능」이고, 한 번이라도 움직였으면 실제 상태를 보여 준다.
+    const aggregated = aggregateJourneyStatus(sourceChildren);
+    const status = journey.optional && untouched(sourceChildren) ? JOURNEY_STATUS.OPTIONAL : aggregated;
+    const children = journey.id === 'launch' ? [] : sourceChildren;
     return {
       ...journey,
       children,
@@ -94,12 +102,27 @@ export function getProjectJourneys(projectId, modules = [], finalReportStatus = 
   });
 }
 
+/**
+ * 「아직 손대지 않았다」의 정의.
+ *
+ * <p>기본 상태(NOT_READY·READY·NOT_CONNECTED)만 있으면 사용자가 아무것도 하지 않은 것이다.
+ * 하나라도 대기·진행·완료·실패·낡음으로 움직였다면 그 단계는 시작된 것이므로
+ * 「선택 기능」으로 덮지 않는다.
+ */
+function untouched(moduleStatuses = []) {
+  const idle = [MODULE_STATUS.NOT_READY, MODULE_STATUS.READY, MODULE_STATUS.NOT_CONNECTED];
+  return moduleStatuses.every((item) => idle.includes(typeof item === 'string' ? item : item?.status));
+}
+
 export function getJourneyEntryRoute(projectId, journey, children = []) {
   if (journey.id === 'finalReport') return projectRoutes.finalReport(projectId);
+  if (journey.id === 'launch') return projectRoutes.launchReadiness(projectId);
   const next = children.find((module) => module.status !== MODULE_STATUS.COMPLETED) ?? children.at(-1);
   return next?.href ?? projectRoutes.overview(projectId);
 }
 
 export function getJourneyProgress(journeys = []) {
-  return { completed: journeys.filter((journey) => journey.status === JOURNEY_STATUS.COMPLETED).length, total: PROJECT_JOURNEYS.length };
+  // ⚠ 분모는 `optional` «플래그» 다. 상태로 세면 선택 단계를 끝낸 순간 필수 단계 수가 늘어난다.
+  const required = journeys.filter((journey) => !journey.optional);
+  return { completed: required.filter((journey) => journey.status === JOURNEY_STATUS.COMPLETED).length, total: required.length };
 }

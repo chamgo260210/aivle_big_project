@@ -313,7 +313,7 @@ class CandidateEnvelope(StrictModel):
     redesignRound: int = Field(default=0, ge=0, le=2)
     candidateAttempt: int = Field(default=1, ge=1, le=2)
     slotIndex: int | None = Field(default=None, ge=1, le=5)
-    recoverySource: Literal["INITIAL", "FIDELITY_REGENERATION", "RESERVE_PLAN", "REPLENISHED_PLAN", "LEGAL_FACT_COMPLETION", "LEGAL_REDESIGN", "LEGAL_REDESIGN_COMPLIANCE_REPAIR", "LEGAL_REPLAN"] = "INITIAL"
+    recoverySource: Literal["INITIAL", "FIDELITY_REGENERATION", "RESERVE_PLAN", "REPLENISHED_PLAN", "FACT_CONSISTENCY_REPAIR", "LEGAL_FACT_COMPLETION", "LEGAL_REDESIGN", "LEGAL_REDESIGN_COMPLIANCE_REPAIR", "LEGAL_REPLAN"] = "INITIAL"
     descriptor: CanonicalConceptDescriptor
     candidate: ConceptCandidateResult
 
