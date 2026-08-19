@@ -6,6 +6,9 @@ import com.aivle.backend.common.exception.BusinessException;
 import com.aivle.backend.common.exception.ErrorCode;
 import com.aivle.backend.jobevent.JobEvent;
 import com.aivle.backend.jobevent.JobEventPublisher;
+import com.aivle.backend.pipeline.currentconcept.CurrentConceptSourceResolver;
+import com.aivle.backend.pipeline.currentconcept.CurrentConceptSourceResolver.Binding;
+import com.aivle.backend.pipeline.currentconcept.CurrentConceptSourceResolver.Source;
 import com.aivle.backend.pipeline.finance.domain.*;
 import com.aivle.backend.pipeline.finance.repository.*;
 import com.aivle.backend.pipeline.market.MarketResearchRun;
@@ -35,6 +38,7 @@ import tools.jackson.databind.node.ObjectNode;
 public class FinancialService {
     private static final Set<String> TARGET_METRICS = Set.of("salesVolume", "customerCount", "subscriberCount", "transactionCount");
     private final ProjectRepository projects;
+    private final CurrentConceptSourceResolver currentConcepts;
     private final MarketAnalysisSeedSnapshotRepository marketSeeds;
     private final MarketResearchService marketResearch;
     private final MarketResearchVersionRepository marketVersions;
@@ -53,7 +57,19 @@ public class FinancialService {
     @Transactional
     public PreparationView initialize(Long ownerId, Long projectId) {
         requireOwnedForUpdate(ownerId, projectId);
-        CurrentSources source = currentSources(ownerId, projectId);
+        var direct = preparations.findFirstByProjectIdAndSourceModeAndDeletedAtIsNullOrderByCreatedAtDesc(
+            projectId, "DIRECT_INPUT");
+        if (direct.isPresent()) return view(direct.get());
+        CurrentSources source;
+        try { source = currentSources(ownerId, projectId); }
+        catch (BusinessException unavailable) {
+            var initial = preparationFactory.createIndependent();
+            ObjectNode lineage = mapper.createObjectNode(); lineage.put("sourceMode", "DIRECT_INPUT");
+            String id = UUID.randomUUID().toString();
+            return view(preparations.save(FinancialInputPreparation.createIndependent(id, projectId,
+                snapshotHasher.hash(lineage), mapper.writeValueAsString(initial.financialFields()),
+                mapper.writeValueAsString(initial.upstreamReferences()), mapper.writeValueAsString(initial.assistance()), ownerId)));
+        }
         var existing = preparations
             .findFirstByProjectIdAndSourceMarketResearchVersionIdAndSourceBusinessModelVersionIdAndDeletedAtIsNullOrderByCreatedAtAsc(
                 projectId, source.market().getId(), source.businessModel().getId());
@@ -65,10 +81,12 @@ public class FinancialService {
         lineage.put("marketResearchVersionId", source.market().getId());
         lineage.put("businessModelVersionId", source.businessModel().getId());
         String id = UUID.randomUUID().toString();
-        var saved = preparations.save(FinancialInputPreparation.createFromMarketAndBusinessModel(id, projectId,
+        FinancialInputPreparation preparation = FinancialInputPreparation.createFromMarketAndBusinessModel(id, projectId,
             source.market().getId(), source.businessModel().getId(), snapshotHasher.hash(lineage),
             mapper.writeValueAsString(initial.financialFields()), mapper.writeValueAsString(initial.upstreamReferences()),
-            mapper.writeValueAsString(initial.assistance()), ownerId));
+            mapper.writeValueAsString(initial.assistance()), ownerId);
+        bind(preparation, currentConcepts.require(projectId, "현재 확정된 사업안이 필요합니다."));
+        var saved = preparations.save(preparation);
         return view(saved);
     }
 
@@ -219,10 +237,20 @@ public class FinancialService {
         String id = UUID.randomUUID().toString();
         Instant now = Instant.now();
         var built = snapshotFactory.create(id, now, preparation);
-        return snapshotView(snapshots.save(FinancialInputSnapshot.createFromMarketAndBusinessModel(
-            id, projectId, preparation.getId(), preparation.getSourceMarketResearchVersionId(),
-            preparation.getSourceBusinessModelVersionId(),
-            FinancialInputSnapshotFactory.SCHEMA_VERSION, built.hash(), mapper.writeValueAsString(built.body()), ownerId, now)));
+        FinancialInputSnapshot snapshot;
+        if ("DIRECT_INPUT".equals(preparation.getSourceMode())) {
+            built = snapshotFactory.createIndependent(id, now, preparation);
+            snapshot = FinancialInputSnapshot.createIndependent(id, projectId, preparation.getId(),
+                preparation.getRevision(), FinancialInputSnapshotFactory.SCHEMA_VERSION, built.hash(),
+                mapper.writeValueAsString(built.body()), ownerId, now);
+        } else {
+            snapshot = FinancialInputSnapshot.createFromMarketAndBusinessModel(
+                id, projectId, preparation.getId(), preparation.getSourceMarketResearchVersionId(),
+                preparation.getSourceBusinessModelVersionId(), FinancialInputSnapshotFactory.SCHEMA_VERSION,
+                built.hash(), mapper.writeValueAsString(built.body()), ownerId, now);
+            bind(snapshot, currentConcepts.require(projectId, "현재 확정된 사업안이 필요합니다."));
+        }
+        return snapshotView(snapshots.save(snapshot));
     }
 
     @Transactional
@@ -260,10 +288,10 @@ public class FinancialService {
             mapper.writeValueAsString(assistance), ownerId));
         String snapshotId = UUID.randomUUID().toString(); Instant now = Instant.now();
         var built = snapshotFactory.createUserDocument(snapshotId, now, preparation);
-        FinancialInputSnapshot snapshot = snapshots.save(FinancialInputSnapshot.createFromUserDocument(
+        FinancialInputSnapshot snapshot = FinancialInputSnapshot.createFromUserDocument(
             snapshotId, projectId, preparationId, preparation.getRevision(), artifactId, documentHash,
-            FinancialInputSnapshotFactory.SCHEMA_VERSION, built.hash(), mapper.writeValueAsString(built.body()), ownerId, now));
-        return snapshotView(snapshot);
+            FinancialInputSnapshotFactory.SCHEMA_VERSION, built.hash(), mapper.writeValueAsString(built.body()), ownerId, now);
+        return snapshotView(snapshots.save(snapshot));
     }
 
     /** 동일 프로젝트의 Finance import command를 artifact 생성 전부터 직렬화한다. */
@@ -289,6 +317,9 @@ public class FinancialService {
         var userDocument = snapshots.findFirstByProjectIdAndSourceModeAndDeletedAtIsNullOrderByFinalizedAtDesc(
             projectId, "USER_DOCUMENT_INPUT");
         if (userDocument.isPresent()) return snapshotView(userDocument.get());
+        var direct = snapshots.findFirstByProjectIdAndSourceModeAndDeletedAtIsNullOrderByFinalizedAtDesc(
+            projectId, "DIRECT_INPUT");
+        if (direct.isPresent()) return snapshotView(direct.get());
         CurrentSources source = currentSources(ownerId, projectId);
         return snapshotView(snapshots
             .findFirstByProjectIdAndSourceMarketResearchVersionIdAndSourceBusinessModelVersionIdAndDeletedAtIsNullOrderByFinalizedAtAsc(
@@ -405,6 +436,9 @@ public class FinancialService {
         var userDocument = preparations.findFirstByProjectIdAndSourceModeAndDeletedAtIsNullOrderByCreatedAtDesc(
             projectId, "USER_DOCUMENT_INPUT");
         if (userDocument.isPresent()) return userDocument.get();
+        var direct = preparations.findFirstByProjectIdAndSourceModeAndDeletedAtIsNullOrderByCreatedAtDesc(
+            projectId, "DIRECT_INPUT");
+        if (direct.isPresent()) return direct.get();
         CurrentSources source = currentSources(ownerId, projectId);
         return preparations
             .findFirstByProjectIdAndSourceMarketResearchVersionIdAndSourceBusinessModelVersionIdAndDeletedAtIsNullOrderByCreatedAtAsc(
@@ -454,11 +488,16 @@ public class FinancialService {
     }
 
     private boolean stale(FinancialInputPreparation value) {
+        if ("DIRECT_INPUT".equals(value.getSourceMode())) {
+            return preparations.findFirstByProjectIdAndSourceModeAndDeletedAtIsNullOrderByCreatedAtDesc(
+                value.getProjectId(), "DIRECT_INPUT").map(current -> !current.getId().equals(value.getId())).orElse(true);
+        }
         if ("USER_DOCUMENT_INPUT".equals(value.getSourceMode())) {
             return preparations.findFirstByProjectIdAndSourceModeAndDeletedAtIsNullOrderByCreatedAtDesc(
                 value.getProjectId(), "USER_DOCUMENT_INPUT").map(current -> !current.getId().equals(value.getId())
                     || !current.getSourceDocumentHash().equals(value.getSourceDocumentHash())).orElse(true);
         }
+        if (!exactCurrentConcept(value)) return true;
         try {
             CurrentSources current = currentSources(value.getUpdatedByUserId(), value.getProjectId());
             return !current.market().getId().equals(value.getSourceMarketResearchVersionId())
@@ -467,17 +506,68 @@ public class FinancialService {
     }
 
     private boolean stale(FinancialInputSnapshot value) {
+        if ("DIRECT_INPUT".equals(value.getSourceMode())) {
+            return preparations.findFirstByProjectIdAndSourceModeAndDeletedAtIsNullOrderByCreatedAtDesc(
+                value.getProjectId(), "DIRECT_INPUT").map(current -> !current.getId().equals(value.getPreparationId())
+                    || current.getRevision() != value.getPreparationRevision()).orElse(true);
+        }
         if ("USER_DOCUMENT_INPUT".equals(value.getSourceMode())) {
             return preparations.findFirstByProjectIdAndSourceModeAndDeletedAtIsNullOrderByCreatedAtDesc(
                 value.getProjectId(), "USER_DOCUMENT_INPUT").map(current -> !current.getId().equals(value.getPreparationId())
                     || current.getRevision() != value.getPreparationRevision()
                     || !current.getSourceDocumentHash().equals(value.getSourceDocumentHash())).orElse(true);
         }
+        if (!exactCurrentConcept(value)) return true;
         try {
             CurrentSources current = currentSources(value.getCreatedByUserId(), value.getProjectId());
             return !current.market().getId().equals(value.getSourceMarketResearchVersionId())
                 || !current.businessModel().getId().equals(value.getSourceBusinessModelVersionId());
         } catch (BusinessException unavailable) { return true; }
+    }
+
+    private void bind(FinancialInputPreparation value, Source source) {
+        Binding binding = currentConcepts.binding(source);
+        value.bindCurrentConcept(binding.marketSeedSnapshotId(), binding.selectionId(),
+            binding.selectionRevision(), binding.bmPlanRevision(), bindingHash(binding));
+    }
+
+    private void bind(FinancialInputSnapshot value, Source source) {
+        Binding binding = currentConcepts.binding(source);
+        value.bindCurrentConcept(binding.marketSeedSnapshotId(), binding.selectionId(),
+            binding.selectionRevision(), binding.bmPlanRevision(), bindingHash(binding));
+    }
+
+    private boolean exactCurrentConcept(FinancialInputPreparation value) {
+        Source current = currentConcepts.currentOrNull(value.getProjectId());
+        if (current == null || value.getSourceSelectionRevision() == null
+                || value.getSourceBmPlanRevision() == null) return false;
+        Binding binding = currentConcepts.binding(current);
+        return binding.marketSeedSnapshotId().equals(value.getSourceCurrentMarketSeedSnapshotId())
+            && binding.selectionId().equals(value.getSourceSelectionId())
+            && binding.selectionRevision() == value.getSourceSelectionRevision()
+            && binding.bmPlanRevision() == value.getSourceBmPlanRevision()
+            && bindingHash(binding).equals(value.getCurrentConceptBindingHash());
+    }
+
+    private boolean exactCurrentConcept(FinancialInputSnapshot value) {
+        Source current = currentConcepts.currentOrNull(value.getProjectId());
+        if (current == null || value.getSourceSelectionRevision() == null
+                || value.getSourceBmPlanRevision() == null) return false;
+        Binding binding = currentConcepts.binding(current);
+        return binding.marketSeedSnapshotId().equals(value.getSourceCurrentMarketSeedSnapshotId())
+            && binding.selectionId().equals(value.getSourceSelectionId())
+            && binding.selectionRevision() == value.getSourceSelectionRevision()
+            && binding.bmPlanRevision() == value.getSourceBmPlanRevision()
+            && bindingHash(binding).equals(value.getCurrentConceptBindingHash());
+    }
+
+    private String bindingHash(Binding binding) {
+        ObjectNode value = mapper.createObjectNode();
+        value.put("marketSeedSnapshotId", binding.marketSeedSnapshotId());
+        value.put("selectionId", binding.selectionId());
+        value.put("selectionRevision", binding.selectionRevision());
+        value.put("bmPlanRevision", binding.bmPlanRevision());
+        return snapshotHasher.hash(value);
     }
 
     private void ensureMutable(FinancialInputPreparation value) {

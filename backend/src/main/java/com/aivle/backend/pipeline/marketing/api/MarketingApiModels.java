@@ -17,12 +17,22 @@ public final class MarketingApiModels {
         @Size(max=20) List<@Size(max=200) String> excludedPhrases,
         @Size(max=2000) String additionalInstruction,
         @Pattern(regexp="[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}")
-        String referenceArtifactId) {}
+        String referenceArtifactId,
+        @Pattern(regexp="[0-9a-f]{64}") String marketingStrategyReportId) {
+        public CreateRequest(String contract, String marketingSourceSnapshotId,
+                MarketingContentType contentType, String channel, String purpose, String tone,
+                Length length, List<String> requiredPhrases, List<String> excludedPhrases,
+                String additionalInstruction, String referenceArtifactId) {
+            this(contract, marketingSourceSnapshotId, contentType, channel, purpose, tone, length,
+                requiredPhrases, excludedPhrases, additionalInstruction, referenceArtifactId, null);
+        }
+    }
     public enum Length { SHORT, MEDIUM, LONG }
     public record EditRequest(@NotNull MarketingRevisionType revisionType, @NotNull JsonNode result) {}
     public record ContentSummary(String contentId, String marketingSourceSnapshotId, String sourceSnapshotHash,
         MarketingContentType contentType, String channel, String title, String status,
-        int currentRevisionNumber, String taskRunId, String activeJobId, String sourceSnapshotId,
+        int currentRevisionNumber, int attempt, boolean retryable, String previousContentId,
+        String taskRunId, String activeJobId, String sourceSnapshotId,
         LocalDateTime updatedAt, Instant finalizedAt) {}
     public record RevisionView(String revisionId, int revisionNumber, MarketingRevisionType revisionType,
         MarketingRevisionOrigin origin, JsonNode result) {}

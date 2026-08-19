@@ -29,6 +29,11 @@ public class FinancialInputPreparation extends BaseEntity {
     @Column(name = "source_mode", length = 40) private String sourceMode;
     @Column(name = "source_document_artifact_id", length = 64) private String sourceDocumentArtifactId;
     @Column(name = "source_document_hash", length = 71) private String sourceDocumentHash;
+    @Column(name = "source_current_market_seed_snapshot_id", length = 64) private String sourceCurrentMarketSeedSnapshotId;
+    @Column(name = "source_selection_id") private Long sourceSelectionId;
+    @Column(name = "source_selection_revision") private Integer sourceSelectionRevision;
+    @Column(name = "source_bm_plan_revision") private Integer sourceBmPlanRevision;
+    @Column(name = "current_concept_binding_hash", length = 71) private String currentConceptBindingHash;
 
     public static FinancialInputPreparation createFromUserDocument(String id, Long projectId,
             String artifactId, String documentHash, String sourceHash, String fieldsJson,
@@ -40,6 +45,20 @@ public class FinancialInputPreparation extends BaseEntity {
         FinancialInputPreparation value = new FinancialInputPreparation();
         value.id = id; value.projectId = projectId; value.sourceMode = "USER_DOCUMENT_INPUT";
         value.sourceDocumentArtifactId = artifactId; value.sourceDocumentHash = documentHash;
+        value.sourceSnapshotHash = sourceHash; value.financialFieldsJson = fieldsJson;
+        value.upstreamReferencesJson = referencesJson; value.assistanceJson = assistanceJson;
+        value.revision = 1; value.updatedByUserId = userId;
+        return value;
+    }
+
+    public static FinancialInputPreparation createIndependent(String id, Long projectId, String sourceHash,
+            String fieldsJson, String referencesJson, String assistanceJson, Long userId) {
+        if (blank(id) || projectId == null || !hash(sourceHash) || blank(fieldsJson)
+                || blank(referencesJson) || blank(assistanceJson) || userId == null) {
+            throw new IllegalArgumentException("직접 재무 입력 정보가 올바르지 않습니다.");
+        }
+        FinancialInputPreparation value = new FinancialInputPreparation();
+        value.id = id; value.projectId = projectId; value.sourceMode = "DIRECT_INPUT";
         value.sourceSnapshotHash = sourceHash; value.financialFieldsJson = fieldsJson;
         value.upstreamReferencesJson = referencesJson; value.assistanceJson = assistanceJson;
         value.revision = 1; value.updatedByUserId = userId;
@@ -112,6 +131,13 @@ public class FinancialInputPreparation extends BaseEntity {
         if (blank(json) || userId == null) throw new IllegalArgumentException("재무 AI 추정값이 올바르지 않습니다.");
         assistanceJson = json;
         updatedByUserId = userId;
+    }
+
+    public void bindCurrentConcept(String seedId, Long selectionId, int selectionRevision,
+            int bmPlanRevision, String bindingHash) {
+        sourceCurrentMarketSeedSnapshotId = seedId; sourceSelectionId = selectionId;
+        sourceSelectionRevision = selectionRevision; sourceBmPlanRevision = bmPlanRevision;
+        currentConceptBindingHash = bindingHash;
     }
 
     private static boolean blank(String value) { return value == null || value.isBlank(); }

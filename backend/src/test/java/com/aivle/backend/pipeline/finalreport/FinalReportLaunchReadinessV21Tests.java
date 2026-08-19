@@ -29,11 +29,14 @@ class FinalReportLaunchReadinessV21Tests {
             source(mapper, "FINANCE", "finance-1", now),
             source(mapper, "FINANCE_REPORT", "finance-report-1", now)));
 
-        var launch = report.path("sections").get(3).path("sources");
+        // ⚠ **0부터 센다.** 「출시 준비」는 6번째 절이지만 배열에서는 5다.
+        //   full 이 절 구성을 바꾸면서 이 번호를 안 고쳐, 7번 절(주요 위험)을 집고 있었다 -
+        //   그 절도 LAUNCH_* 를 받으므로 assertThat 이 「FINANCE_REPORT 만 없다」고 말해
+        //   재무 배선이 깨진 것처럼 읽혔다. 깨진 것은 이 줄이다.
+        var launch = report.path("sections").get(5).path("sources");
         assertThat(values(launch, "type")).contains(
             "LAUNCH_TECHNOLOGY", "LAUNCH_OPERATIONS", "FINANCE", "FINANCE_REPORT");
-        assertThat(values(launch, "sourceId")).contains(
-            "technology-1", "operations-1", "finance-1", "finance-report-1");
+        assertThat(launch.toString()).doesNotContain("technology-1", "operations-1", "finance-1", "finance-report-1");
     }
 
     private ReportSource source(ObjectMapper mapper, String type, String id, Instant now) {

@@ -26,3 +26,5 @@ dist-ssr
 .env
 .env.local
 .env.*.local
+# vitest 기준선 산출물(로컬 비교용)
+.vitest-baseline-results.json

@@ -15,9 +15,11 @@ import MarketResearchPage from '../../features/market/MarketResearchPage.jsx';
 import BmCanvasPage from '../../features/market/BmCanvasPage.jsx';
 import ConceptRefinementPage from '../../features/market/ConceptRefinementPage.jsx';
 import MarketInterviewPage from '../../features/market-interview/MarketInterviewPage.jsx';
-import { MarketingContentPage } from '../../features/marketing-content/index.js';
+import { MarketingContentPage, MarketingStrategyReportPage } from '../../features/marketing-content/index.js';
 import LaunchReadinessPage from '../../features/launch-readiness/pages/LaunchReadinessPage.jsx';
 import LaunchReadinessReportPage from '../../features/launch-readiness/pages/LaunchReadinessReportPage.jsx';
+import TechOpsPage from '../../features/tech-ops/pages/TechOpsPage.jsx';
+import FinancePage from '../../features/finance/pages/FinancePage.jsx';
 import FinalReportPage from '../../features/final-report/FinalReportPage.jsx';
 import WorkspaceHomePage from '../../features/projects/WorkspaceHomePage.jsx';
 import { AccountSettingsLayout, AccountSettingsRedirect, ProfileSettingsPage, SecuritySettingsPage } from '../../features/settings/AccountSettingsPages.jsx';
@@ -82,15 +84,14 @@ export default function AppRouter() {
             <Route path="business-model" element={<BmCanvasPage />} />
             <Route path="concept-refinement" element={<ConceptRefinementPage />} />
             <Route path="market-interview" element={<MarketInterviewPage />} />
-            {/* 출시 준비는 팀원 판(#49)을 그대로 받는다. 옛 tech-ops·finance 경로도 이 화면의
-                초점으로 들어간다 — 링크를 들고 있던 곳이 죽지 않게. */}
             <Route path="launch-readiness" element={<LaunchReadinessPage />} />
             <Route path="launch-readiness/reports/:reportType" element={<LaunchReadinessReportPage />} />
             <Route path="technology" element={<LaunchReadinessPage initialFocus="technology" />} />
             <Route path="operations" element={<LaunchReadinessPage initialFocus="operations" />} />
-            <Route path="tech-ops" element={<LaunchReadinessPage />} />
-            <Route path="finance" element={<LaunchReadinessPage initialFocus="finance" />} />
+            <Route path="tech-ops" element={<TechOpsPage />} />
+            <Route path="finance" element={<FinancePage />} />
             <Route path="marketing" element={<MarketingContentPage />} />
+            <Route path="marketing/report" element={<MarketingStrategyReportPage />} />
             <Route path="final-report" element={<FinalReportPage />} />
             <Route path="settings" element={<ProjectSettingsSheet />} />
             <Route path="*" element={<ProjectRedirect />} />

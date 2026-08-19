@@ -1,8 +1,5 @@
 const REPORT_LABELS = Object.freeze({
-  technology: '기술',
-  operations: '운영',
-  finance: '재무',
-  integrated: '통합',
+  technology: '기술', operations: '운영', finance: '재무', integrated: '통합',
 });
 
 export const REPORT_ORDER = Object.freeze(['technology', 'operations', 'finance']);

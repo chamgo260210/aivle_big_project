@@ -25,8 +25,11 @@ import tools.jackson.databind.node.ObjectNode;
 
 @Service
 @RequiredArgsConstructor
+@lombok.extern.slf4j.Slf4j
 public class TechOpsAdvisoryService {
     public static final String SUBJECT = "TECH_OPS_ADVISORY_REPORT";
+    /** 봉투에는 taskType·correlationId 등 감싸는 필드가 더 붙으므로 상한을 그대로 쓰지 않는다. */
+    private static final int SAFETY_MARGIN_BYTES = 64 * 1024;
     private final TechOpsAdvisorySourceResolver sources;
     private final TechOpsAdvisoryReportRepository reports;
     private final TaskRunRepository runs;
@@ -43,19 +46,28 @@ public class TechOpsAdvisoryService {
         ObjectNode input = mapper.createObjectNode();
         input.put("projectId", projectId);
         input.put("techOpsInputSnapshotId", source.snapshot().getId());
-        input.put("sourceMarketSeedSnapshotId", source.seed().getId());
-        input.put("sourceMarketResearchVersionId", source.market().getId());
-        input.put("sourceBusinessModelVersionId", source.businessModel().getId());
-        input.put("sourcePortfolioSelectionId", source.selection().getId());
-        input.put("selectedConceptId", source.concept().getId());
-        input.put("selectedConceptHash", source.selection().getSelectedConceptHash());
-        input.set("conceptHandoff", mapper.readTree(source.concept().getCandidateSnapshotJson()));
+        if (source.seed() != null) input.put("sourceMarketSeedSnapshotId", source.seed().getId());
+        if (source.market() != null) input.put("sourceMarketResearchVersionId", source.market().getId());
+        if (source.businessModel() != null) input.put("sourceBusinessModelVersionId", source.businessModel().getId());
+        if (source.selection() != null) {
+            input.put("sourcePortfolioSelectionId", source.selection().getId());
+            input.put("selectedConceptHash", source.selection().getSelectedConceptHash());
+        }
+        if (source.concept() != null) input.put("selectedConceptId", source.concept().getId());
+        input.set("conceptHandoff", source.concept() == null ? mapper.createObjectNode()
+            : mapper.readTree(source.concept().getCandidateSnapshotJson()));
         input.set("legalHandoff", source.legal() == null ? mapper.nullNode()
             : mapper.readTree(source.legal().getReportJson()));
-        input.set("marketResult", mapper.readTree(source.market().getResultJson()));
-        input.set("businessModelResult", mapper.readTree(source.businessModel().getResultJson()));
+        input.set("marketResult", source.market() == null ? mapper.createObjectNode()
+            : mapper.readTree(source.market().getResultJson()));
+        input.set("businessModelResult", source.businessModel() == null ? mapper.createObjectNode()
+            : mapper.readTree(source.businessModel().getResultJson()));
         input.set("techOpsInputSnapshot", mapper.readTree(source.snapshot().getSnapshotJson()));
+        int droppedEvidence = shrinkEvidenceToFit(input);
         String json = mapper.writeValueAsString(input);
+        if (droppedEvidence > 0) log.info(
+            "TechOps advisory input trimmed projectId={} droppedEvidence={} bytes={}",
+            projectId, droppedEvidence, json.getBytes(java.nio.charset.StandardCharsets.UTF_8).length);
         String key = requiredKey(idempotencyKey);
         String hash = hasher.hash(TaskType.TECH_OPS_ADVISORY, "1.0", "ko-KR", json);
         var created = taskRuns.createWithDisposition(ownerId, projectId, TaskType.TECH_OPS_ADVISORY,
@@ -65,7 +77,39 @@ public class TechOpsAdvisoryService {
             "job.tech-ops.advisory.queued", JobEvent.Status.QUEUED, null);
         TaskRun task = created.taskRun();
         return new AdvisoryActionResponse(task.getId(), task.getId(), task.getState().name(),
-            source.snapshot().getId(), source.seed().getId(), source.market().getId(), source.businessModel().getId());
+            source.snapshot().getId(), source.seed() == null ? null : source.seed().getId(),
+            source.market() == null ? null : source.market().getId(),
+            source.businessModel() == null ? null : source.businessModel().getId());
+    }
+
+    /**
+     * 시장조사와 BM 은 **같은 근거 목록**을 각자 물고 온다 — 이 판에서 1,086건 · 각 1,089 kB 로
+     * 완전히 동일했다. 둘을 그대로 실으면 봉투가 2 MB 상한(TaskRunService.validateCreation ·
+     * InternalAiExecutionClient.MAX_JSON_BYTES)을 넘어 400 TASK_RUN_INPUT_INVALID 로 막힌다.
+     * 자문 엔진(tech_ops_input_scaler._evidence)은 근거에서 **URL 을 최대 24개** 뽑아 쓸 뿐이므로,
+     * 중복본인 BM 쪽을 먼저 버리고 그래도 크면 시장 쪽을 뒤에서부터 줄인다.
+     * 버린 건수는 반드시 로그로 남긴다 — 조용히 줄이면 「자료가 원래 그만큼이었다」로 읽힌다.
+     */
+    private int shrinkEvidenceToFit(ObjectNode input) {
+        int dropped = 0;
+        if (withinLimit(input)) return dropped;
+        JsonNode bmEvidence = input.path("businessModelResult").path("evidence");
+        JsonNode marketEvidence = input.path("marketResult").path("evidence");
+        if (bmEvidence.isArray() && !bmEvidence.isEmpty()) {
+            dropped += bmEvidence.size();
+            ((ObjectNode) input.path("businessModelResult")).set("evidence", mapper.createArrayNode());
+            if (withinLimit(input)) return dropped;
+        }
+        if (marketEvidence.isArray()) {
+            var trimmed = (tools.jackson.databind.node.ArrayNode) marketEvidence;
+            while (!trimmed.isEmpty() && !withinLimit(input)) { trimmed.remove(trimmed.size() - 1); dropped++; }
+        }
+        return dropped;
+    }
+
+    private boolean withinLimit(ObjectNode input) {
+        return mapper.writeValueAsString(input).getBytes(java.nio.charset.StandardCharsets.UTF_8).length
+            <= com.aivle.backend.taskrun.integration.InternalAiExecutionClient.MAX_JSON_BYTES - SAFETY_MARGIN_BYTES;
     }
 
     @Transactional(readOnly = true)
@@ -100,10 +144,10 @@ public class TechOpsAdvisoryService {
         taskRuns.adopt(claim.taskRunId(), claim.taskAttemptId(), claim.claimToken(),
             mapper.writeValueAsString(response.result()), response.canonicalInputHash(), response.resultSchemaVersion());
         reports.save(TechOpsAdvisoryReport.create(context.projectId(), context.taskRunId(),
-            input.path("techOpsInputSnapshotId").asText(), input.path("sourceMarketSeedSnapshotId").asText(),
-            input.path("sourceMarketResearchVersionId").asLong(), input.path("sourceBusinessModelVersionId").asLong(),
-            input.path("sourcePortfolioSelectionId").asLong(), input.path("selectedConceptId").asText(),
-            input.path("selectedConceptHash").asText(), "1.0", mapper.writeValueAsString(response.result()),
+            input.path("techOpsInputSnapshotId").asText(), textOrNull(input, "sourceMarketSeedSnapshotId"),
+            longOrNull(input, "sourceMarketResearchVersionId"), longOrNull(input, "sourceBusinessModelVersionId"),
+            longOrNull(input, "sourcePortfolioSelectionId"), textOrNull(input, "selectedConceptId"),
+            textOrNull(input, "selectedConceptHash"), "1.0", mapper.writeValueAsString(response.result()),
             context.ownerId()));
     }
 
@@ -151,6 +195,13 @@ public class TechOpsAdvisoryService {
         JsonNode value = mapper.readTree(context.inputSnapshot());
         if (!value.isObject()) throw new IllegalStateException("TechOps advisory input invalid");
         return value;
+    }
+    private String textOrNull(JsonNode value, String field) {
+        String text = value.path(field).asText("");
+        return text.isBlank() ? null : text;
+    }
+    private Long longOrNull(JsonNode value, String field) {
+        return value.has(field) && value.get(field).canConvertToLong() ? value.get(field).asLong() : null;
     }
     private AdvisoryView view(TechOpsAdvisoryReport report, TaskRun task, boolean stale) {
         return new AdvisoryView(report.getId(), task == null ? report.getTaskRunId() : task.getId(), task == null ? "SUCCEEDED" : task.getState().name(),

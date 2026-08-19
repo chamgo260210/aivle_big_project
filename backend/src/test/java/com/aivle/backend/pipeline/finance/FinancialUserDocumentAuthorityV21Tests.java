@@ -8,6 +8,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.aivle.backend.jobevent.JobEventPublisher;
+import com.aivle.backend.pipeline.currentconcept.CurrentConceptSourceResolver;
 import com.aivle.backend.pipeline.finance.application.*;
 import com.aivle.backend.pipeline.finance.repository.FinancialInputPreparationRepository;
 import com.aivle.backend.pipeline.finance.repository.FinancialInputSnapshotRepository;
@@ -41,7 +42,8 @@ class FinancialUserDocumentAuthorityV21Tests {
         when(snapshots.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
         FinancialCalculator calculator = new FinancialCalculator(mapper);
         SnapshotHasher hasher = new SnapshotHasher(mapper);
-        FinancialService service = new FinancialService(projects, marketSeeds, marketResearch, marketVersions,
+        CurrentConceptSourceResolver currentConcepts = mock(CurrentConceptSourceResolver.class);
+        FinancialService service = new FinancialService(projects, currentConcepts, marketSeeds, marketResearch, marketVersions,
             preparations, snapshots, new FinancialPreparationFactory(mapper),
             new FinancialInputSnapshotFactory(mapper, hasher, calculator), new FinancialReadiness(), calculator,
             mapper, mock(TaskRunService.class), mock(CanonicalInputHasher.class), hasher,
@@ -64,6 +66,7 @@ class FinancialUserDocumentAuthorityV21Tests {
             .path("normalizedValues").path(FinancialInputDocumentService.INPUT_NOTES)
             .path("annualFixedLaborCost").asText()).isEqualTo("개발자 2명, 초기 3~4인 기준");
         verifyNoInteractions(marketSeeds, marketResearch, marketVersions);
+        verifyNoInteractions(currentConcepts);
     }
 
     private ObjectNode completeValues(ObjectMapper mapper, long laborCost) {

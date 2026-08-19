@@ -74,15 +74,16 @@ public class InternalAiExecutionClient {
         Map.entry("EXECUTION_FAILED", Set.of("TRANSIENT_EXECUTION_FAILURE", "PERMANENT_EXECUTION_FAILURE",
             "SAFETY_POLICY_BLOCKED", "SOURCE_IMAGE_INVALID", "COPY_GENERATION_FAILED",
             "IMAGE_GENERATION_FAILED", "IMAGE_COMPOSITION_FAILED",
-            // 인터뷰가 표본의 절반도 못 걷었다. 「AI 가 불안정하다」와 다르다 — 다시 눌러
+            // 인터뷰가 표본의 절반도 못 걷었다. 「AI 가 불안정하다」와 다르다 - 다시 눌러
             // 볼 만한 실패이고, 화면이 그렇게 말할 수 있어야 한다.
             "MARKET_INTERVIEW_NO_USABLE_RESPONSE",
             // 조건에 맞는 응답자가 0명이라 응답을 걷기 «전에» 멈췄다. 다시 눌러도 같은
-            // 결과이므로 재시도가 아니라 조건을 고쳐야 한다 — 화면이 그렇게 말해야 한다.
+            // 결과이므로 재시도가 아니라 조건을 고쳐야 한다 - 화면이 그렇게 말해야 한다.
             "MARKET_INTERVIEW_NO_TARGET_SAMPLE")),
         Map.entry("RESULT_SCHEMA_INVALID", Set.of("RESULT_UNKNOWN_FIELD", "RESULT_FIELD_CONSTRAINT_VIOLATION",
             "RESULT_REFERENCE_INVALID", "RESULT_DOMAIN_INVARIANT_VIOLATION", "AI_RESULT_INVALID",
             "PROVIDER_RESPONSE_SCHEMA_REJECTED", "PROVIDER_JSON_INVALID",
+            "AI_EVIDENCE_REFERENCE_INVALID",
             "PYDANTIC_RESULT_VALIDATION_FAILED", "LOCKED_VALUE_MISMATCH",
             "GOVERNANCE_SEMANTICS_MISMATCH", "VALUE_SEMANTICS_INCOMPLETE",
             "CANDIDATE_METADATA_INVALID", "CONTENT_FIELD_MISSING",
@@ -183,7 +184,7 @@ public class InternalAiExecutionClient {
     }
 
     RestClient clientFor(TaskType taskType) {
-        // 사업 검증은 FULL+BM 을 한 실행으로 잇는다 — 시장조사와 같은 긴 예산이 필요하다.
+        // 사업 검증은 FULL+BM 을 한 실행으로 잇는다 - 시장조사와 같은 긴 예산이 필요하다.
         // 여기를 빠뜨리면 30초 클라이언트로 부르고, 그 실패가 retryable 로 사상돼
         // 재시도가 같은 유료 실행을 또 태운다.
         if (taskType == TaskType.MARKET_RESEARCH
@@ -191,9 +192,13 @@ public class InternalAiExecutionClient {
             return marketResearchClient;
         }
         if (taskType == TaskType.MARKETING_CONTENT_GENERATION
+            || taskType == TaskType.MARKETING_STRATEGY_GENERATION
+            || taskType == TaskType.FINAL_BUSINESS_PROPOSAL_GENERATION
+            || taskType == TaskType.FINAL_BUSINESS_PROPOSAL_REVIEW
             || taskType == TaskType.TECH_OPS_ADVISORY
             || taskType == TaskType.LAUNCH_TECHNOLOGY_READINESS
-            || taskType == TaskType.LAUNCH_OPERATIONS_READINESS) {
+            || taskType == TaskType.LAUNCH_OPERATIONS_READINESS
+            || taskType == TaskType.LAUNCH_READINESS) {
             return longRunningClient;
         }
         // 트윈 조사는 n=300·4쌍이면 셀이 7,200개다. 시장 인터뷰는 셀 수는 적지만 뒤에

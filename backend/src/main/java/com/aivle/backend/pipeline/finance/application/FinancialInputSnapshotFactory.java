@@ -31,6 +31,11 @@ public class FinancialInputSnapshotFactory {
         body.put("sourceMarketResearchVersionId", preparation.getSourceMarketResearchVersionId());
         body.put("sourceBusinessModelVersionId", preparation.getSourceBusinessModelVersionId());
         body.put("sourceSnapshotHash", preparation.getSourceSnapshotHash());
+        body.put("sourceCurrentMarketSeedSnapshotId", preparation.getSourceCurrentMarketSeedSnapshotId());
+        body.put("sourceSelectionId", preparation.getSourceSelectionId());
+        body.put("sourceSelectionRevision", preparation.getSourceSelectionRevision());
+        body.put("sourceBmPlanRevision", preparation.getSourceBmPlanRevision());
+        body.put("currentConceptBindingHash", preparation.getCurrentConceptBindingHash());
         body.put("createdAt", createdAt.toString());
         ObjectNode values = body.putObject("values");
         ObjectNode provenance = body.putObject("valueProvenance");
@@ -57,6 +62,16 @@ public class FinancialInputSnapshotFactory {
         body.put("sourceDocumentHash", preparation.getSourceDocumentHash());
         String hash = hasher.hash(body);
         body.put("hash", hash);
+        return new BuiltSnapshot(body, hash);
+    }
+
+    public BuiltSnapshot createIndependent(String snapshotId, Instant createdAt,
+            FinancialInputPreparation preparation) {
+        BuiltSnapshot base = create(snapshotId, createdAt, preparation);
+        ObjectNode body = base.body().deepCopy();
+        body.remove("hash"); body.put("sourceMode", "DIRECT_INPUT");
+        body.put("preparationRevision", preparation.getRevision());
+        String hash = hasher.hash(body); body.put("hash", hash);
         return new BuiltSnapshot(body, hash);
     }
 

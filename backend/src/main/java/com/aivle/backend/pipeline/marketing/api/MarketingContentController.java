@@ -7,6 +7,9 @@ import com.aivle.backend.pipeline.marketing.application.MarketingContentService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.core.io.InputStreamResource;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 @RestController @RequestMapping("/api/v3/projects/{projectId}/marketing-contents") @RequiredArgsConstructor
@@ -14,8 +17,11 @@ public class MarketingContentController {
     private final MarketingContentService service; private final CurrentUserProvider user;
     @PostMapping public ApiResponse<ContentView> create(@PathVariable Long projectId,@Valid @RequestBody CreateRequest body,@RequestHeader("Idempotency-Key") String key,HttpServletRequest r){return ApiResponse.success(service.create(user.currentUserId(),projectId,body,key,r.getHeader("X-Correlation-Id")),r.getHeader("X-Request-Id"));}
     @GetMapping public ApiResponse<ContentListView> list(@PathVariable Long projectId,HttpServletRequest r){return ApiResponse.success(service.list(user.currentUserId(),projectId),r.getHeader("X-Request-Id"));}
+    @GetMapping("/current") public ApiResponse<ContentView> current(@PathVariable Long projectId,HttpServletRequest r){return ApiResponse.success(service.current(user.currentUserId(),projectId),r.getHeader("X-Request-Id"));}
+    @GetMapping(value = "/{contentId}/image", produces = MediaType.IMAGE_JPEG_VALUE) public ResponseEntity<InputStreamResource> image(@PathVariable Long projectId,@PathVariable String contentId){var image=service.image(user.currentUserId(),projectId,contentId);return ResponseEntity.ok().contentType(MediaType.IMAGE_JPEG).contentLength(image.sizeBytes()).body(new InputStreamResource(image.stream()));}
     @GetMapping("/{contentId}") public ApiResponse<ContentView> get(@PathVariable Long projectId,@PathVariable String contentId,HttpServletRequest r){return ApiResponse.success(service.get(user.currentUserId(),projectId,contentId),r.getHeader("X-Request-Id"));}
     @PatchMapping("/{contentId}") public ApiResponse<ContentView> edit(@PathVariable Long projectId,@PathVariable String contentId,@Valid @RequestBody EditRequest body,HttpServletRequest r){return ApiResponse.success(service.edit(user.currentUserId(),projectId,contentId,body),r.getHeader("X-Request-Id"));}
     @PostMapping("/{contentId}/regenerate") public ApiResponse<ContentView> regenerate(@PathVariable Long projectId,@PathVariable String contentId,@RequestHeader("Idempotency-Key") String key,HttpServletRequest r){return ApiResponse.success(service.regenerate(user.currentUserId(),projectId,contentId,key,r.getHeader("X-Correlation-Id")),r.getHeader("X-Request-Id"));}
+    @PostMapping("/{contentId}/retry") public ApiResponse<ContentView> retry(@PathVariable Long projectId,@PathVariable String contentId,@RequestHeader("Idempotency-Key") String key,HttpServletRequest r){return ApiResponse.success(service.retry(user.currentUserId(),projectId,contentId,key,r.getHeader("X-Correlation-Id")),r.getHeader("X-Request-Id"));}
     @PostMapping("/{contentId}/finalize") public ApiResponse<ContentView> finalizeContent(@PathVariable Long projectId,@PathVariable String contentId,HttpServletRequest r){return ApiResponse.success(service.finalizeContent(user.currentUserId(),projectId,contentId),r.getHeader("X-Request-Id"));}
 }
