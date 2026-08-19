@@ -1622,3 +1622,281 @@ TaskRun 상태로 판정한다(다른 모듈과 같은 방식). 프론트에도 
 > (「하위 Journey로 노출하지 않는다」·「진행률에 포함하지 않는다」)는 수정이 그대로 지킨다 —
 > 이름과 무관한 곁다리 단언만 옛 값을 붙들고 있었다. 의도를 명시적으로 단언하도록 고치고,
 > 「끝내면 완료로 보인다」·「아직 시작 안 했으면 선택 기능으로 남는다」 두 건을 새로 넣었다.
+
+---
+
+## 24. 프론트 전수 점검 — 38개 화면 (2026-08-19)
+
+사용자가 스크린샷 두 장으로 **선별 기준 2가지**를 주었다.
+
+1. **레이아웃이 물리적으로 깨진 것** — 글자가 한 글자씩 세로로 짓눌려 흐르는, 누가 봐도 깨진 렌더링
+2. **정제 안 된 원시 정보가 그대로 노출된 것** — `UNVERIFIED` 같은 raw enum, 같은 자리표시자 문구 반복, 영어 원문
+
+### 24.1 검출기 — 눈으로만 보면 놓친다
+
+`javascript_tool` 로 주입해 페이지마다 돌렸다. **잎 텍스트 노드가 3줄 이상 높이인데
+폭이 3em 미만**이면 압착으로 본다.
+
+```js
+const closed=e=>{for(let p=e;p;p=p.parentElement)if(p.tagName==='DETAILS'&&!p.open)return true;return false};
+document.querySelectorAll('body *').forEach(e=>{
+  if(e.children.length||closed(e))return;               // ← 닫힌 <details> 제외가 핵심
+  const r=e.getBoundingClientRect(); if(!r.width||!r.height)return;
+  const c=getComputedStyle(e); if(c.visibility==='hidden'||c.opacity==='0')return;
+  const fs=parseFloat(c.fontSize), lh=parseFloat(c.lineHeight)||fs*1.2;
+  if(Math.round(r.height/lh)>=3 && r.width<fs*3) hit(e);
+});
+```
+
+> ⚠ **오탐 2건을 실제로 겪었다. 검출기를 믿기 전에 오탐부터 잡아라.**
+> - 첫 판은 `/market-interview` 에서 **360/405 히트**를 보고했다. 전부 **닫힌 `<details>`**
+>   안이었고 실폭이 80px 로 계산된 것이었다. 위 `closed()` 를 넣어 해결했다.
+> - `/auth/signup` 헤드라인이 빈 칸으로 보여 결함으로 의심했다. 원인은 **탭이
+>   백그라운드**(`document.hidden===true`)라 타이핑 애니메이션이 멈춰 있던 것.
+>   `useBrandCopyTyping` 이 `document.hidden` 이면 타이머를 걸지 않는다 — 의도된 동작이다.
+
+### 24.2 점검 범위 — AppRouter 전 경로
+
+| 구역 | 화면 | 수 |
+|---|---|---|
+| 로그인 전 | `/` 랜딩(인트로 포함) · login · signup · password-reset | 4 |
+| 워크스페이스 | `/app` · projects · projects/new · settings/profile · settings/security | 5 |
+| 프로젝트 2번 | overview·idea·concepts·compare·legal-report·market·business-model·concept-refinement·market-interview·launch-readiness·reports/technology·technology·operations·tech-ops·finance·marketing·marketing/report·final-report·settings | 19 |
+| 관리자 | admin·users·projects·projects/2·audit·audit/162·settings·operations·jobs | 9 |
+| 오류 | 404 | 1 |
+
+**로그인 전 화면을 보는 법:** 세션 토큰이 `sessionStorage`(탭 단위)에 있으므로
+**새 탭을 열면** 기존 로그인을 건드리지 않고 로그아웃 상태를 볼 수 있다. 로그아웃할 필요가 없다.
+
+> ⚠ 관리자 라우트는 `/admin` 이다. `/app/admin` 이 아니다 — 부모 레이아웃이 path 없는
+>   라우트라 `/app/admin` 은 404 로 떨어진다. 한 번 헛다리를 짚었다.
+
+### 24.3 기준① 레이아웃 깨짐 — 2건, 둘 다 §21 에서 수정
+
+나머지 36개 화면은 검출기 **0 hit**. 신규 없음.
+
+### 24.4 기준② 미정제 정보 — 신규 6종
+
+| # | 자리 | 내용 |
+|---|---|---|
+| 1 | **`/admin/users`** | 화면 전체가 에러. `GET /api/v1/admin/users` → **500** |
+| 2 | **관리자 프로젝트 상태** | 전부 `DRAFT` 고정. 개요의 「완료」가 영원히 0 |
+| 3 | `/auth/password-reset` | 인증 셸도 없는 개발 자리표시자(`AuthPlaceholderPage`) |
+| 4 | 404 화면 | 헤더·복귀 링크 없는 맨 카드 하나, 첫 페인트 약 7초 |
+| 5 | 영어 원문 | 관리자 사이드바 7 · 페이지 제목 7 · `/admin/settings` 토글 2개가 제목·설명 전부 영어 · Account settings/Profile/Security/DANGER ZONE · New Project |
+| 6 | raw enum | `/admin/jobs` **63셀(17종)** · `/admin/audit` **50셀** · projects 상세 · operations |
+
+#### 24.4.1 `/admin/users` 500 — `function lower(bytea) does not exist`
+
+```
+org.postgresql.util.PSQLException: ERROR: function lower(bytea) does not exist
+  at com.aivle.backend.admin.AdminUserService.list(AdminUserService.java:34)
+```
+
+`UserRepository.searchAdminUsers` 의 JPQL 이 `lower(concat('%', :keyword, '%'))` 를 쓴다.
+`keyword` 가 null 인 **기본 로드**에서 Postgres 가 `concat` 결과 타입을 `bytea` 로 추론한다.
+`:keyword is null` 이 앞에 있어도 **계획 단계에서 식 전체의 타입을 풀어야** 하므로
+값과 무관하게 항상 터진다. 즉 **검색어를 넣든 안 넣든 100% 실패**한다.
+
+같은 패턴은 코드 전체에서 이 한 곳뿐이다. 고치려면 `cast(:keyword as string)` 로
+파라미터 타입을 못 박는다. **미수정.**
+
+#### 24.4.2 프로젝트 상태가 영원히 `DRAFT`
+
+`Project.java:48` 이 생성 시 `ProjectStatus.DRAFT` 를 박고 **어디서도 바꾸지 않는다.**
+`ACTIVE`·`PAUSED`·`COMPLETED` 는 `AdminOverviewService` 의 집계 쿼리에만 등장한다.
+결과로 관리자 개요의 「완료」가 항상 0 이고 `/admin/projects` 의 `Status` 필터가 무의미하다. **미수정.**
+
+### 24.5 아직 못 본 것
+
+**입력 전(빈 프로젝트) 상태.** 프로젝트가 2번 하나뿐이고 완전히 채워져 있어
+모듈 화면의 빈 상태를 보려면 임시 프로젝트를 만들어야 한다. 데이터를 쓰는 일이라 진행하지 않았다.
+
+---
+
+## 25. 도커 자립 실행 + main 병합 (2026-08-19)
+
+### 25.1 엔진이 안 떴다 — WSL 미설치
+
+Docker Desktop 29.7.2 는 설치돼 있었으나 데몬이 안 떴다.
+
+```
+failed to connect to the docker API at npipe:////./pipe/dockerDesktopLinuxEngine
+wsl --status → Linux용 Windows 하위 시스템이 설치되어 있지 않습니다
+```
+
+Windows 11 **Home** 이라 Hyper-V 백엔드가 없고, Docker Desktop 29 는 WSL2 만 지원한다.
+가상화 자체는 살아 있었다(`HypervisorPresent=True`). 사용자가 관리자 권한으로
+`wsl --install --no-distribution` + 재부팅으로 해결했다.
+
+> 📌 이건 **에이전트가 못 하는 일**이다. Windows 기능 활성화는 UAC 승격이 필요하고,
+>   계정이 Administrators 그룹에 있어도 승격 자체를 자동화할 수 없다.
+
+### 25.2 도커에서만 터진 것 3가지
+
+#### (1) `npm ci` 거부 — 락에 리눅스 전용 의존이 빠져 있었다
+
+```
+npm error `npm ci` can only install packages when your package.json and
+package-lock.json are in sync.
+Missing: @emnapi/core@1.11.3 from lock file
+Missing: @emnapi/runtime@1.11.3 from lock file
+```
+
+`@emnapi/*` 는 `@rolldown/binding-wasm32-wasi` 의 optional 의존이라 **윈도우에서 만든
+락에는 안 들어간다.** 반대로 리눅스에서 `--package-lock-only` 로 새로 만들면
+**win32 항목이 떨어져 나가** 이번엔 윈도우 로컬이 깨진다(251 → 222개로 줄었다).
+
+해결: **컨테이너 안 격리된 폴더에서 전체 `npm install`** 을 돌려 락만 꺼내 온다.
+`--package-lock-only` 가 아니라 진짜 install 이어야 한다.
+
+```sh
+docker run --rm -v "<repo>/frontEnd:/src:ro" -v "<out>:/out" node:22-alpine sh -c '
+  mkdir -p /w && cp /src/package.json /src/package-lock.json /w/ && cd /w
+  npm install --no-audit --no-fund >/dev/null 2>&1
+  cp /w/package-lock.json /out/package-lock.linux.json'
+```
+
+결과는 **상위집합**이었다 — 251 → 256개. win32 16 · darwin 17 그대로 두고
+`@emnapi/*` 5개만 추가. 양쪽 플랫폼이 다 산다.
+
+> ⚠ Git Bash 에서 `docker run ... /out/relock.sh` 는 경로가 윈도우 경로로 변환돼
+>   `C:/Program Files/Git/out/relock.sh` 를 찾는다. `MSYS_NO_PATHCONV=1` 를 붙인다.
+
+#### (2) 트윈 뱅크 — 바인드 마운트를 걷어내고 이미지에 구웠다
+
+`ai/.dockerignore` 가 `app/twin/bank` 를 제외하고 compose 가 호스트를 바인드하고 있었다.
+그대로 두면 폴더 없는 환경에서 **모듈 4가 「표본 0명」으로 조용히 성공**한다
+(`targeting.py` 주석이 경고한 그 함정 — 화면 경고는 0건이다).
+
+- `ai/.dockerignore` 에서 `app/twin/bank`·`research2/runs` 제외를 뺀다
+- `ai/Dockerfile` 에 **빌드에서 끊는 가드**를 넣는다
+
+```dockerfile
+RUN test -s app/twin/bank/twin_bank_manifest.json \
+    || (echo "ERROR: ai/app/twin/bank 이 비어 있습니다." >&2; exit 1)
+```
+
+- `compose.yaml` 의 ai-server 바인드 마운트를 주석으로 남기고 제거
+
+> ⚠ **이 이미지는 배포용이 아니다.** 트윈 뱅크는 KISDI 파생 **재배포 금지** 자산이다.
+>   이 PC 안에서 재현하는 용도로만 쓴다. 이미지를 남에게 넘기는 것은 재배포다.
+
+#### (3) compose 의 시장조사 타임아웃 기본값이 22m 로 남아 있었다
+
+`application.yaml` 은 이미 63m 인데 `compose.yaml:145` 만 옛 값이었다.
+`.env` 가 63m 을 주고 있어 런타임에는 안 드러나지만, `.env` 없는 환경에서 되살아난다.
+
+### 25.3 리포에 **없는** 것 — 남에게 넘길 때 필요한 목록
+
+클론만 받아서는 못 돌린다. 빠지는 것은 셋이다.
+
+| 빠지는 것 | 왜 | 없으면 |
+|---|---|---|
+| `.env` | gitignore | compose 가 아예 안 뜬다 (`POSTGRES_PASSWORD is required`) |
+| `ai/app/twin/bank/` 12MB | KISDI 파생 재배포 금지 | 모듈 4를 **새로 못 돌린다** (이미 돌린 결과는 DB에 있어 화면 확인은 됨) |
+| DB | 리포 밖 | **계정·프로젝트·모듈 결과가 전부 빈 상태** |
+
+`.env` 를 그대로 주면 OpenAI·KOSIS·DART·TAVILY 키가 통째로 넘어간다.
+상대에 따라 키를 비운 배포용 사본을 만들어야 한다.
+
+> **도커 compose 의 postgres 는 빈 named volume(`postgres-data`)으로 뜬다.**
+> 올리기만 하면 DB 가 비어 있다. 로그인은 `BOOTSTRAP_ADMIN_*` 로 되지만 워크스페이스가 텅 빈다.
+
+### 25.4 데이터 이관 절차 — 실제로 밟은 순서
+
+**① DB 덤프** (로컬 postgres 를 켜서)
+
+```sh
+pg_dump -h 127.0.0.1 -U aivle -d aivle -Fc -f aivle.dump     # 3,840,856 bytes
+```
+
+**② 도커 postgres 에 복원** — 백엔드가 이미 Flyway 를 돌려 놨으므로 DB 를 갈아엎는다
+
+```sh
+docker compose stop backend
+docker compose cp aivle.dump postgres:/tmp/aivle.dump
+docker compose exec -T postgres psql -U aivle -d postgres -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='aivle' AND pid<>pg_backend_pid();"
+docker compose exec -T postgres psql -U aivle -d postgres -c "DROP DATABASE aivle;"
+docker compose exec -T postgres psql -U aivle -d postgres -c "CREATE DATABASE aivle OWNER aivle;"
+docker compose exec -T postgres pg_restore -U aivle -d aivle --no-owner --no-privileges /tmp/aivle.dump
+docker compose start backend
+```
+
+> 로컬은 **PG 18**, 도커 이미지는 **PG 17.11** 이다. `pg_restore` 17 이 PG18 덤프
+> (Dump Version 1.16-0, TOC 601) 를 문제없이 읽었다. 버전을 맞출 필요는 없었다.
+
+**③ 아티팩트 이관** — 로컬은 파일시스템, 도커는 MinIO 다
+
+로컬 `OBJECT_STORAGE_PROVIDER=local` → `backend/data/objects` (15개, 4.02 MiB).
+도커는 `s3`/MinIO. **DB 만 옮기면 이미지·DOCX 가 전부 404 난다.**
+`minio/mc` 컨테이너를 compose 네트워크에 붙여 `mc mirror` 로 옮긴다.
+
+### 25.5 검증 결과
+
+| 항목 | 결과 |
+|---|---|
+| 컨테이너 | postgres·minio·ai-server·backend·frontend **5개 healthy** |
+| 이미지 | backend 818MB · ai-server 479MB(트윈 뱅크 포함) · frontend 75.5MB |
+| 이미지 내용 | `/app/app/twin/bank` 3파일 11.3MB + research2 run 3종 확인 |
+| DB | users 1(`admintest` ADMIN) · projects 2 · task_runs 54 · flyway 40 |
+| 재현 | 프로젝트 2번 **6단계 전부 「완료」** |
+| 아티팩트 | 15개 이관, **마케팅 생성 이미지 렌더 확인** |
+| API 경로 | `/api/v1` 상대경로 → nginx `/api/` → `backend:8080` |
+
+**복원 충실성 검증** — 로컬과 도커의 `final_report_snapshots` 행이 ID·해시까지 동일했다
+(시각은 KST/UTC 표기 차이뿐). 최종보고서의 「업데이트 필요」 배지는 **데이터가 그런 것**이지
+도커 탓이 아니다. 상태는 저장 컬럼이 아니라 `source_binding_hash` 비교로 파생된다.
+
+> nginx `/api/` 의 `proxy_read_timeout` 은 **90s** 다. 비동기 작업 구조라 지금은 안 걸리지만,
+> 동기 호출이 90초를 넘기면 도커에서만 끊긴다. main 과 동일한 설정이라 회귀는 아니다.
+
+### 25.6 병합 — 공통 조상이 없었다
+
+```
+$ git merge-base origin/main HEAD
+(빈 출력)
+$ git merge-tree --write-tree origin/main HEAD
+fatal: refusing to merge unrelated histories
+```
+
+`main` 의 뿌리는 `a7ae7df8 Initial commit`, `full` 은 `2b4871e2 new ver` 다.
+하이브리드 트리를 **손으로 파일을 옮겨** 만들었기 때문에 두 이력이 아예 무관하다.
+일반 병합·PR 이 성립하지 않는다.
+
+**택한 방식** — `main` 을 부모로 두고 검증한 트리를 그대로 얹는 커밋 하나:
+
+```sh
+TREE=$(git rev-parse HEAD^{tree})
+NEW=$(git commit-tree "$TREE" -p origin/main -F msg.txt)
+git branch -f integration/module-2-4-port "$NEW"
+```
+
+| 커밋 | 뜻 |
+|---|---|
+| `cf137c48` | `full` 브랜치의 작업 커밋 (443 파일) — 이력 보존용 |
+| `191bda1b` | main 을 부모로 한 같은 트리 (766 파일 차이) |
+| `6c760f3f` | PR #51 머지 커밋 |
+
+병합 후 `origin/main` 의 트리가 검증한 트리와 **완전 동일**함을 확인했고,
+모듈 2·4 불변식(`pipeline/market`·`ai/app/interview` 가 main 과 바이트 동일)도 유지된다.
+
+> `full` 브랜치 푸시는 원격이 앞서 있어 거절됐다(non-fast-forward). 강제로 덮지 않았다.
+> 자기 PR 은 GitHub 이 승인을 막는다(422) — 검증 내역은 코멘트로 남기고 병합했다.
+
+### 25.7 CI 는 원래 빨갛다
+
+`ai`(`scripts/audit_env_contract.py`)·`frontend`(`npm run test:baseline`) 두 잡이 실패한다.
+**main 에서도 2026-08-14 부터 계속 실패 중**이라 이 병합으로 인한 회귀가 아니다.
+빨간 CI 를 무릅쓰고 병합한 것은 사용자의 명시적 판단이다.
+
+### 25.8 병합 직전에 잡은 백엔드 회귀 2건
+
+726개 중 2개가 깨져 있었다. **둘 다 이 세션의 변경을 테스트가 못 따라간 것**이다.
+
+- `ActiveSurfaceCleanupTests` — §23 에서 넣은 `FINAL_REPORT` 가 `containsExactly` 목록에 없었다
+- `ConceptPortfolioBuildHandoffMaterializationTests:84` — 서비스가 `save` → `saveAndFlush`
+  로 바뀌었는데 `verify(marketSeeds).save(...)` 가 그대로였다
+
+고친 뒤 **726 통과 / 0 실패**. AI 1061/3 · 프론트 749/7 은 `origin/main` 에서 물려받은 기존 실패로,
+해당 파일들이 main 과 바이트 동일함을 확인해 회귀가 아님을 증명했다.
