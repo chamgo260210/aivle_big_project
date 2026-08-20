@@ -1,0 +1,23 @@
+# 시연 영상 촬영용 겹침 파일.
+#
+# ⚠ **평소에는 쓰지 않는다.** 이걸 겹쳐 올리면 AI 서버가 실제 모델을 부르지 않고
+#   미리 녹화해 둔 응답을 정해진 지연 뒤에 돌려준다. 백엔드·DB·프론트·계보 검증은
+#   전부 평소대로 돈다 — 느린 유료 호출 한 곳만 녹음 재생으로 바뀐다.
+#
+# ⚠ **녹화본은 프로젝트 2번의 것이다.** 응답 안에 그 프로젝트 전용 ID 가 박혀 있어
+#   새 프로젝트에 재생하면 존재하지 않는 ID 를 가리키는 결과가 나온다.
+#   반드시 `D:\aivle-ops\demo-rewind.ps1` 로 해당 모듈 직전 스냅샷을 복원한 뒤 쓴다.
+#
+# 켜기:  docker compose -f compose.yaml -f compose.demo.yaml up -d ai-server
+# 끄기:  docker compose -f compose.yaml up -d ai-server        (겹침 없이 다시 올리면 꺼진다)
+
+services:
+  ai-server:
+    environment:
+      AI_DEMO_REPLAY_DIR: /replay
+      AI_DEMO_DELAY_SECONDS: ${AI_DEMO_DELAY_SECONDS:-3}
+    volumes:
+      - type: bind
+        source: ${AI_DEMO_REPLAY_HOST_DIR:-D:/aivle-ops/replay}
+        target: /replay
+        read_only: true
