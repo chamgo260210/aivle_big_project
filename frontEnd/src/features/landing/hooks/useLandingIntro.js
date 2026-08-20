@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-const normalTimeline = [[350, 'streaming'], [1050, 'classifying'], [1650, 'assembling'], [2250, 'collapsing'], [2750, 'unfolding'], [3250, 'settling'], [3500, 'completed']];
+const normalTimeline = [[320, 'streaming'], [980, 'classifying'], [1580, 'assembling'], [2240, 'collapsing'], [2720, 'unfolding'], [3160, 'settling'], [3520, 'completed']];
 let landingIntroHasBeenEvaluated = false;
 const initialDocumentPath = typeof window === 'undefined' ? '/' : window.location.pathname;
 
@@ -28,7 +28,7 @@ export default function useLandingIntro(reducedMotion, { skipFromInternalRoute =
     if (!shouldPlay || state === 'completed' || state === 'settling') return;
     clearTimers();
     setState('collapsing');
-    timers.current = [window.setTimeout(() => setState('unfolding'), 70), window.setTimeout(() => setState('settling'), 150), window.setTimeout(finish, 240)];
+    timers.current = [window.setTimeout(() => setState('unfolding'), 90), window.setTimeout(() => setState('settling'), 190), window.setTimeout(finish, 340)];
   }, [clearTimers, finish, shouldPlay, state]);
 
   useEffect(() => {

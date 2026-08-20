@@ -40,6 +40,7 @@ public class SecurityConfiguration {
                 .requestMatchers(
                     "/api/v1/auth/signup",
                     "/api/v1/auth/login",
+                    "/api/v1/auth/review-access",
                     "/api/v1/auth/refresh",
                     "/actuator/health/**",
                     "/h2-console/**"
@@ -102,6 +103,7 @@ public class SecurityConfiguration {
                 .requestMatchers(
                     "/api/v1/auth/signup",
                     "/api/v1/auth/login",
+                    "/api/v1/auth/review-access",
                     "/api/v1/auth/refresh",
                     "/actuator/health/**",
                     "/h2-console/**"
@@ -137,6 +139,7 @@ public class SecurityConfiguration {
                 .requestMatchers(
                     "/api/v1/auth/signup",
                     "/api/v1/auth/login",
+                    "/api/v1/auth/review-access",
                     "/api/v1/auth/refresh",
                     "/actuator/health/**",
                     "/h2-console/**"

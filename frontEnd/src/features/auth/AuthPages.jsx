@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 
 import { getUserErrorMessage } from '../../shared/api/apiError.js';
 import { Alert, Button, PasswordInput, TextInput } from '../../shared/ui/index.js';
@@ -13,6 +13,7 @@ import PasswordRequirements from './components/PasswordRequirements.jsx';
 import useCapsLock from './hooks/useCapsLock.js';
 import usePasswordChecks from './hooks/usePasswordChecks.js';
 import useLoginRetryCountdown from './hooks/useLoginRetryCountdown.js';
+import { safeReturnToForRole } from './safeReturnTo.js';
 import './auth.css';
 import './auth-card-heading.css';
 import './auth-enhancements.css';
@@ -83,7 +84,9 @@ function AuthPage({ children, mode }) {
 }
 
 export function LoginPage() {
-  const { login } = useAuth();
+  const { login, reviewQuickAccess } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
   const errorRef = useRef(null);
   const timerRef = useRef(null);
   const { isCapsLockOn, handleBlur: handleCapsLockBlur, handleFocus: handleCapsLockFocus, handleKeyDown: handleCapsLockKeyDown, handleKeyUp: handleCapsLockKeyUp } = useCapsLock();
@@ -91,6 +94,7 @@ export function LoginPage() {
   const [errors, setErrors] = useState({});
   const [globalError, setGlobalError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [quickSubmittingRole, setQuickSubmittingRole] = useState(null);
   const [success, setSuccess] = useState(false);
   const { clearRetryCountdown, isLimited, remainingSeconds, startRetryCountdown } = useLoginRetryCountdown();
   useEffect(() => () => window.clearTimeout(timerRef.current), []);
@@ -108,13 +112,14 @@ export function LoginPage() {
     if (Object.keys(nextErrors).length) { setErrors(nextErrors); focusFirstError(nextErrors, 'login'); return; }
     setSubmitting(true); setErrors({}); setGlobalError('');
     try {
-      await login({ username, password: values.password });
+      const user = await login({ username, password: values.password });
       clearRetryCountdown();
       window.sessionStorage.removeItem(warningStorageKey);
       window.dispatchEvent(new Event('auth-login-attempt-warning'));
       setErrors({});
       setGlobalError('');
       setSuccess(true);
+      navigate(safeReturnToForRole(location.state?.returnTo, user?.role), { replace: true });
     } catch (error) {
       if (error?.code === 'LOGIN_RATE_LIMITED') {
         startRetryCountdown(error.retryAfterSeconds);
@@ -130,7 +135,26 @@ export function LoginPage() {
       window.requestAnimationFrame(() => Object.keys(fields).length ? focusFirstError(fields, 'login') : errorRef.current?.focus());
     } finally { setSubmitting(false); }
   }
-  return <AuthPage mode="login"><AuthCard title="다시 만나서 반갑습니다" description="진행 중인 사업 검증 프로젝트를 이어서 확인하세요."><AuthError errorRef={errorRef} message={globalError} title="로그인하지 못했습니다" /><LoginRateLimitNotice remainingSeconds={remainingSeconds} />{success ? <AuthSuccess title="로그인 완료" message="프로젝트로 이동하고 있습니다." /> : <form className="auth-form" onSubmit={handleSubmit} noValidate><TextInput id="login-username" label="아이디" placeholder="ventureuser" autoComplete="username" value={values.username} error={errors.username} onChange={update('username')} required /><PasswordInput id="login-password" label="비밀번호" placeholder="비밀번호를 입력하세요" autoComplete="current-password" value={values.password} error={errors.password} onChange={update('password')} onFocus={handleCapsLockFocus} onBlur={handleCapsLockBlur} onKeyUp={handleCapsLockKeyUp} onKeyDown={handleCapsLockKeyDown} required />{isCapsLockOn && <p className="auth-caps-lock" aria-live="polite">Caps Lock이 켜져 있습니다.</p>}<Button className="auth-form__submit" type="submit" size="large" loading={submitting} disabled={isLimited}>{isLimited ? `${Math.ceil(remainingSeconds / 60)}분 후 다시 시도` : submitting ? '로그인 중...' : '로그인'}</Button></form>}<p className="auth-card__switch">아직 계정이 없나요? <Link to="/auth/signup" state={{ authTransition: true, source: 'auth-switch', intent: 'signup' }}>무료로 시작하기</Link></p></AuthCard></AuthPage>;
+  async function handleQuickAccess(role) {
+    if (quickSubmittingRole || submitting) return;
+    setQuickSubmittingRole(role);
+    setErrors({});
+    setGlobalError('');
+    try {
+      navigate(location.pathname, {
+        replace: true,
+        state: { ...location.state, quickAccessRole: role },
+      });
+      await reviewQuickAccess(role);
+      navigate(role === 'ADMIN' ? '/admin' : '/app', { replace: true });
+    } catch (error) {
+      setGlobalError(getUserErrorMessage(error));
+      window.requestAnimationFrame(() => errorRef.current?.focus());
+    } finally {
+      setQuickSubmittingRole(null);
+    }
+  }
+  return <AuthPage mode="login"><AuthCard title="다시 만나서 반갑습니다" description="진행 중인 사업 검증 프로젝트를 이어서 확인하세요."><AuthError errorRef={errorRef} message={globalError} title="로그인하지 못했습니다" /><LoginRateLimitNotice remainingSeconds={remainingSeconds} />{success ? <AuthSuccess title="로그인 완료" message="프로젝트로 이동하고 있습니다." /> : <><form className="auth-form" onSubmit={handleSubmit} noValidate><TextInput id="login-username" label="아이디" placeholder="ventureuser" autoComplete="username" value={values.username} error={errors.username} onChange={update('username')} required /><PasswordInput id="login-password" label="비밀번호" placeholder="비밀번호를 입력하세요" autoComplete="current-password" value={values.password} error={errors.password} onChange={update('password')} onFocus={handleCapsLockFocus} onBlur={handleCapsLockBlur} onKeyUp={handleCapsLockKeyUp} onKeyDown={handleCapsLockKeyDown} required />{isCapsLockOn && <p className="auth-caps-lock" aria-live="polite">Caps Lock이 켜져 있습니다.</p>}<Button className="auth-form__submit" type="submit" size="large" loading={submitting} disabled={isLimited || Boolean(quickSubmittingRole)}>{isLimited ? `${Math.ceil(remainingSeconds / 60)}분 후 다시 시도` : submitting ? '로그인 중...' : '로그인'}</Button></form><section className="auth-review-access" aria-labelledby="review-access-title"><div><h2 id="review-access-title">퀵 검토용 접속</h2><p>심사·검토 시 계정 입력 없이 바로 확인할 수 있습니다.</p></div><div className="auth-review-access__actions"><Button type="button" variant="outline" loading={quickSubmittingRole === 'USER'} disabled={Boolean(quickSubmittingRole) || submitting} onClick={() => void handleQuickAccess('USER')}>일반 사용자 접속</Button><Button type="button" variant="outline" loading={quickSubmittingRole === 'ADMIN'} disabled={Boolean(quickSubmittingRole) || submitting} onClick={() => void handleQuickAccess('ADMIN')}>관리자 접속</Button></div></section></>}<p className="auth-card__switch">아직 계정이 없나요? <Link to="/auth/signup" state={{ authTransition: true, source: 'auth-switch', intent: 'signup' }}>무료로 시작하기</Link></p></AuthCard></AuthPage>;
 }
 
 export function SignupPage() {

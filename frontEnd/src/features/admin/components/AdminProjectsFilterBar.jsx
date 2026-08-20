@@ -1,4 +1,5 @@
 import { Select, TextInput } from '../../../shared/ui/index.js';
+import { projectStatusLabel } from '../model/adminLabels.js';
 
 export default function AdminProjectsFilterBar({
   values, keyword, owner, onSearchChange, onCompositionStart, onCompositionEnd, onFilterChange,
@@ -9,14 +10,14 @@ export default function AdminProjectsFilterBar({
         onChange={(event) => onSearchChange('keyword', event.target.value)}
         onCompositionStart={() => onCompositionStart('keyword')}
         onCompositionEnd={(event) => onCompositionEnd('keyword', event.currentTarget.value)} />
-      <TextInput label="소유자" value={owner} placeholder="Username, 이름 또는 ID"
+      <TextInput label="소유자" value={owner} placeholder="사용자 아이디, 이름 또는 ID"
         onChange={(event) => onSearchChange('owner', event.target.value)}
         onCompositionStart={() => onCompositionStart('owner')}
         onCompositionEnd={(event) => onCompositionEnd('owner', event.currentTarget.value)} />
-      <Select label="Status" value={values.status} onChange={(event) => onFilterChange('status', event.target.value)}>
+      <Select label="상태" value={values.status} onChange={(event) => onFilterChange('status', event.target.value)}>
         <option value="">전체</option>
         {['DRAFT', 'ACTIVE', 'PAUSED', 'COMPLETED', 'ARCHIVED'].map((status) => (
-          <option key={status} value={status}>{status}</option>
+          <option key={status} value={status}>{projectStatusLabel(status)}</option>
         ))}
       </Select>
       <TextInput label="업종" value={values.industryCategory} placeholder="저장된 업종 값"
@@ -33,7 +34,7 @@ export default function AdminProjectsFilterBar({
         <option value="createdAt,desc">최근 생성순</option>
         <option value="createdAt,asc">생성일 오름차순</option>
         <option value="title,asc">프로젝트명 오름차순</option>
-        <option value="status,asc">Status 오름차순</option>
+        <option value="status,asc">상태 오름차순</option>
       </Select>
     </div>
   );

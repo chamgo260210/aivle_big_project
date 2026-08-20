@@ -10,7 +10,7 @@ export default function AdminAvailabilityNotice({ title, availability }) {
     return (
       <section className="admin-panel admin-availability">
         <h2>{title}</h2>
-        <strong>AVAILABLE</strong>
+        <strong>사용 가능</strong>
         <p>{REASON_MESSAGES[availability.reason] || '내부 AI 실행 연결을 사용할 수 있습니다.'}</p>
       </section>
     );
@@ -18,7 +18,7 @@ export default function AdminAvailabilityNotice({ title, availability }) {
   return (
     <section className="admin-panel admin-availability" aria-labelledby="admin-availability-title">
       <h2 id="admin-availability-title">{title}</h2>
-      <strong>NOT_CONFIGURED / UNAVAILABLE</strong>
+      <strong>설정 또는 연결 확인 필요</strong>
       <p>{REASON_MESSAGES[availability.reason] || '현재 외부 서비스 상태를 확인할 수 없습니다.'}</p>
       <small>연동 전에는 작업 수치나 운영 작업을 표시하지 않습니다.</small>
     </section>

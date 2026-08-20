@@ -177,7 +177,8 @@ public class ProjectModuleStatusService {
         PipelineModuleStatus refinementStatus = refinementStatus(portfolioSelection, refinementRounds);
         ConceptRefinementRound lastRefinementRound = refinementRounds.isEmpty() ? null
             : refinementRounds.get(refinementRounds.size() - 1);
-        PipelineModuleStatus interviewStatus = selectedSnapshot == null ? PipelineModuleStatus.NOT_READY
+        boolean refinedConceptConfirmed = selectedSnapshot != null && selectedSnapshot.isRefinementApplied();
+        PipelineModuleStatus interviewStatus = !refinedConceptConfirmed ? PipelineModuleStatus.NOT_READY
             : interviewRun == null ? PipelineModuleStatus.READY : interviewStatus(interviewRun);
         TaskRun activeInterviewTask = interviewRun == null ? null : activeTask(interviewRun.getTaskRun());
         PipelineModuleStatus marketingStatus = marketingStatus(selectedSnapshot != null, marketing,
@@ -262,7 +263,7 @@ public class ProjectModuleStatusService {
                 latestActiveId(launchTechnologyTask, launchOperationsTask), null, null, null,
                 latestUpdatedAt(launchTechnologyTask, launchOperationsTask)),
             response(projectId, PipelineModuleType.MARKET_INTERVIEW, interviewStatus,
-                selectedSnapshot == null ? List.of("marketAnalysisSeedSnapshotId") : List.of(),
+                !refinedConceptConfirmed ? List.of("marketAnalysisSeedSnapshotId") : List.of(),
                 new NextAction("시장 인터뷰", "/market-interview"),
                 interviewRun == null ? null : String.valueOf(interviewRun.getId()),
                 activeInterviewTask == null ? null : activeInterviewTask.getId(),

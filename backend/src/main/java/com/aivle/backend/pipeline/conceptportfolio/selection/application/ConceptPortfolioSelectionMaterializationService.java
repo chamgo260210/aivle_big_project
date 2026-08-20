@@ -145,8 +145,11 @@ public class ConceptPortfolioSelectionMaterializationService {
                 //   서지 않았고, 그 값을 보는 시장 인터뷰 게이트({@code MarketInterviewBoardService})
                 //   가 영영 안 열렸다. 도메인 주석이 「기본값을 만들면 그 기본값이 곧 «다듬기 안
                 //   지났음»으로 굳는다」고 경고한 그대로다(2026-08-19 실측).
-                //   기준은 «다듬기 오버레이를 얹고 만든 시드인가» 하나다.
-                boolean refinementApplied = input.hasNonNull("refinementOverlay");
+                //   기준은 «이 selection 이 컨셉 다듬기 라운드를 지났는가» 하나다. 오버레이가
+                //   없어도 가설만 수정하거나 제안을 모두 넘긴 뒤 최종 확정할 수 있다.
+                boolean refinementApplied = rounds
+                    .findTopBySelectionIdAndDeletedAtIsNullOrderByRoundDesc(selection.getId())
+                    .isPresent();
                 marketSeeds.saveAndFlush(MarketAnalysisSeedSnapshot.createPortfolio(id,selection.getProjectId(),selection.getId(),
                     selection.getConceptId(),report.getId(),"2.0",market.path("sourceSnapshotHash").asText(),snapshotHash,
                     mapper.writeValueAsString(market),context.ownerId(),Instant.now(clock),refinementApplied));

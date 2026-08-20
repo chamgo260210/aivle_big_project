@@ -19,7 +19,7 @@ executiveDecisionSummary: { businessDefinition: '자전거 운영 데이터를 �
   evidenceDetails: [{ evidenceKey: 'EV-aaaaaaaaaaaaaaaaaaaaaaaa', sourceType: 'MARKET', sourceId: 'market-1',
     label: '시장 분석 · 가격·비용 관측', summary: '배달비 3,000원', asOf: '2026-08-18',
     sourcePath: '시장 분석 · 가격 근거 #3' }] },
-sections: [{ number: 1, title: '사업 추진 배경 및 목적', summary: '운영 문제를 해결합니다.', narratives: [{ heading: '문제', body: '관리 효율이 필요합니다.' }], keyPoints: ['운영 조건 확인'], tables: [], evidenceRefs: ['CURRENT_CONCEPT:concept-1'] }],
+sections: [{ number: 1, title: '사업 추진 배경 및 목적', summary: '운영 문제를 해결합니다.', narratives: [{ heading: '문제', body: '관리 효율이 필요합니다. (EV-aaaaaaaaaaaaaaaaaaaaaaaa)' }], keyPoints: ['운영 조건 확인'], tables: [], evidenceRefs: ['CURRENT_CONCEPT:concept-1'] }],
 decisionRequest: { approvalRequests: ['파일럿'], conditionalApprovals: [], requiredChecks: [], nextActions: ['고객 확인'] },
 appendix: { assumptions: [], omittedAnalyses: [], sourceVersions: ['현재 사업안'] } };
 const view = { state: 'CURRENT', snapshotId: 'snapshot-1', version: 1, generatedAt: '2026-08-18T00:00:00Z',
@@ -84,6 +84,8 @@ describe('Final business proposal workspace', () => {
     fireEvent.click(screen.getAllByText('근거 상세 보기')[0]);
     expect(screen.getByText('배달비 3,000원')).toBeInTheDocument();
     expect(screen.getByText('시장 분석 · 가격 근거 #3')).toBeInTheDocument();
+    expect(screen.getByText('관리 효율이 필요합니다.')).toBeInTheDocument();
+    expect(screen.queryByText(/EV-aaaaaaaaaaaaaaaaaaaaaaaa/)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'AI 사업기획서 검토' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'PDF 저장' }));
     await waitFor(() => expect(client.download).toHaveBeenCalledWith(

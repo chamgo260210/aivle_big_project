@@ -11,6 +11,7 @@ import com.aivle.backend.auth.dto.ChangePasswordRequest;
 import com.aivle.backend.auth.dto.UsernamePolicy;
 import com.aivle.backend.common.exception.BusinessException;
 import com.aivle.backend.common.exception.ErrorCode;
+import com.aivle.backend.common.entity.UserRole;
 import com.aivle.backend.user.entity.User;
 import com.aivle.backend.user.repository.UserRepository;
 import com.aivle.backend.admin.ServicePolicyService;
@@ -57,6 +58,7 @@ public class AuthService {
     private final Clock jobClock;
     private final LoginAttemptRateLimiter loginAttemptRateLimiter;
     private final ServicePolicyService servicePolicy;
+    private final ReviewQuickAccessProperties reviewQuickAccess;
 
     @Transactional
     public SignupResponse signup(
@@ -153,6 +155,35 @@ public class AuthService {
 
         if (passwordEncoder.upgradeEncoding(user.getPasswordHash())) user.updatePasswordHash(passwordEncoder.encode(rawPassword));
         loginAttemptRateLimiter.recordSuccess(normalizedUsername, ipAddress);
+
+        user.recordSuccessfulLogin(LocalDateTime.now(jobClock));
+        JwtTokenService.IssuedTokenPair pair = issueAndStore(user);
+        auditService.record(
+            user.getId(),
+            null,
+            AuditEventType.LOGIN_SUCCEEDED,
+            "USER",
+            user.getId(),
+            requestId,
+            Map.of("status", user.getStatus().name())
+        );
+        return response(user, pair);
+    }
+
+    @Transactional
+    public AuthResponse reviewQuickAccess(UserRole role, String requestId) {
+        if (!reviewQuickAccess.enabled()) {
+            throw new BusinessException(ErrorCode.REVIEW_QUICK_ACCESS_UNAVAILABLE);
+        }
+        String configuredUsername = role == UserRole.ADMIN
+            ? reviewQuickAccess.adminUsername()
+            : reviewQuickAccess.userUsername();
+        if (configuredUsername == null || configuredUsername.isBlank()) {
+            throw new BusinessException(ErrorCode.REVIEW_QUICK_ACCESS_UNAVAILABLE);
+        }
+        User user = userRepository.findByUsername(normalizeUsername(configuredUsername))
+            .filter(candidate -> candidate.getRole() == role && candidate.canLogin() && !candidate.isDeleted())
+            .orElseThrow(() -> new BusinessException(ErrorCode.REVIEW_QUICK_ACCESS_UNAVAILABLE));
 
         user.recordSuccessfulLogin(LocalDateTime.now(jobClock));
         JwtTokenService.IssuedTokenPair pair = issueAndStore(user);

@@ -3,6 +3,7 @@ package com.aivle.backend.auth;
 import com.aivle.backend.auth.dto.AuthResponse;
 import com.aivle.backend.auth.dto.SignupResponse;
 import com.aivle.backend.auth.dto.LoginRequest;
+import com.aivle.backend.auth.dto.ReviewQuickAccessRequest;
 import com.aivle.backend.auth.dto.LogoutRequest;
 import com.aivle.backend.auth.dto.RefreshRequest;
 import com.aivle.backend.auth.dto.SignupRequest;
@@ -70,6 +71,18 @@ public class AuthController {
             servletRequest.getRemoteAddr(),
             requestId
         ), requestId);
+    }
+
+    @PostMapping("/auth/review-access")
+    public ApiResponse<AuthResponse> reviewQuickAccess(
+        @Valid @RequestBody ReviewQuickAccessRequest request,
+        HttpServletRequest servletRequest
+    ) {
+        String requestId = requestId(servletRequest);
+        return ApiResponse.success(
+            authService.reviewQuickAccess(request.role(), requestId),
+            requestId
+        );
     }
 
     @PostMapping("/auth/refresh")

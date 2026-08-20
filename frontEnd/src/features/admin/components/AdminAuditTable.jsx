@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 
 import AdminStatusBadge from './AdminStatusBadge.jsx';
 import { getAuditActionLabel } from '../model/auditLabels.js';
+import { adminTargetTypeLabel } from '../model/adminLabels.js';
 
 function date(value) {
   return new Intl.DateTimeFormat('ko-KR', { dateStyle: 'medium', timeStyle: 'medium' }).format(new Date(value));
@@ -21,7 +22,7 @@ export default function AdminAuditTable({ events, location }) {
             <th scope="col">대상</th>
             <th scope="col">결과</th>
             <th scope="col">사유</th>
-            <th scope="col">Request ID</th>
+            <th scope="col">요청 ID</th>
             <th scope="col">상세</th>
           </tr>
         </thead>
@@ -37,7 +38,7 @@ export default function AdminAuditTable({ events, location }) {
                   {event.actor.username && <small className="admin-table-secondary">@{event.actor.username}</small>}
                 </td>
                 <td>{getAuditActionLabel(event.action)}</td>
-                <td>{event.target.label || `${event.target.type} ${event.target.id ? `#${event.target.id}` : ''}`}</td>
+                <td>{event.target.label || `${adminTargetTypeLabel(event.target.type)} ${event.target.id ? `#${event.target.id}` : ''}`}</td>
                 <td><AdminStatusBadge value={event.result} /></td>
                 <td>{event.reason || '—'}</td>
                 <td><code className="admin-code-value">{event.requestId || '—'}</code></td>

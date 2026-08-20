@@ -46,6 +46,11 @@ export function AuthProvider({
       setSnapshot({ status: AUTH_STATUS.AUTHENTICATED, user });
       return user;
     },
+    async reviewQuickAccess(role) {
+      const user = await session.reviewQuickAccess(role);
+      setSnapshot({ status: AUTH_STATUS.AUTHENTICATED, user });
+      return user;
+    },
     async signup(input) {
       const user = await session.signup(input);
       return user;

@@ -4,6 +4,7 @@ import com.aivle.backend.common.response.ApiResponse;
 import com.aivle.backend.common.security.CurrentUserProvider;
 import com.aivle.backend.pipeline.conceptportfolio.selection.api.ConceptPortfolioSelectionApiModels;
 import com.aivle.backend.pipeline.conceptportfolio.selection.application.ConceptPortfolioSelectionService;
+import com.aivle.backend.pipeline.marketseed.domain.MarketAnalysisSeedSnapshot;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import tools.jackson.databind.JsonNode;
@@ -203,11 +204,10 @@ public class ConceptRefinementController {
      * 계속 누르게 만든다</b>(2026-08-16 실측: 확정은 17:05 에 이미 성공해 있었다).
      */
     private boolean finalized(Long selectionId) {
-        // 반영(`apply`)이 일어나면 `staleDependents()` 가 시드를 낡음으로 만들고, 시드를 다시
-        // 세우는 것은 확정(BUILD_HANDOFF)뿐이다. 그래서 **낡지 않은 시드가 서 있다**는 것이
-        // 곧 「이 컨셉으로 확정을 마쳤다」는 뜻이다. 상태(READY_FOR_MARKET)로는 못 가른다 —
-        // 다듬기 «전»에도 그 상태이기 때문이다.
+        // 다듬기 전 최초 시드도 살아 있으므로 존재만으로는 최종 확정을 뜻하지 않는다.
+        // BUILD_HANDOFF가 다듬기 이후 발급한 시드에 명시한 표를 함께 확인한다.
         return seeds.findByPortfolioSelectionIdAndStaleAtIsNullAndDeletedAtIsNull(selectionId)
+            .filter(MarketAnalysisSeedSnapshot::isRefinementApplied)
             .isPresent();
     }
 

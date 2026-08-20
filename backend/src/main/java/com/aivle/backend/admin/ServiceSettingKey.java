@@ -3,13 +3,13 @@ package com.aivle.backend.admin;
 public enum ServiceSettingKey {
     REGISTRATION_ENABLED(
         "true",
-        "Registration",
-        "Allow new user registration"
+        "신규 회원가입",
+        "새로운 사용자의 회원가입 허용 여부를 설정합니다."
     ),
     MAINTENANCE_MODE(
         "false",
-        "Maintenance mode",
-        "Pause non-admin writes while keeping read and administration access"
+        "서비스 점검 모드",
+        "조회와 관리자 기능은 유지하면서 일반 사용자의 변경 작업을 일시 중지합니다."
     );
 
     private final String defaultValue;

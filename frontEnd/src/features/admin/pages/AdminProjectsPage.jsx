@@ -125,9 +125,8 @@ export default function AdminProjectsPage() {
   return (
     <div className="admin-page">
       <header className="admin-page-header">
-        <nav className="admin-breadcrumb" aria-label="현재 위치">Admin / Projects</nav>
-        <h1>Projects</h1>
-        <p>모든 활성 프로젝트의 소유자, Workflow 위치와 처리 상태를 읽기 전용으로 조회합니다.</p>
+        <h1>프로젝트 관리</h1>
+        <p>모든 활성 프로젝트의 소유자, 진행 단계와 처리 상태를 읽기 전용으로 조회합니다.</p>
       </header>
 
       <section className="admin-panel" aria-busy={refreshing}>

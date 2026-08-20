@@ -16,6 +16,7 @@ public enum ErrorCode {
     USERNAME_NOT_ALLOWED(HttpStatus.BAD_REQUEST, "사용할 수 없는 아이디입니다. 다른 아이디를 입력해 주세요.", false),
     LOGIN_RATE_LIMITED(HttpStatus.TOO_MANY_REQUESTS, "로그인 시도가 여러 번 실패했습니다. 잠시 후 다시 시도해 주세요.", false),
     USER_INACTIVE(HttpStatus.UNAUTHORIZED, "현재 로그인할 수 없는 계정입니다.", false),
+    REVIEW_QUICK_ACCESS_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "퀵 검토용 접속을 사용할 수 없습니다. 운영 설정을 확인해 주세요.", false),
     PASSWORD_POLICY_VIOLATION(HttpStatus.BAD_REQUEST, "비밀번호 정책을 확인해 주세요.", false),
     MISSING_FIELD_NOT_FOUND(HttpStatus.NOT_FOUND, "보완 항목을 찾을 수 없습니다.", false),
     PLAN_NOT_EDITABLE(HttpStatus.CONFLICT, "확정된 구조화 계획은 수정할 수 없습니다.", false),

@@ -11,7 +11,7 @@ const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
 function WorkflowPreview({ outgoing, active, direction }) {
   return <div className="workflow-preview-frame" aria-label={`${active.number}단계 제품 화면`}>
-    <div className="product-preview__bar"><span /><span /><span /><strong>검증 진행 상황</strong></div>
+    <div className="product-preview__bar"><span /><span /><span /><strong>6단계 프로젝트 진행</strong></div>
     <div className="workflow-preview-frame__viewport">
       {outgoing && <div className={`workflow-preview-layer workflow-preview-layer--outgoing is-${direction}`} aria-hidden="true"><ProductPreview kind={outgoing.kind} /></div>}
       <div className={`workflow-preview-layer workflow-preview-layer--active${outgoing ? ` is-${direction}` : ''}`}><ProductPreview kind={active.kind} /></div>

@@ -16,15 +16,15 @@ export default function AdminUsersFilterBar({
       <TextInput
         label="사용자 검색"
         value={keyword}
-        placeholder="Username, 이메일, 이름"
+        placeholder="사용자 아이디, 이메일, 이름"
         onChange={(event) => onKeywordChange(event.target.value)}
         onCompositionStart={onCompositionStart}
         onCompositionEnd={(event) => onCompositionEnd(event.currentTarget.value)}
       />
       <Select label="역할" value={role} onChange={(event) => onFilterChange('role', event.target.value)}>
         <option value="">전체</option>
-        <option value="USER">USER</option>
-        <option value="ADMIN">ADMIN</option>
+        <option value="USER">일반 사용자</option>
+        <option value="ADMIN">관리자</option>
       </Select>
       <Select label="계정 상태" value={status} onChange={(event) => onFilterChange('status', event.target.value)}>
         <option value="">전체</option>
@@ -42,7 +42,7 @@ export default function AdminUsersFilterBar({
         <option value="createdAt,desc">가입일 최신순</option>
         <option value="createdAt,asc">가입일 오래된순</option>
         <option value="lastLoginAt,desc">최근 로그인순</option>
-        <option value="username,asc">Username 오름차순</option>
+        <option value="username,asc">사용자 아이디 오름차순</option>
         <option value="displayName,asc">이름 오름차순</option>
       </Select>
     </div>

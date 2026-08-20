@@ -36,7 +36,12 @@ import java.util.UUID;
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("jwt-test")
-@TestPropertySource(properties = "app.ai-server.internal-api-key=progress-test-secret")
+@TestPropertySource(properties = {
+    "app.ai-server.internal-api-key=progress-test-secret",
+    "app.review-quick-access.enabled=true",
+    "app.review-quick-access.user-username=reviewuser",
+    "app.review-quick-access.admin-username=reviewadmin"
+})
 class AuthSecurityIntegrationTests {
     @Autowired MockMvc mockMvc;
     @Autowired JdbcTemplate jdbcTemplate;
@@ -140,6 +145,45 @@ class AuthSecurityIntegrationTests {
         assertThat(jdbcTemplate.queryForObject(
             "select count(*) from audit_events "
                 + "where event_type = 'LOGIN_FAILED'",
+            Integer.class
+        )).isEqualTo(2);
+    }
+
+    @Test
+    void reviewQuickAccessIssuesNormalSessionsForConfiguredUserAndAdmin() throws Exception {
+        mockMvc.perform(post("/api/v1/auth/signup")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"username":"reviewuser","password":"correct horse battery staple","displayName":"Reviewer"}
+                    """))
+            .andExpect(status().isCreated());
+        mockMvc.perform(post("/api/v1/auth/signup")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"username":"reviewadmin","password":"violet cloud harbor lantern","displayName":"Review admin"}
+                    """))
+            .andExpect(status().isCreated());
+        jdbcTemplate.update("update users set role = 'ADMIN' where username = 'reviewadmin'");
+
+        mockMvc.perform(post("/api/v1/auth/review-access")
+                .header("X-Request-Id", "review-user-request")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"role\":\"USER\"}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.user.username").value("reviewuser"))
+            .andExpect(jsonPath("$.data.user.role").value("USER"))
+            .andExpect(jsonPath("$.data.tokens.accessToken").isNotEmpty());
+        mockMvc.perform(post("/api/v1/auth/review-access")
+                .header("X-Request-Id", "review-admin-request")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"role\":\"ADMIN\"}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.user.username").value("reviewadmin"))
+            .andExpect(jsonPath("$.data.user.role").value("ADMIN"))
+            .andExpect(jsonPath("$.data.tokens.refreshToken").isNotEmpty());
+
+        assertThat(jdbcTemplate.queryForObject(
+            "select count(*) from audit_events where event_type = 'LOGIN_SUCCEEDED' and request_id in ('review-user-request', 'review-admin-request')",
             Integer.class
         )).isEqualTo(2);
     }

@@ -19,7 +19,7 @@ describe('LandingPage', () => {
 
   it('renders its primary content, anchors, and auth links', () => {
     renderLanding();
-    expect(screen.getByRole('heading', { level: 1, name: /아이디어에서, 실행 판단을 위한 보고서까지/ })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: /아이디어에서, 결재·공유용 사업기획서까지/ })).toBeInTheDocument();
     ['intro', 'workflow', 'features', 'faq', 'demo'].forEach((id) => expect(document.getElementById(id)).toBeInTheDocument());
     expect(screen.getAllByRole('link', { name: '로그인' })[0]).toHaveAttribute('href', '/auth/login');
     expect(screen.getAllByRole('link', { name: /무료로 시작하기/ })[0]).toHaveAttribute('href', '/auth/signup');
@@ -31,13 +31,13 @@ describe('LandingPage', () => {
     expect(frame).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /2번째 장면/ }));
     expect(document.querySelectorAll('.hero-story .hero-app-window')).toHaveLength(1);
-    expect(frame).toHaveTextContent('구조화된 사업계획');
-    expect(frame.querySelector('.is-active')).toHaveTextContent('구조화');
+    expect(frame).toHaveTextContent('2단계 사업 검증');
+    expect(frame.querySelector('.is-active')).toHaveTextContent('사업 검증');
     fireEvent.click(screen.getByRole('button', { name: /3번째 장면/ }));
-    expect(frame).toHaveTextContent('현재 검토 항목');
-    expect(frame.querySelector('.is-active')).toHaveTextContent('법률 검토');
+    expect(frame).toHaveTextContent('출시 준비·시장 인터뷰');
+    expect(frame.querySelector('.is-active')).toHaveTextContent('출시 준비');
     fireEvent.click(screen.getByRole('button', { name: /4번째 장면/ }));
-    expect(frame).toHaveTextContent('프로젝트 검증 요약');
+    expect(frame).toHaveTextContent('마케팅·최종 사업기획서');
     expect(frame.querySelector('.is-active')).toHaveTextContent('보고서');
   });
 
@@ -76,7 +76,7 @@ describe('LandingPage', () => {
     const intro = document.querySelector('.landing-validation-intro');
     expect(intro).toHaveTextContent('Venture Verify');
     expect(intro.querySelectorAll('.validation-stream__lane')).toHaveLength(3);
-    expect(intro).toHaveTextContent('사업계획서_최종.docx');
+    expect(intro).toHaveTextContent('Idea Brief');
     expect(intro).toHaveClass('phase-entering');
     expect(document.querySelector('.landing-page__content')).toHaveAttribute('inert');
     expect(document.getElementById('top')).not.toHaveClass('is-entered');
@@ -84,7 +84,7 @@ describe('LandingPage', () => {
     expect(intro).toHaveClass('phase-streaming');
     await act(async () => { vi.advanceTimersByTime(700); });
     expect(intro).toHaveClass('phase-classifying');
-    expect(intro).toHaveTextContent('확인된 근거');
+    expect(intro).toHaveTextContent('사업 검증 · 출시');
     expect(intro).toHaveTextContent('가상 예시 데이터');
     await act(async () => { vi.advanceTimersByTime(600); });
     expect(intro).toHaveClass('phase-assembling');
@@ -108,7 +108,7 @@ describe('LandingPage', () => {
     vi.useFakeTimers();
     renderLanding();
     fireEvent.click(screen.getByRole('button', { name: '건너뛰기' }));
-    await act(async () => { vi.advanceTimersByTime(250); });
+    await act(async () => { vi.advanceTimersByTime(350); });
     expect(document.querySelector('.landing-validation-intro')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('link', { name: 'Venture Verify' }));
     expect(document.querySelector('.landing-validation-intro')).not.toBeInTheDocument();
@@ -151,7 +151,7 @@ describe('LandingPage', () => {
 
   it('opens and closes an FAQ answer', () => {
     renderLanding();
-    const button = screen.getByRole('button', { name: '어떤 입력을 사용할 수 있나요?' });
+    const button = screen.getByRole('button', { name: '어떤 입력으로 시작하나요?' });
     expect(button).toHaveAttribute('aria-expanded', 'false');
     fireEvent.click(button); expect(button).toHaveAttribute('aria-expanded', 'true');
     fireEvent.click(button); expect(button).toHaveAttribute('aria-expanded', 'false');
@@ -196,59 +196,79 @@ describe('LandingPage', () => {
     expect(document.querySelectorAll('.workflow-copy-stack .workflow-slide')).toHaveLength(1);
   });
 
-  it('opens and closes the policy notice dialog', () => {
+  it('opens the complete policy documents and restores the page after closing', () => {
     renderLanding();
+    fireEvent.click(screen.getByRole('button', { name: '이용 안내' }));
+    expect(screen.getByRole('dialog', { name: '이용 안내' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '1. 서비스의 목적과 범위' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '6. 법률·재무·마케팅 결과의 한계' })).toBeInTheDocument();
+    expect(document.querySelector('.policy-dialog__body')).toBeInTheDocument();
+    expect(document.body).toHaveStyle({ overflow: 'hidden' });
+    fireEvent.click(screen.getByRole('button', { name: '닫기' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(document.body).not.toHaveStyle({ overflow: 'hidden' });
+
+    fireEvent.click(screen.getByRole('button', { name: '개인정보처리방침' }));
+    expect(screen.getByRole('heading', { name: '2. 처리하는 개인정보 항목' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '6. 외부 AI 제공자와 처리 위탁' })).toBeInTheDocument();
+    expect(screen.getByText(/개인정보분쟁조정위원회: 1833-6972/)).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
     fireEvent.click(screen.getByRole('button', { name: 'AI 결과 이용 안내' }));
     expect(screen.getByRole('dialog', { name: 'AI 결과 이용 안내' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '1. 생성형 AI 사용 사실' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '6. 가상 시장 인터뷰에 대한 고지' })).toBeInTheDocument();
+    expect(screen.getByText(/고객 70%가 가격을 거부함/)).toBeInTheDocument();
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
   it('requires approvals and selections before completing the interactive demo', async () => {
     vi.useFakeTimers(); renderLanding();
-    const sample = screen.getByRole('button', { name: /반려동물_건강관리_구독서비스.docx/ });
+    const sample = screen.getByRole('button', { name: /반려동물_건강관리_아이디어.docx/ });
     fireEvent.click(sample);
-    expect(screen.getByRole('button', { name: '이 파일로 데모 시작' })).toBeInTheDocument();
-    expect(screen.queryByText('파일 업로드 중')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '이 파일로 데모 시작' }));
-    expect(screen.getByText('파일 업로드 중')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '이 아이디어로 데모 시작' })).toBeInTheDocument();
+    expect(screen.queryByText('사업 기획 결과를 준비하고 있습니다')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '이 아이디어로 데모 시작' }));
+    expect(screen.getByText('사업 기획 결과를 준비하고 있습니다')).toBeInTheDocument();
     expect(screen.getByRole('progressbar', { name: '데모 처리 진행률' })).toHaveAttribute('aria-valuenow', '0');
     await finishAutomaticPhase();
-    expect(screen.getByText('문서 업로드가 완료되었습니다')).toBeInTheDocument();
+    expect(screen.getByText('사업 기획 준비가 완료되었습니다')).toBeInTheDocument();
     await act(async () => { vi.advanceTimersByTime(3000); });
-    expect(screen.getByText('문서 업로드가 완료되었습니다')).toBeInTheDocument();
+    expect(screen.getByText('사업 기획 준비가 완료되었습니다')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: '문서 구조화 시작' }));
+    fireEvent.click(screen.getByRole('button', { name: '사업 검증 살펴보기' }));
     await finishAutomaticPhase();
-    expect(screen.getByText(/완료 항목 10개/)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /보완 항목 확인/ }));
-    expect(screen.getByText('가격 근거가 부족합니다.')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '법률·사업성 검토 시작' }));
+    expect(screen.getByText(/시장 분석 · 비즈니스 모델 · 최종 컨셉 연결/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /검증 결과 예시/ }));
+    expect(screen.getByText(/시장 분석 근거 8개/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '출시 준비 살펴보기' }));
     await finishAutomaticPhase();
-    expect(screen.getByText('사전 검토 결과')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('checkbox', { name: /제휴 상품 수익성/ }));
-    fireEvent.click(screen.getByRole('button', { name: '선택 항목으로 고객 검증 설계' }));
+    expect(screen.getByText('출시 준비 결과')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('checkbox', { name: /초기 현금흐름/ }));
+    fireEvent.click(screen.getByRole('button', { name: '시장 인터뷰 살펴보기' }));
     await finishAutomaticPhase();
-    expect(screen.getByRole('button', { name: '선택한 고객군으로 결과 만들기' })).toBeDisabled();
-    fireEvent.click(screen.getByRole('checkbox', { name: /디지털 건강관리 적극형/ }));
-    fireEvent.click(screen.getByRole('button', { name: '선택한 고객군으로 결과 만들기' }));
+    expect(screen.getByRole('button', { name: '마케팅·최종 보고서 만들기' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('checkbox', { name: /디지털 서비스 적극 이용자/ }));
+    fireEvent.click(screen.getByRole('button', { name: '마케팅·최종 보고서 만들기' }));
     await finishAutomaticPhase();
-    expect(screen.getByText('가상 사업 검증 결과')).toBeInTheDocument();
-    expect(screen.getByText(/선택한 검증 항목:.*제휴 상품 수익성/)).toBeInTheDocument();
-    expect(screen.getByText('디지털 건강관리 적극형')).toBeInTheDocument();
-    expect(screen.getByText('다음 권장 행동')).toBeInTheDocument();
-    expect(screen.getByText('추천 고객 질문')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: '내 사업계획서로 시작하기' })).toHaveAttribute('href', '/auth/signup');
+    expect(screen.getByText('가상 6단계 프로젝트 결과')).toBeInTheDocument();
+    expect(screen.getByText(/선택한 출시 보완 항목:.*초기 현금흐름/)).toBeInTheDocument();
+    expect(screen.getByText('디지털 서비스 적극 이용자')).toBeInTheDocument();
+    expect(screen.getByText('마케팅·실행 연결')).toBeInTheDocument();
+    expect(screen.getByText('가상 인터뷰 질문 예시')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: '내 아이디어로 시작하기' })).toHaveAttribute('href', '/auth/signup');
     fireEvent.click(screen.getByRole('button', { name: '다른 샘플 체험하기' }));
-    expect(screen.getByRole('button', { name: /반려동물_건강관리_구독서비스.docx/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /반려동물_건강관리_아이디어.docx/ })).toBeInTheDocument();
   }, 10000);
 
   it('cleans the active demo timer when the simulator unmounts', () => {
     vi.useFakeTimers();
     const clearInterval = vi.spyOn(window, 'clearInterval');
     const { unmount } = render(<DemoSimulator reducedMotion={false} />);
-    fireEvent.click(screen.getByRole('button', { name: /반려동물_건강관리_구독서비스.docx/ }));
-    fireEvent.click(screen.getByRole('button', { name: '이 파일로 데모 시작' }));
+    fireEvent.click(screen.getByRole('button', { name: /반려동물_건강관리_아이디어.docx/ }));
+    fireEvent.click(screen.getByRole('button', { name: '이 아이디어로 데모 시작' }));
     unmount();
     expect(clearInterval).toHaveBeenCalled();
   });
