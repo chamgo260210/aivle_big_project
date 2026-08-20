@@ -59,6 +59,9 @@ services:
   ai-server:
     build:
       context: ./ai
+      args:
+        # 기본 true. 트윈 뱅크를 넘겨줄 수 없는 열람 전용 배포에서만 false 로 둔다.
+        REQUIRE_TWIN_BANK: ${REQUIRE_TWIN_BANK:-true}
     environment:
       AI_PROVIDER: ${AI_PROVIDER:?AI_PROVIDER is required}
       AI_API_KEY: ${AI_API_KEY:?AI_API_KEY is required}
