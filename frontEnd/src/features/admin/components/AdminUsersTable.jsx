@@ -18,9 +18,9 @@ export default function AdminUsersTable({ users, location }) {
         <thead>
           <tr>
             <th scope="col">사용자</th>
-            <th scope="col">Username</th>
-            <th scope="col">Email</th>
-            <th scope="col">Role</th>
+            <th scope="col">사용자 아이디</th>
+            <th scope="col">이메일</th>
+            <th scope="col">권한</th>
             <th scope="col">상태</th>
             <th scope="col">프로젝트 수</th>
             <th scope="col">최근 로그인</th>

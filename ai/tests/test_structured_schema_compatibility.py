@@ -89,7 +89,7 @@ def test_provider_response_format_rejection_is_safely_classified(monkeypatch):
     _configure(monkeypatch)
     captured = []
     response = httpx.Response(400, json={"error": {
-        "type": "invalid_request_error", "param": "response_format",
+        "type": "invalid_request_error", "param": "response_format.json_schema.schema",
         "message": "Invalid schema; bearer secret-must-not-leak",
     }}, request=httpx.Request("POST", "https://provider.invalid"))
     _client(monkeypatch, response, captured)
@@ -99,7 +99,7 @@ def test_provider_response_format_rejection_is_safely_classified(monkeypatch):
         asyncio.run(structured.execute_structured_prompt(
             "system", "user", response_schema=schema, schema_name="rejected_v1"))
     assert raised.value.reason == "PROVIDER_RESPONSE_SCHEMA_REJECTED"
-    assert raised.value.provider_error_param == "response_format"
+    assert raised.value.provider_error_param == "response_format.json_schema.schema"
     assert "secret-must-not-leak" not in (raised.value.safe_provider_message or "")
 
 
@@ -143,3 +143,114 @@ def test_unsupported_one_of_is_rejected_offline():
         "path": "$.properties.value.oneOf",
         "reason": "UNSUPPORTED_SCHEMA_KEYWORD",
     }]
+
+
+def test_provider_schema_enum_limits_are_rejected_offline():
+    schema = {
+        "type": "object",
+        "properties": {
+            "value": {"type": "string", "enum": [f"value-{index:04d}" for index in range(1001)]},
+        },
+        "required": ["value"],
+        "additionalProperties": False,
+    }
+
+    reasons = {failure["reason"] for failure in strict_schema_failures(schema)}
+    assert "SCHEMA_ENUM_COUNT_EXCEEDED" in reasons
+
+
+def test_large_single_string_enum_is_rejected_offline():
+    schema = {
+        "type": "object",
+        "properties": {
+            "value": {"type": "string", "enum": ["x" * 61 + str(index) for index in range(251)]},
+        },
+        "required": ["value"],
+        "additionalProperties": False,
+    }
+
+    reasons = {failure["reason"] for failure in strict_schema_failures(schema)}
+    assert "SCHEMA_ENUM_STRING_SIZE_EXCEEDED" in reasons
+
+
+def test_provider_schema_property_limit_is_rejected_offline():
+    properties = {f"property{index}": {"type": "string"} for index in range(5001)}
+    schema = {
+        "type": "object",
+        "properties": properties,
+        "required": list(properties),
+        "additionalProperties": False,
+    }
+
+    reasons = {failure["reason"] for failure in strict_schema_failures(schema)}
+    assert "SCHEMA_PROPERTY_COUNT_EXCEEDED" in reasons
+
+
+def test_provider_schema_string_limit_is_rejected_offline():
+    long_property_name = "x" * 120_001
+    schema = {
+        "type": "object",
+        "properties": {long_property_name: {"type": "string"}},
+        "required": [long_property_name],
+        "additionalProperties": False,
+    }
+
+    reasons = {failure["reason"] for failure in strict_schema_failures(schema)}
+    assert "SCHEMA_STRING_SIZE_EXCEEDED" in reasons
+
+
+def test_generic_provider_rejection_preserves_safe_diagnostics(monkeypatch):
+    _configure(monkeypatch)
+    captured = []
+    response = httpx.Response(400, json={"error": {
+        "type": "invalid_request_error", "param": "messages",
+        "message": "Input too large; bearer secret-must-not-leak",
+    }}, request=httpx.Request("POST", "https://provider.invalid"))
+    _client(monkeypatch, response, captured)
+
+    with pytest.raises(ProviderFailure) as raised:
+        asyncio.run(structured.execute_structured_prompt("system", "user"))
+
+    assert raised.value.reason == "PERMANENT_EXECUTION_FAILURE"
+    assert raised.value.upstream_status == 400
+    assert raised.value.provider_error_type == "invalid_request_error"
+    assert raised.value.provider_error_param == "messages"
+    assert "secret-must-not-leak" not in (raised.value.safe_provider_message or "")
+
+
+@pytest.mark.parametrize("status", [401, 403])
+def test_provider_authorization_rejection_preserves_safe_diagnostics(monkeypatch, status):
+    _configure(monkeypatch)
+    captured = []
+    response = httpx.Response(status, json={"error": {
+        "type": "authentication_error", "param": None,
+        "message": "Authorization rejected; bearer secret-must-not-leak",
+    }}, request=httpx.Request("POST", "https://provider.invalid"))
+    _client(monkeypatch, response, captured)
+
+    with pytest.raises(ProviderFailure) as raised:
+        asyncio.run(structured.execute_structured_prompt(
+            "system", "user", schema_name="authorization_probe_v1"))
+
+    assert raised.value.reason == "AI_CONFIGURATION_INVALID"
+    assert raised.value.upstream_status == status
+    assert raised.value.provider_error_type == "authentication_error"
+    assert raised.value.schema_name == "authorization_probe_v1"
+    assert raised.value.safe_diagnostics == {"stage": "PROVIDER_AUTHORIZATION"}
+    assert "secret-must-not-leak" not in (raised.value.safe_provider_message or "")
+
+
+def test_missing_provider_configuration_identifies_safe_stage(monkeypatch):
+    monkeypatch.delenv("AI_PROVIDER", raising=False)
+    monkeypatch.delenv("AI_API_KEY", raising=False)
+    monkeypatch.delenv("AI_MODEL", raising=False)
+
+    with pytest.raises(ProviderFailure) as raised:
+        asyncio.run(structured.execute_structured_prompt("system", "user"))
+
+    assert raised.value.safe_diagnostics == {
+        "stage": "PROVIDER_CONFIGURATION",
+        "providerSupported": False,
+        "apiKeyConfigured": False,
+        "modelConfigured": False,
+    }

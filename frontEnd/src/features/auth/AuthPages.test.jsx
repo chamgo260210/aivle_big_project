@@ -5,7 +5,18 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../../shared/api/apiError.js';
 import { AuthProvider } from './AuthProvider.jsx';
 import { LoginPage, SignupPage } from './AuthPages.jsx';
+import PublicOnlyRoute from './PublicOnlyRoute.jsx';
 import { AUTH_STATUS } from './authSession.js';
+
+vi.mock('../service-policy/useServicePolicy.js', () => ({
+  default: undefined,
+  useServicePolicy: () => ({
+    loading: false,
+    policy: { registrationEnabled: true, maintenanceMode: false, maintenanceMessage: '' },
+    error: null,
+    refresh: vi.fn(async () => undefined),
+  }),
+}));
 
 function renderAuthPage(path, session) {
   return render(
@@ -15,10 +26,14 @@ function renderAuthPage(path, session) {
         initialSnapshot={{ status: AUTH_STATUS.UNAUTHENTICATED, user: null }}
       >
         <Routes>
-          <Route path="/auth/login" element={<LoginPage />} />
-          <Route path="/auth/signup" element={<SignupPage />} />
+          <Route element={<PublicOnlyRoute />}>
+            <Route path="/auth/login" element={<LoginPage />} />
+            <Route path="/auth/signup" element={<SignupPage />} />
+          </Route>
           <Route path="/app" element={<h1>프로젝트 허브</h1>} />
+          <Route path="/admin" element={<h1>관리자 콘솔</h1>} />
           <Route path="/app/projects" element={<h1>프로젝트 허브</h1>} />
+          <Route path="/app/projects/:id/overview" element={<h1>원래 화면 도착</h1>} />
           <Route path="/projects" element={<h1>프로젝트 도착</h1>} />
           <Route path="/projects/:id/overview" element={<h1>원래 화면 도착</h1>} />
         </Routes>
@@ -45,12 +60,12 @@ describe('auth pages', () => {
   afterEach(() => { vi.useRealTimers(); window.sessionStorage.clear(); });
   it('submits login with accessible fields and returns to an internal route', async () => {
     const session = {
-      login: vi.fn(async () => ({ id: 1, displayName: 'User' })),
+      login: vi.fn(async () => ({ id: 1, displayName: 'User', role: 'USER' })),
       subscribe: vi.fn(),
     };
     renderAuthPage({
       pathname: '/auth/login',
-      state: { returnTo: '/projects/3/overview' },
+      state: { returnTo: '/app/projects/3/overview' },
     }, session);
     fillLogin();
     fireEvent.submit(screen.getByRole('button', { name: '로그인' }).closest('form'));
@@ -59,6 +74,32 @@ describe('auth pages', () => {
       username: 'ventureuser',
       password: 'safe-password',
     });
+  });
+
+  it('offers separate user and admin quick review access', async () => {
+    const session = {
+      login: vi.fn(),
+      reviewQuickAccess: vi.fn(async () => ({ id: 2, role: 'ADMIN' })),
+      subscribe: vi.fn(),
+    };
+    renderAuthPage('/auth/login', session);
+    expect(screen.getByRole('heading', { name: '퀵 검토용 접속' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '일반 사용자 접속' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '관리자 접속' }));
+    await waitFor(() => expect(session.reviewQuickAccess).toHaveBeenCalledWith('ADMIN'));
+    expect(await screen.findByRole('heading', { name: '관리자 콘솔' })).toBeInTheDocument();
+  });
+
+  it('sends regular quick access to the user home even with a stale admin return route', async () => {
+    const session = {
+      login: vi.fn(),
+      reviewQuickAccess: vi.fn(async () => ({ id: 3, role: 'USER' })),
+      subscribe: vi.fn(),
+    };
+    renderAuthPage({ pathname: '/auth/login', state: { returnTo: '/admin' } }, session);
+    fireEvent.click(screen.getByRole('button', { name: '일반 사용자 접속' }));
+    await waitFor(() => expect(session.reviewQuickAccess).toHaveBeenCalledWith('USER'));
+    expect(await screen.findByRole('heading', { name: '프로젝트 허브' })).toBeInTheDocument();
   });
 
   it('blocks an external return route', async () => {
@@ -176,13 +217,13 @@ describe('auth pages', () => {
     vi.useFakeTimers();
     const session = { login: vi.fn(), subscribe: vi.fn() };
     renderAuthPage('/auth/login', session);
-    expect(document.querySelector('.auth-preview__header b')).toHaveTextContent('문서 구조화');
+    expect(document.querySelector('.auth-preview__header b')).toHaveTextContent('사업 기획');
     await act(async () => { vi.advanceTimersByTime(7500); });
-    expect(document.querySelector('.auth-preview__header b')).toHaveTextContent('근거와 위험 확인');
+    expect(document.querySelector('.auth-preview__header b')).toHaveTextContent('사업 검증·출시 준비');
     const preview = document.querySelector('.auth-preview');
     fireEvent.mouseEnter(preview);
     await act(async () => { vi.advanceTimersByTime(6000); });
-    expect(document.querySelector('.auth-preview__header b')).toHaveTextContent('근거와 위험 확인');
+    expect(document.querySelector('.auth-preview__header b')).toHaveTextContent('사업 검증·출시 준비');
   });
 
   it('validates signup password confirmation without calling the API', () => {

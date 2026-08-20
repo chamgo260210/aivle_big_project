@@ -26,7 +26,7 @@ export default function AdminSettingsPage() {
     await refreshPolicy().catch(() => undefined);
   }
   return <div className="admin-page">
-    <header className="admin-page-header"><h1>Settings</h1><p>공통 접근 및 운영 정책을 관리합니다.</p></header>
+    <header className="admin-page-header"><h1>서비스 설정</h1><p>공통 접근 및 운영 정책을 관리합니다.</p></header>
     {notice && <p className="admin-success" role="status">{notice}</p>}
     {refreshing && <p className="admin-query-progress" role="status">최신 설정을 확인하고 있습니다.</p>}
     {loading && <section className="admin-panel" aria-busy="true">설정을 불러오는 중입니다.</section>}

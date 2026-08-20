@@ -8,14 +8,19 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.aivle.backend.common.exception.BusinessException;
+import com.aivle.backend.common.security.CurrentUserProvider;
+import com.aivle.backend.pipeline.conceptportfolio.selection.application.ConceptPortfolioSelectionService;
+import com.aivle.backend.pipeline.conceptportfolio.selection.repository.ConceptPortfolioDeltaLegalReviewRepository;
 import com.aivle.backend.pipeline.market.MarketInterviewBoardService;
 import com.aivle.backend.pipeline.marketseed.application.MarketAnalysisSeedLookup;
 import com.aivle.backend.pipeline.marketseed.domain.MarketAnalysisSeedSnapshot;
+import com.aivle.backend.pipeline.marketseed.repository.MarketAnalysisSeedSnapshotRepository;
 import com.aivle.backend.project.entity.Project;
 import com.aivle.backend.project.repository.ProjectRepository;
 import java.time.Instant;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ObjectNode;
 
@@ -67,6 +72,17 @@ class RefinementToInterviewHandoffTests {
         return new MarketInterviewBoardService(projects, seeds, mapper);
     }
 
+    private boolean finalized(MarketAnalysisSeedSnapshot value) {
+        MarketAnalysisSeedSnapshotRepository seeds = mock(MarketAnalysisSeedSnapshotRepository.class);
+        when(seeds.findByPortfolioSelectionIdAndStaleAtIsNullAndDeletedAtIsNull(17L))
+            .thenReturn(Optional.ofNullable(value));
+        ConceptRefinementController controller = new ConceptRefinementController(
+            mock(ConceptRefinementService.class), mock(ConceptPortfolioSelectionService.class),
+            mock(ConceptPortfolioDeltaLegalReviewRepository.class), seeds, mapper,
+            mock(CurrentUserProvider.class));
+        return ReflectionTestUtils.invokeMethod(controller, "finalized", 17L);
+    }
+
     @Test
     void theFirstSeedCarriesNoRefinementMark() {
         // 사업안을 고른 직후 발급되는 시드. 이 갈래에 기본값 true 가 생기면 게이트가 통째로 죽는다.
@@ -74,11 +90,14 @@ class RefinementToInterviewHandoffTests {
             "seed-0", 7L, 17L, "concept-1", "report-1", "2.0", HASH, HASH,
             snapshotJson("1인 가구", "1인분 정량"), 3L, Instant.parse("2026-08-15T00:00:00Z"));
         assertThat(first.isRefinementApplied()).isFalse();
+        assertThat(finalized(first)).isFalse();
     }
 
     @Test
     void aSeedBuiltAfterRefinementIsMarked() {
-        assertThat(seed(snapshotJson("1인 가구", "1인분 정량"), true).isRefinementApplied()).isTrue();
+        MarketAnalysisSeedSnapshot refined = seed(snapshotJson("1인 가구", "1인분 정량"), true);
+        assertThat(refined.isRefinementApplied()).isTrue();
+        assertThat(finalized(refined)).isTrue();
     }
 
     @Test

@@ -13,6 +13,10 @@ export function createAuthApi(client) {
       const response = await client.post('/auth/login', input, NO_AUTH_RETRY);
       return response.data;
     },
+    async reviewQuickAccess(role) {
+      const response = await client.post('/auth/review-access', { role }, NO_AUTH_RETRY);
+      return response.data;
+    },
     async refresh(refreshToken) {
       const response = await client.post(
         '/auth/refresh',

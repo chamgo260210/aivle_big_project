@@ -25,6 +25,10 @@ app:
     username: ${BOOTSTRAP_ADMIN_USERNAME:}
     email: ${BOOTSTRAP_ADMIN_EMAIL:}
     password: ${BOOTSTRAP_ADMIN_PASSWORD:}
+  review-quick-access:
+    enabled: ${REVIEW_QUICK_ACCESS_ENABLED:false}
+    user-username: ${REVIEW_QUICK_USER_USERNAME:}
+    admin-username: ${REVIEW_QUICK_ADMIN_USERNAME:}
   environment: ${APP_ENVIRONMENT:LOCAL}
   security:
     jwt:

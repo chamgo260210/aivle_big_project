@@ -171,6 +171,33 @@ class ProjectModuleStatusServiceTests {
     }
 
     @Test
+    void marketInterviewReadinessRequiresAConfirmedRefinedSeed() {
+        when(projects.findByIdAndOwnerIdAndDeletedAtIsNull(41L, 7L))
+            .thenReturn(Optional.of(mock(Project.class)));
+        ConceptPortfolioSelection selection = mock(ConceptPortfolioSelection.class);
+        MarketAnalysisSeedSnapshot seed = mock(MarketAnalysisSeedSnapshot.class);
+        when(portfolioSelections.findByProjectIdAndIsCurrentTrueAndDeletedAtIsNull(41L))
+            .thenReturn(Optional.of(selection));
+        when(selection.getId()).thenReturn(17L);
+        when(snapshots.findByPortfolioSelectionIdAndStaleAtIsNullAndDeletedAtIsNull(17L))
+            .thenReturn(Optional.of(seed));
+        when(seed.getId()).thenReturn("seed-v2");
+
+        var notReady = service.findAll(7L, 41L).stream()
+            .filter(item -> item.module() == PipelineModuleType.MARKET_INTERVIEW)
+            .findFirst().orElseThrow();
+        assertThat(notReady.status()).isEqualTo(PipelineModuleStatus.NOT_READY);
+        assertThat(notReady.requiredInputs()).containsExactly("marketAnalysisSeedSnapshotId");
+
+        when(seed.isRefinementApplied()).thenReturn(true);
+        var ready = service.findAll(7L, 41L).stream()
+            .filter(item -> item.module() == PipelineModuleType.MARKET_INTERVIEW)
+            .findFirst().orElseThrow();
+        assertThat(ready.status()).isEqualTo(PipelineModuleStatus.READY);
+        assertThat(ready.requiredInputs()).isEmpty();
+    }
+
+    @Test
     void exposesIndependentTechOpsPreparationStatusAfterMarketSeedFinalization() {
         when(projects.findByIdAndOwnerIdAndDeletedAtIsNull(41L, 7L)).thenReturn(Optional.of(mock(Project.class)));
         ConceptSelection selection = mock(ConceptSelection.class); MarketAnalysisSeedSnapshot seed = mock(MarketAnalysisSeedSnapshot.class);

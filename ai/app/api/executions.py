@@ -1,4 +1,3 @@
-import asyncio
 import hashlib
 import json
 import os
@@ -15,7 +14,6 @@ from pydantic import ValidationError
 from app.models.executions import InternalExecutionRequestV1, InternalExecutionSuccessResponseV1
 from app.providers import ProviderFailure
 from app.canonical_json import canonical_input_hash
-from app import demo_replay
 
 
 router = APIRouter(prefix="/internal/v1/ai", tags=["Internal AI Executions"])
@@ -265,18 +263,6 @@ async def execute(request: Request, body: InternalExecutionRequestV1):
     provenance = {"category": "AI_PROPOSAL", "statementKey": "interpretation-1", "sourceKeys": source_keys,
                   "externalSourceReferences": [], "generatedAt": generated_at, "verificationNeeded": True}
     execution_warnings: list[dict[str, Any]] = []
-    # ⚠ **시연 재생 — 기본은 꺼져 있다.** `AI_DEMO_REPLAY_DIR` 가 설정된 경우에만 탄다.
-    #   느린 유료 호출 한 곳만 녹화본으로 바꾸고, 봉투 조립과 그 아래(백엔드·DB·계보
-    #   검증)는 전부 평소대로 돈다. 자세한 제약은 app/demo_replay.py 주석 참조.
-    replayed = demo_replay.load(body.taskType)
-    if replayed is not None:
-        await asyncio.sleep(demo_replay.delay_seconds())
-        return InternalExecutionSuccessResponseV1(
-            contractVersion="1.0", taskType=body.taskType, taskSchemaVersion="1.0",
-            taskRunId=body.taskRunId, taskAttemptId=body.taskAttemptId,
-            correlationId=body.correlationId, canonicalInputHash=body.canonicalInputHash,
-            resultSchemaVersion="1.0", result=replayed, warnings=execution_warnings,
-            provenance=[provenance], usage=None)
     try:
         if body.taskType == "BUSINESS_VALIDATION":
             # 사업 검증은 시장조사(FULL)와 BM 을 **한 실행**으로 잇는다. 새 엔진이 아니라

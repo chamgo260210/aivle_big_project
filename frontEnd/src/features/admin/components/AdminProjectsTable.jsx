@@ -12,7 +12,7 @@ export default function AdminProjectsTable({ projects, location }) {
     <div className="admin-table-scroll">
       <table className="admin-table admin-projects-table">
         <caption className="visually-hidden">관리자 프로젝트 목록</caption>
-        <thead><tr><th>프로젝트</th><th>소유자</th><th>Status</th><th>업종</th><th>최근 수정</th><th>생성일</th><th>상세</th></tr></thead>
+        <thead><tr><th>프로젝트</th><th>소유자</th><th>상태</th><th>업종</th><th>최근 수정</th><th>생성일</th><th>상세</th></tr></thead>
         <tbody>{projects.map((project) => {
           const destination = `/admin/projects/${project.id}${location.search}`;
           const state = { backgroundLocation: location, returnTo };

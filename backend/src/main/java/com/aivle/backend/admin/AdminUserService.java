@@ -29,7 +29,7 @@ public class AdminUserService {
 
     @Transactional(readOnly = true)
     public Page<AdminUserResponse> list(String keyword, UserRole role, UserStatus status, Pageable pageable) {
-        String normalized = keyword == null || keyword.isBlank() ? null : keyword.trim();
+        String normalized = keyword == null || keyword.isBlank() ? "" : keyword.trim();
         long activeAdminCount = users.countByRoleAndStatusAndDeletedAtIsNull(UserRole.ADMIN, UserStatus.ACTIVE);
         return users.searchAdminUsers(normalized, role, status, pageable)
             .map(user -> response(user, activeAdminCount));

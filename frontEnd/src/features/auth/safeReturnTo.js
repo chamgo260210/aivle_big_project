@@ -16,3 +16,12 @@ export function safeReturnTo(value, fallback = '/app') {
     return fallback;
   }
 }
+
+export function safeReturnToForRole(value, role) {
+  const fallback = role === 'ADMIN' ? '/admin' : '/app';
+  const destination = safeReturnTo(value, fallback);
+  if (role !== 'ADMIN' && (destination === '/admin' || destination.startsWith('/admin/'))) {
+    return '/app';
+  }
+  return destination;
+}

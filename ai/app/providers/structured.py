@@ -46,11 +46,22 @@ def _configuration(model_override: str | None = None) -> tuple[str, str, str]:
     model = (model_override or "").strip() or os.getenv("AI_MODEL", "").strip()
     base_url = os.getenv("AI_BASE_URL", "").strip().rstrip("/")
     if provider not in {"openai", "openai-compatible"} or not api_key or not model:
-        raise ProviderFailure("DEPENDENCY_UNAVAILABLE", "AI_CONFIGURATION_INVALID", 503, False)
+        raise ProviderFailure(
+            "DEPENDENCY_UNAVAILABLE", "AI_CONFIGURATION_INVALID", 503, False,
+            safe_diagnostics={
+                "stage": "PROVIDER_CONFIGURATION",
+                "providerSupported": provider in {"openai", "openai-compatible"},
+                "apiKeyConfigured": bool(api_key),
+                "modelConfigured": bool(model),
+            },
+        )
     if provider == "openai" and not base_url:
         base_url = "https://api.openai.com/v1"
     if not base_url.startswith(("http://", "https://")):
-        raise ProviderFailure("DEPENDENCY_UNAVAILABLE", "AI_CONFIGURATION_INVALID", 503, False)
+        raise ProviderFailure(
+            "DEPENDENCY_UNAVAILABLE", "AI_CONFIGURATION_INVALID", 503, False,
+            safe_diagnostics={"stage": "PROVIDER_BASE_URL_CONFIGURATION"},
+        )
     return api_key, model, base_url
 
 
@@ -118,8 +129,8 @@ def _safe_provider_error(response) -> tuple[str | None, str | None, str | None]:
         safe_message = None
         if isinstance(message, str):
             safe_message = re.sub(r"(?i)(bearer\s+|sk-)[a-z0-9._-]+", r"\1[REDACTED]", message.strip())[:500]
-        return (error_type if error_type == "invalid_request_error" else None,
-                error_param if error_param == "response_format" else None, safe_message)
+        return (error_type.strip()[:100] if isinstance(error_type, str) else None,
+                error_param.strip()[:200] if isinstance(error_param, str) else None, safe_message)
     except (TypeError, ValueError, AttributeError):
         return None, None, None
 
@@ -196,7 +207,10 @@ async def execute_structured_prompt(system: str, user: str, model_override: str 
         if timeout_seconds <= 0:
             raise ValueError
     except ValueError as failure:
-        raise ProviderFailure("DEPENDENCY_UNAVAILABLE", "AI_CONFIGURATION_INVALID", 503, False) from failure
+        raise ProviderFailure(
+            "DEPENDENCY_UNAVAILABLE", "AI_CONFIGURATION_INVALID", 503, False,
+            safe_diagnostics={"stage": "PROVIDER_TIMEOUT_CONFIGURATION"},
+        ) from failure
     response_format: dict[str, Any] = {"type": "json_object"}
     if response_schema is not None:
         response_format = {"type": "json_schema", "json_schema": {
@@ -283,7 +297,19 @@ async def execute_structured_prompt(system: str, user: str, model_override: str 
             _MODEL_MODE[model] = attempt
 
     if response.status_code in (401, 403):
-        raise ProviderFailure("DEPENDENCY_UNAVAILABLE", "AI_CONFIGURATION_INVALID", 503, False)
+        error_type, error_param, safe_message = _safe_provider_error(response)
+        logger.warning(
+            "Provider authorization rejected taskType=%s model=%s status=%s type=%s param=%s message=%s",
+            task_type or "STRUCTURED_TASK", model, response.status_code,
+            error_type or "-", error_param or "-", safe_message or "-",
+        )
+        raise ProviderFailure(
+            "DEPENDENCY_UNAVAILABLE", "AI_CONFIGURATION_INVALID", 503, False,
+            upstream_status=response.status_code, provider_error_type=error_type,
+            provider_error_param=error_param, schema_name=schema_name,
+            safe_provider_message=safe_message,
+            safe_diagnostics={"stage": "PROVIDER_AUTHORIZATION"},
+        )
     if response.status_code == 429:
         raise ProviderFailure("RATE_LIMITED", "DEPENDENCY_RATE_LIMITED", 429, True,
                               upstream_status=429, schema_name=schema_name,
@@ -296,7 +322,8 @@ async def execute_structured_prompt(system: str, user: str, model_override: str 
                               upstream_status=response.status_code, schema_name=schema_name)
     if response.status_code == 400 and response_schema is not None:
         error_type, error_param, safe_message = _safe_provider_error(response)
-        if error_type == "invalid_request_error" and error_param == "response_format":
+        if error_type == "invalid_request_error" and error_param is not None \
+                and (error_param == "response_format" or error_param.startswith("response_format.")):
             logger.warning("Provider response schema rejected taskType=%s model=%s schemaName=%s",
                            task_type or "STRUCTURED_TASK", model, schema_name or "structured_result")
             raise ProviderFailure("RESULT_SCHEMA_INVALID", "PROVIDER_RESPONSE_SCHEMA_REJECTED", 502, False,
@@ -305,7 +332,18 @@ async def execute_structured_prompt(system: str, user: str, model_override: str 
                                   schema_name=schema_name or "structured_result",
                                   safe_provider_message=safe_message)
     if response.status_code >= 400:
-        raise ProviderFailure("EXECUTION_FAILED", "PERMANENT_EXECUTION_FAILURE", 500, False)
+        error_type, error_param, safe_message = _safe_provider_error(response)
+        logger.warning(
+            "Provider request rejected taskType=%s model=%s status=%s type=%s param=%s message=%s",
+            task_type or "STRUCTURED_TASK", model, response.status_code,
+            error_type or "-", error_param or "-", safe_message or "-",
+        )
+        raise ProviderFailure(
+            "EXECUTION_FAILED", "PERMANENT_EXECUTION_FAILURE", 500, False,
+            upstream_status=response.status_code, provider_error_type=error_type,
+            provider_error_param=error_param, schema_name=schema_name,
+            safe_provider_message=safe_message,
+        )
     if len(response.content) > 2 * 1024 * 1024:
         raise ProviderFailure("RESULT_SCHEMA_INVALID", "PROVIDER_JSON_INVALID", 502, False,
                               upstream_status=response.status_code, schema_name=schema_name)

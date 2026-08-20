@@ -11,6 +11,7 @@ import com.aivle.backend.pipeline.conceptportfolio.selection.repository.*;
 import com.aivle.backend.pipeline.marketseed.domain.MarketAnalysisSeedSnapshot;
 import com.aivle.backend.pipeline.marketseed.repository.MarketAnalysisSeedSnapshotRepository;
 import com.aivle.backend.pipeline.refinement.ConceptRefinementApplyService;
+import com.aivle.backend.pipeline.refinement.ConceptRefinementRound;
 import com.aivle.backend.pipeline.refinement.ConceptRefinementRoundRepository;
 import com.aivle.backend.taskrun.domain.TaskType;
 import com.aivle.backend.taskrun.integration.InternalAiExecutionClient.ExecutionResponse;
@@ -53,6 +54,8 @@ class ConceptPortfolioBuildHandoffMaterializationTests {
         ConceptLegalRegulatoryReport report = mock(ConceptLegalRegulatoryReport.class);
         when(report.getId()).thenReturn("legal-report-1");
         when(reports.findBySelectionIdAndStatusAndDeletedAtIsNull(17L, "CURRENT")).thenReturn(Optional.of(report));
+        when(rounds.findTopBySelectionIdAndDeletedAtIsNullOrderByRoundDesc(17L))
+            .thenReturn(Optional.of(mock(ConceptRefinementRound.class)));
 
         var market = mapper.readTree("""
             {"contract":"market-analysis-seed-snapshot-v1","schemaVersion":"2.0",
@@ -85,6 +88,7 @@ class ConceptPortfolioBuildHandoffMaterializationTests {
         assertThat(saved.getValue().getSourceType()).isEqualTo("CONCEPT_PORTFOLIO_V2");
         assertThat(saved.getValue().getPortfolioSelectionId()).isEqualTo(17L);
         assertThat(saved.getValue().getSnapshotHash()).isEqualTo(marketHash);
+        assertThat(saved.getValue().isRefinementApplied()).isTrue();
         assertThat(mapper.readTree(saved.getValue().getSnapshotJson()).path("confirmedHypotheses")
             .path("PRE_MARKET_SOM").path("amount").asDouble()).isEqualTo(240000000.0);
         assertThat(selection.getStatus()).isEqualTo(ConceptPortfolioSelectionStatus.READY_FOR_MARKET);

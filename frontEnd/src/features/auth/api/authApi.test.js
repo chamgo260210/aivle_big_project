@@ -23,6 +23,16 @@ describe('auth api', () => {
     expect(client.get).toHaveBeenCalledWith('/users/me');
   });
 
+  it('requests review quick access without bearer authentication or refresh recursion', async () => {
+    const client = { post: vi.fn(async () => ({ data: { user: {}, tokens: {} } })) };
+    await createAuthApi(client).reviewQuickAccess('ADMIN');
+    expect(client.post).toHaveBeenCalledWith(
+      '/auth/review-access',
+      { role: 'ADMIN' },
+      expect.objectContaining({ authenticate: false, refreshOnUnauthorized: false }),
+    );
+  });
+
   it('sends refresh without bearer authentication or automatic retry', async () => {
     const client = { post: vi.fn(async () => ({ data: { accessToken: 'new' } })) };
     await createAuthApi(client).refresh('refresh-value');

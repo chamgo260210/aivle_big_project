@@ -5,6 +5,7 @@ import { Button, SideSheet } from '../../../shared/ui/index.js';
 import { getAdminErrorMessage } from '../api/adminErrorResolver.js';
 import useAdminAuditDetail from '../hooks/useAdminAuditDetail.js';
 import { getAuditActionLabel } from '../model/auditLabels.js';
+import { adminStatusLabel, adminTargetTypeLabel } from '../model/adminLabels.js';
 import AdminStatusBadge from './AdminStatusBadge.jsx';
 
 function date(value) {
@@ -76,9 +77,9 @@ export default function AdminAuditDetailSheet({ auditId, onRequestClose }) {
       describedBy={descriptionId}
     >
       <nav className="admin-breadcrumb" aria-label="현재 위치">
-        <Link to="/admin">Admin</Link>
+        <Link to="/admin">관리자</Link>
         <span aria-hidden="true"> / </span>
-        <Link to="/admin/audit">Audit</Link>
+        <Link to="/admin/audit">감사 기록</Link>
         <span aria-hidden="true"> / </span>
         <span aria-current="page">감사 상세</span>
       </nav>
@@ -103,15 +104,15 @@ export default function AdminAuditDetailSheet({ auditId, onRequestClose }) {
             <h3>수행 관리자</h3>
             <dl className="admin-detail-list">
               <dt>이름</dt><dd>{audit.actor.displayName || '—'}</dd>
-              <dt>Username</dt><dd>{audit.actor.username ? `@${audit.actor.username}` : '—'}</dd>
-              <dt>Role</dt><dd>{audit.actor.role || '—'}</dd>
+              <dt>사용자 아이디</dt><dd>{audit.actor.username ? `@${audit.actor.username}` : '—'}</dd>
+              <dt>권한</dt><dd>{audit.actor.role ? adminStatusLabel(audit.actor.role) : '—'}</dd>
             </dl>
           </section>
 
           <section>
             <h3>대상</h3>
             <dl className="admin-detail-list">
-              <dt>유형</dt><dd>{audit.target.type}</dd>
+              <dt>유형</dt><dd>{adminTargetTypeLabel(audit.target.type)}</dd>
               <dt>ID</dt><dd>{audit.target.id || '—'}</dd>
               <dt>표시명</dt><dd>{audit.target.label || '—'}</dd>
               {target && <><dt>상세</dt><dd><Link className="admin-detail-link" to={target}>대상 상세로 이동</Link></dd></>}
@@ -134,16 +135,16 @@ export default function AdminAuditDetailSheet({ auditId, onRequestClose }) {
           <section>
             <h3>요청 정보</h3>
             <dl className="admin-detail-list">
-              <dt>Request ID</dt><dd><code className="admin-code-value">{audit.requestId || '—'}</code></dd>
-              <dt>IP</dt><dd><code className="admin-code-value">{audit.ipAddress || '—'}</code></dd>
-              <dt>User Agent</dt><dd><code className="admin-code-value">{audit.userAgent || '—'}</code></dd>
+              <dt>요청 ID</dt><dd><code className="admin-code-value">{audit.requestId || '—'}</code></dd>
+              <dt>IP 주소</dt><dd><code className="admin-code-value">{audit.ipAddress || '—'}</code></dd>
+              <dt>사용자 환경</dt><dd><code className="admin-code-value">{audit.userAgent || '—'}</code></dd>
               <dt>사유</dt><dd>{audit.reason || '—'}</dd>
             </dl>
           </section>
 
           <section>
-            <h3>기타 Metadata</h3>
-            {audit.metadataParseError && <p className="admin-error">이전 형식 Metadata를 구조화하지 못했습니다.</p>}
+            <h3>기타 메타데이터</h3>
+            {audit.metadataParseError && <p className="admin-error">이전 형식의 메타데이터를 구조화하지 못했습니다.</p>}
             <KeyValueList values={audit.metadata} />
           </section>
         </div>

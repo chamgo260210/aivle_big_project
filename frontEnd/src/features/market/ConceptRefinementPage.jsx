@@ -65,7 +65,7 @@ export default function ConceptRefinementPage() {
         /* 근거 원문은 시장 분석 탭에 있다 — 같은 앵커 접두사(`sec-`)로 건너간다. */
         onJumpSubject={(anchor) => navigate(`${projectRoutes.market(projectId)}#${anchor}`)}
         onBack={() => navigate(projectRoutes.businessModel(projectId))}
-        onNext={() => navigate(projectRoutes.techOps(projectId))}
+        onNext={() => navigate(projectRoutes.launchReadiness(projectId))}
         onFinalize={revision.selectionId ? revision.finalize : null}
         finalizing={revision.finalizing}
         onRetry={revision.selectionId ? revision.retry : null}

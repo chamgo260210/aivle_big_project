@@ -21,11 +21,15 @@ ALLOWED_KEYWORDS = {
 def strict_schema_failures(schema: dict[str, Any]) -> list[dict[str, str]]:
     failures: list[dict[str, str]] = []
     definitions = schema.get("$defs", {})
+    property_count = 0
+    enum_count = 0
+    schema_string_length = sum(len(str(name)) for name in definitions)
 
     def fail(path: str, reason: str) -> None:
         failures.append({"path": path, "reason": reason})
 
     def visit(node: Any, path: str, depth: int) -> None:
+        nonlocal property_count, enum_count, schema_string_length
         if depth > 10:
             fail(path, "SCHEMA_DEPTH_EXCEEDED")
             return
@@ -34,6 +38,15 @@ def strict_schema_failures(schema: dict[str, Any]) -> list[dict[str, str]]:
             return
         for keyword in sorted(set(node) - ALLOWED_KEYWORDS):
             fail(f"{path}.{keyword}", "UNSUPPORTED_SCHEMA_KEYWORD")
+        enum_values = node.get("enum")
+        if isinstance(enum_values, list):
+            enum_count += len(enum_values)
+            schema_string_length += sum(len(str(value)) for value in enum_values)
+            if len(enum_values) > 250 and all(isinstance(value, str) for value in enum_values) \
+                    and sum(len(value) for value in enum_values) > 15_000:
+                fail(path, "SCHEMA_ENUM_STRING_SIZE_EXCEEDED")
+        if "const" in node:
+            schema_string_length += len(str(node["const"]))
         if "$ref" in node:
             ref = node["$ref"]
             prefix = "#/$defs/"
@@ -55,6 +68,8 @@ def strict_schema_failures(schema: dict[str, Any]) -> list[dict[str, str]]:
             if not isinstance(properties, dict):
                 fail(path, "OBJECT_PROPERTIES_REQUIRED")
                 return
+            property_count += len(properties)
+            schema_string_length += sum(len(str(key)) for key in properties)
             if node.get("additionalProperties") is not False:
                 fail(path, "ADDITIONAL_PROPERTIES_MUST_BE_FALSE")
             required = node.get("required")
@@ -76,4 +91,10 @@ def strict_schema_failures(schema: dict[str, Any]) -> list[dict[str, str]]:
     visit(schema, "$", 0)
     for name, definition in definitions.items():
         visit(definition, f"$defs.{name}", 1)
+    if property_count > 5_000:
+        fail("$", "SCHEMA_PROPERTY_COUNT_EXCEEDED")
+    if enum_count > 1_000:
+        fail("$", "SCHEMA_ENUM_COUNT_EXCEEDED")
+    if schema_string_length > 120_000:
+        fail("$", "SCHEMA_STRING_SIZE_EXCEEDED")
     return list({(item["path"], item["reason"]): item for item in failures}.values())

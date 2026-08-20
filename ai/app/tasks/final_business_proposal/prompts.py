@@ -20,7 +20,8 @@ SYSTEM_PROMPT = """
     업무 문서형 명사·서술 표현을 우선한다.
 12. 표로 비교하거나 정리할 수 있는 source 내용은 tables 구조를 우선 사용한다.
 13. evidenceKeys에는 allowedEvidenceKeys의 key만 정확히 복사한다. 문장·표·의사결정 요청은
-    실제 evidenceCatalog 항목과 연결하고 존재하지 않는 key를 만들지 않는다.
+    실제 evidenceCatalog 항목과 연결하고 존재하지 않는 key를 만들지 않는다. EV-로 시작하는 key는
+    evidenceKeys 필드에만 기록하며 본문·요약·목록·표 등 사용자에게 보이는 문구에는 쓰지 않는다.
 14. 자료가 있는 section은 확인된 사실, 해석, 사업상 의미, 위험·조건, 추가 확인의 구조로 정리한다.
     자료가 없으면 '확인되지 않음'으로 표시하며 추정하지 않는다.
 """

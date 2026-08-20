@@ -16,12 +16,12 @@ export default function AdminOperationsPage() {
   return (
     <div className="admin-page">
       <AdminPageHeader
-        title="Operations"
+        title="연동 상태"
         description="자격증명 원문 없이 내부 AI 실행 연결의 설정·가용 상태만 표시합니다."
       />
       {loading && <section className="admin-panel" aria-busy="true">서비스 상태를 확인하는 중입니다.</section>}
       {error && <AdminErrorState error={error} onRetry={refresh} />}
-      {data && <AdminAvailabilityNotice title="AI Service Registry" availability={data} />}
+      {data && <AdminAvailabilityNotice title="AI 실행 서비스" availability={data} />}
     </div>
   );
 }

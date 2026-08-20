@@ -140,8 +140,7 @@ export default function AdminUsersPage() {
   return (
     <div className="admin-page">
       <header className="admin-page-header">
-        <nav className="admin-breadcrumb" aria-label="현재 위치">Admin / Users</nav>
-        <h1>Users</h1>
+        <h1>사용자 관리</h1>
         <p>사용자 계정, 역할, 상태와 세션을 서버 정책에 따라 관리합니다.</p>
       </header>
 

@@ -8,13 +8,13 @@ import { useAuthTransition } from '../transitions/AuthTransitionProvider.jsx';
 import './admin-layout.css';
 
 const navigation = [
-  { to: '/admin', label: 'Overview', icon: 'home', end: true },
-  { to: '/admin/users', label: 'Users', icon: 'user' },
-  { to: '/admin/projects', label: 'Projects', icon: 'project' },
-  { to: '/admin/audit', label: 'Audit', icon: 'clock' },
-  { to: '/admin/settings', label: 'Settings', icon: 'settings' },
-  { to: '/admin/operations', label: 'Operations', icon: 'alert' },
-  { to: '/admin/jobs', label: 'AI Jobs', icon: 'sparkles' },
+  { to: '/admin', label: '운영 개요', icon: 'home', end: true },
+  { to: '/admin/users', label: '사용자 관리', icon: 'user' },
+  { to: '/admin/projects', label: '프로젝트 관리', icon: 'project' },
+  { to: '/admin/audit', label: '감사 기록', icon: 'clock' },
+  { to: '/admin/settings', label: '서비스 설정', icon: 'settings' },
+  { to: '/admin/operations', label: '연동 상태', icon: 'alert' },
+  { to: '/admin/jobs', label: 'AI 작업', icon: 'sparkles' },
 ];
 
 function userLabel(user) {
@@ -23,9 +23,16 @@ function userLabel(user) {
 
 function environmentLabel() {
   const configured = import.meta.env.VITE_APP_ENVIRONMENT?.trim();
-  if (configured) return configured;
-  if (import.meta.env.MODE === 'production') return 'Production';
-  if (import.meta.env.MODE === 'development') return 'Development';
+  if (configured) {
+    const labels = {
+      production: '운영 환경',
+      development: '개발 환경',
+      local: '로컬 환경',
+    };
+    return labels[configured.toLowerCase()] || configured;
+  }
+  if (import.meta.env.MODE === 'production') return '운영 환경';
+  if (import.meta.env.MODE === 'development') return '개발 환경';
   return null;
 }
 
@@ -34,7 +41,7 @@ function breadcrumbs(pathname) {
   const match = exact
     ? navigation[0]
     : navigation.find((item) => item.to !== '/admin' && pathname.startsWith(item.to));
-  const items = [{ label: 'Admin', to: '/admin' }];
+  const items = [{ label: '관리자', to: '/admin' }];
   if (!match) return items;
   items.push({ label: match.label, to: match.to });
   if (pathname !== match.to) {
@@ -178,7 +185,7 @@ export default function AdminShell() {
           <AppIcon name="more" />
         </button>
         <Link to="/admin" className="admin-brand">
-          Venture Verify <b>Admin</b>
+          Venture Verify <b>관리자 콘솔</b>
         </Link>
         {environment && <span className="admin-environment">{environment}</span>}
         <div className="admin-topbar__actions">
@@ -204,7 +211,7 @@ export default function AdminShell() {
                 <strong>{userLabel(user)}</strong>
                 <small>@{user?.username || 'admin'}</small>
               </span>
-              <span className="admin-role-badge">ADMIN</span>
+              <span className="admin-role-badge">관리자</span>
               <AppIcon name="chevronRight" />
             </button>
             {accountOpen && (
@@ -256,7 +263,7 @@ export default function AdminShell() {
         <div className="admin-drawer-account" role="menu" aria-label="관리자 계정 메뉴">
           <div className="admin-drawer-account__user">
             <strong>{userLabel(user)}</strong>
-            <span>@{user?.username || 'admin'} · ADMIN</span>
+            <span>@{user?.username || 'admin'} · 관리자</span>
           </div>
           <AdminAccountLinks
             onNavigate={() => setMobileOpen(false)}

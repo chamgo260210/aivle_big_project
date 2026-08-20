@@ -15,7 +15,7 @@ export default function AdminAuditFilterBar({
       <TextInput
         label="관리자"
         value={actor}
-        placeholder="Username, 이름 또는 ID"
+        placeholder="사용자 아이디, 이름 또는 ID"
         onChange={(event) => onSearchChange('actor', event.target.value)}
         onCompositionStart={() => onCompositionStart('actor')}
         onCompositionEnd={(event) => onCompositionEnd('actor', event.currentTarget.value)}
@@ -38,9 +38,9 @@ export default function AdminAuditFilterBar({
         <option value="OTHER">기타</option>
       </Select>
       <TextInput
-        label="Request ID"
+        label="요청 ID"
         value={requestId}
-        placeholder="정확한 Request ID"
+        placeholder="정확한 요청 ID"
         onChange={(event) => onSearchChange('requestId', event.target.value)}
         onCompositionStart={() => onCompositionStart('requestId')}
         onCompositionEnd={(event) => onCompositionEnd('requestId', event.currentTarget.value)}
@@ -55,7 +55,7 @@ export default function AdminAuditFilterBar({
       <Select label="정렬" value={values.sort} onChange={(event) => onFilterChange('sort', event.target.value)}>
         <option value="occurredAt,desc">최신순</option>
         <option value="occurredAt,asc">오래된순</option>
-        <option value="actorUsername,asc">관리자 Username순</option>
+        <option value="actorUsername,asc">관리자 아이디순</option>
         <option value="action,asc">작업명순</option>
         <option value="result,asc">결과순</option>
       </Select>

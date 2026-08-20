@@ -44,6 +44,21 @@ function displayManifestSources(sources = []) {
     ...(finance ? [{ ...finance, type: 'FINANCE' }] : [])];
 }
 
+const EVIDENCE_KEY_PATTERN = /\s*\(\s*EV-[0-9a-f]{24}\s*\)|\s*EV-[0-9a-f]{24}/gi;
+const EVIDENCE_KEY_FIELDS = new Set(['evidenceKey', 'evidenceKeys']);
+
+function sanitizeForDisplay(value, fieldName = '') {
+  if (typeof value === 'string') {
+    if (EVIDENCE_KEY_FIELDS.has(fieldName)) return value;
+    return value.replace(EVIDENCE_KEY_PATTERN, '').replace(/\s{2,}/g, ' ').replace(/\s+([,.;:!?])/g, '$1').trim();
+  }
+  if (Array.isArray(value)) return value.map((item) => sanitizeForDisplay(item, fieldName));
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([keyName, item]) => [keyName, sanitizeForDisplay(item, keyName)]));
+  }
+  return value;
+}
+
 function Evidence({ refs, details }) {
   if (!refs?.length && !details?.length) return null;
   return <details className="proposal-evidence"><summary>근거 상세 보기</summary>{details?.length
@@ -52,7 +67,8 @@ function Evidence({ refs, details }) {
 }
 
 function ProposalDocument({ view, review, includeReview }) {
-  const report = view.report;
+  const report = useMemo(() => sanitizeForDisplay(view.report), [view.report]);
+  const reviewResult = useMemo(() => sanitizeForDisplay(review?.result), [review?.result]);
   if (!report) return null;
   const summary = report.executiveDecisionSummary ?? {};
   return <article className="proposal-document">
@@ -61,7 +77,7 @@ function ProposalDocument({ view, review, includeReview }) {
     <section id="proposal-summary" className="proposal-summary"><p>EXECUTIVE DECISION SUMMARY</p><h2>의사결정 요약</h2><div className="proposal-callout"><strong>사업 한 줄 정의</strong><span>{summary.businessDefinition}</span></div><div className="proposal-kpis"><article><strong>추진 목적</strong><p>{summary.purpose}</p></article><article><strong>핵심 가치</strong><p>{summary.coreValue}</p></article><article><strong>승인 요청사항</strong><p>{summary.approvalRequest}</p></article></div><div className="proposal-summary__lists"><List title="대상 고객" values={summary.targetCustomers} /><List title="주요 시장 근거" values={summary.marketEvidence} /><List title="재무 핵심" values={summary.financialHighlights} /><List title="핵심 위험" values={summary.keyRisks} /></div><Evidence refs={summary.evidenceRefs} details={summary.evidenceDetails} /></section>
     {(report.sections ?? []).map((section) => <section className="proposal-section" id={`proposal-section-${section.number}`} key={section.number}><header><span>{String(section.number).padStart(2, '0')}</span><div><p>BUSINESS PLAN</p><h2>{section.title}</h2></div></header><p className="proposal-section__summary">{section.summary}</p>{section.narratives?.map((item) => <article className="proposal-narrative" key={item.heading}><h3>{item.heading}</h3><p>{item.body}</p></article>)}<List title="주요 확인사항" values={section.keyPoints} />{section.tables?.map((table) => <ProposalTable table={table} key={table.title} />)}<Evidence refs={section.evidenceRefs} details={section.evidenceDetails} /></section>)}
     <section id="proposal-appendix" className="proposal-section"><header><span>A</span><div><p>APPENDIX</p><h2>자료·가정·제외 항목</h2></div></header><List title="가정" values={report.appendix?.assumptions} /><List title="포함하지 않은 분석" values={report.appendix?.omittedAnalyses} /><List title="사용 자료 버전" values={report.appendix?.sourceVersions} /><Evidence refs={report.appendix?.evidenceRefs} details={report.appendix?.evidenceDetails} /></section>
-    {includeReview && review?.result && <section className="proposal-section proposal-review-print"><header><span>R</span><div><p>AI REVIEW</p><h2>AI 사업기획서 검토 의견</h2></div></header><ReviewGroups result={review.result} /></section>}
+    {includeReview && reviewResult && <section className="proposal-section proposal-review-print"><header><span>R</span><div><p>AI REVIEW</p><h2>AI 사업기획서 검토 의견</h2></div></header><ReviewGroups result={reviewResult} /></section>}
   </article>;
 }
 

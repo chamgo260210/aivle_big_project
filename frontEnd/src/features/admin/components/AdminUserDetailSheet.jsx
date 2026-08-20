@@ -9,6 +9,7 @@ import { getAdminErrorMessage } from '../api/adminErrorResolver.js';
 import useAdminUserDetail from '../hooks/useAdminUserDetail.js';
 import AdminActionConfirmDialog from './AdminActionConfirmDialog.jsx';
 import AdminStatusBadge from './AdminStatusBadge.jsx';
+import { adminStatusLabel } from '../model/adminLabels.js';
 
 function valueOrDash(value) {
   return value || '—';
@@ -102,7 +103,7 @@ export default function AdminUserDetailSheet({ userId, onRequestClose, onChanged
     actions.push(createAction(
       'role',
       user.role === 'ADMIN' ? 'USER' : 'ADMIN',
-      user.role === 'ADMIN' ? 'USER 강등' : 'ADMIN 승격',
+      user.role === 'ADMIN' ? '일반 사용자로 변경' : '관리자로 변경',
       true,
       'USER_ROLE_CHANGE',
     ));
@@ -131,9 +132,9 @@ export default function AdminUserDetailSheet({ userId, onRequestClose, onChanged
         describedBy={descriptionId}
     >
       <nav className="admin-breadcrumb" aria-label="현재 위치">
-        <Link to="/admin">Admin</Link>
+        <Link to="/admin">관리자</Link>
         <span aria-hidden="true"> / </span>
-        <Link to="/admin/users">Users</Link>
+        <Link to="/admin/users">사용자 관리</Link>
         <span aria-hidden="true"> / </span>
         <span aria-current="page">사용자 상세</span>
       </nav>
@@ -165,7 +166,7 @@ export default function AdminUserDetailSheet({ userId, onRequestClose, onChanged
             <section>
               <h3>기본 정보</h3>
               <dl className="admin-detail-list">
-                <dt>Email</dt><dd>{valueOrDash(user.email)}</dd>
+                <dt>이메일</dt><dd>{valueOrDash(user.email)}</dd>
                 <dt>조직</dt><dd>{valueOrDash(user.organizationName)}</dd>
                 <dt>부서</dt><dd>{valueOrDash(user.departmentName)}</dd>
                 <dt>직책</dt><dd>{valueOrDash(user.jobTitle)}</dd>
@@ -234,8 +235,8 @@ export default function AdminUserDetailSheet({ userId, onRequestClose, onChanged
               ? '이 작업은 관리자 재인증 후 실행되며 대상 사용자의 기존 세션은 종료됩니다.'
               : '운영 기록에 남길 변경 사유를 입력해 주세요.'}
           targetLabel={`${user.displayName || user.username} (@${user.username})`}
-          currentState={`${user.role} / ${user.accountStatus}`}
-          nextState={pending.value || '모든 세션 종료'}
+          currentState={`${adminStatusLabel(user.role)} / ${adminStatusLabel(user.accountStatus)}`}
+          nextState={pending.value ? adminStatusLabel(pending.value) : '모든 세션 종료'}
           purpose={pending.purpose}
           requiresReauthentication={pending.secure}
           busy={busy}

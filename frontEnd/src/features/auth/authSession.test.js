@@ -7,6 +7,7 @@ function createFixture() {
   const authApi = {
     signup: vi.fn(),
     login: vi.fn(),
+    reviewQuickAccess: vi.fn(),
     refresh: vi.fn(),
     logout: vi.fn(),
     getMe: vi.fn(),
@@ -47,6 +48,17 @@ describe('auth session', () => {
     });
     await session.signup({ email: 'new@example.com', password: 'password', displayName: 'New' });
     expect(tokenProvider.getRefreshToken()).toBeNull();
+  });
+
+  it('stores the review quick access token pair', async () => {
+    const { authApi, tokenProvider, session } = createFixture();
+    authApi.reviewQuickAccess.mockResolvedValue({
+      user: { id: 2, role: 'ADMIN' },
+      tokens: { accessToken: 'quick-access', refreshToken: 'quick-refresh' },
+    });
+    await expect(session.reviewQuickAccess('ADMIN')).resolves.toMatchObject({ role: 'ADMIN' });
+    expect(authApi.reviewQuickAccess).toHaveBeenCalledWith('ADMIN');
+    expect(tokenProvider.getAccessToken()).toBe('quick-access');
   });
 
   it('bootstraps by rotating refresh then loading users me', async () => {

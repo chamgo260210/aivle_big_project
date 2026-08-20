@@ -121,9 +121,8 @@ export default function AdminAuditPage() {
   return (
     <div className="admin-page">
       <header className="admin-page-header">
-        <nav className="admin-breadcrumb" aria-label="현재 위치">Admin / Audit</nav>
-        <h1>Audit</h1>
-        <p>관리자 작업의 결과, 변경 내용과 Request ID를 수정 불가능한 기록으로 조회합니다.</p>
+        <h1>감사 기록</h1>
+        <p>관리자 작업의 결과, 변경 내용과 요청 ID를 수정 불가능한 기록으로 조회합니다.</p>
       </header>
 
       <section className="admin-panel" aria-busy={refreshing}>

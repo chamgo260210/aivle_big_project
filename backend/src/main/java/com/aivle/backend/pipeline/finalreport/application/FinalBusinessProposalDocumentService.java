@@ -7,6 +7,7 @@ import com.openhtmltopdf.outputdevice.helper.BaseRendererBuilder.FontStyle;
 import com.openhtmltopdf.pdfboxout.PdfRendererBuilder;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
 import org.apache.poi.xwpf.usermodel.BreakType;
 import org.apache.poi.xwpf.usermodel.ParagraphAlignment;
@@ -20,6 +21,10 @@ import tools.jackson.databind.ObjectMapper;
 @Service
 @RequiredArgsConstructor
 public class FinalBusinessProposalDocumentService {
+    private static final Pattern EVIDENCE_KEY_PATTERN = Pattern.compile(
+        "\\s*\\(\\s*EV-[0-9a-f]{24}\\s*\\)|\\s*EV-[0-9a-f]{24}",
+        Pattern.CASE_INSENSITIVE
+    );
     private final ObjectMapper mapper;
     private final KoreanPdfFontResolver fonts;
     private final UserRepository users;
@@ -205,10 +210,10 @@ public class FinalBusinessProposalDocumentService {
         heading(document, table.path("title").asText(), 2);
         int columns = Math.max(1, table.path("columns").size());
         XWPFTable value = document.createTable(1, columns);
-        for (int i = 0; i < columns; i++) value.getRow(0).getCell(i).setText(table.path("columns").path(i).asText());
+        for (int i = 0; i < columns; i++) value.getRow(0).getCell(i).setText(visibleText(table.path("columns").path(i).asText()));
         for (JsonNode row : table.path("rows")) {
             var cells = value.createRow().getTableCells();
-            for (int i = 0; i < columns; i++) cells.get(i).setText(row.path(i).asText(""));
+            for (int i = 0; i < columns; i++) cells.get(i).setText(visibleText(row.path(i).asText("")));
         }
     }
 
@@ -273,19 +278,26 @@ public class FinalBusinessProposalDocumentService {
             out.append("</p>");
         }
     }
-    private void title(XWPFDocument d,String text,int size){XWPFParagraph p=d.createParagraph();p.setAlignment(ParagraphAlignment.CENTER);var r=p.createRun();r.setBold(true);r.setFontSize(size);r.setText(text);}
-    private void heading(XWPFDocument d,String text,int level){XWPFParagraph p=d.createParagraph();p.setStyle("Heading"+level);var r=p.createRun();r.setBold(true);r.setText(text);}
-    private void paragraph(XWPFDocument d,String text,boolean bold){var r=d.createParagraph().createRun();r.setBold(bold);r.setText(text==null?"":text);}
+    private void title(XWPFDocument d,String text,int size){XWPFParagraph p=d.createParagraph();p.setAlignment(ParagraphAlignment.CENTER);var r=p.createRun();r.setBold(true);r.setFontSize(size);r.setText(visibleText(text));}
+    private void heading(XWPFDocument d,String text,int level){XWPFParagraph p=d.createParagraph();p.setStyle("Heading"+level);var r=p.createRun();r.setBold(true);r.setText(visibleText(text));}
+    private void paragraph(XWPFDocument d,String text,boolean bold){var r=d.createParagraph().createRun();r.setBold(bold);r.setText(visibleText(text));}
     private void labeled(XWPFDocument d,String label,JsonNode value){heading(d,label,2);paragraph(d,value.asText("자료 없음"),false);}
-    private void list(XWPFDocument d,String title,JsonNode values){if(!values.isArray()||values.isEmpty())return;heading(d,title,2);values.forEach(v->{XWPFParagraph p=d.createParagraph();p.setStyle("ListBullet");p.createRun().setText(v.asText());});}
+    private void list(XWPFDocument d,String title,JsonNode values){if(!values.isArray()||values.isEmpty())return;heading(d,title,2);values.forEach(v->{XWPFParagraph p=d.createParagraph();p.setStyle("ListBullet");p.createRun().setText(visibleText(v.asText()));});}
     private JsonNode json(String value){try{return mapper.readTree(value);}catch(Exception e){throw new IllegalStateException(e);}}
     /** OpenHTMLToPDF parses XHTML, so only XML predefined entities are emitted. */
     private String escape(String value) {
-        if (value == null) return "";
-        return value.replace("&", "&amp;")
+        return visibleText(value).replace("&", "&amp;")
             .replace("<", "&lt;")
             .replace(">", "&gt;")
             .replace("\"", "&quot;")
             .replace("'", "&apos;");
+    }
+
+    private String visibleText(String value) {
+        if (value == null) return "";
+        return EVIDENCE_KEY_PATTERN.matcher(value).replaceAll("")
+            .replaceAll("\\s{2,}", " ")
+            .replaceAll("\\s+([,.;:!?])", "$1")
+            .trim();
     }
 }
